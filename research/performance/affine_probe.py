@@ -21,7 +21,7 @@ def make_sampler(grid32=False, elementwise=False):
     cached_plane = None
     left = right = tolerance = nx = ny = None
 
-    def sample(images, parameters, plane):
+    def sample(images, parameters, plane, *, interpolation="linear"):
         """Evaluate a composed affine grid with the original support tolerance."""
         nonlocal cached_plane, left, right, tolerance, nx, ny
         if cached_plane is not plane:
@@ -82,6 +82,7 @@ def make_sampler(grid32=False, elementwise=False):
         sampled = F.grid_sample(
             images[:, None],
             grid.to(images.dtype),
+            mode={"linear": "bilinear", "nearest": "nearest"}[interpolation],
             padding_mode="border",
             align_corners=True,
         )[:, 0]

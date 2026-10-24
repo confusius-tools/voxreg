@@ -71,7 +71,8 @@ For this milestone accept only:
 
 - Moving recording: `(time, k, j, i)`, with `k=1`.
 - Fixed image: `(k, j, i)`, with `k=1`.
-- Real, finite floating-point, NumPy-backed data.
+- Real, finite NumPy-backed integer or floating data up to float64. Integers must
+  be exactly representable in float64 (values within [-2**53, 2**53]).
 - Uniform, strictly monotonic native spatial coordinates; nonzero offsets and
   strides are supported. Spatial units must be consistently declared as mm.
 - A finite, nonsingular voxel-to-world affine and the required lazy world index.
@@ -194,7 +195,7 @@ must have their parameters **and optimizer state** frozen while other frames
 continue. The reference frame is exactly identity, not numerically re-estimated.
 
 Keep images, grids, parameters and optimizer state resident for each chunk.
-Images/interpolation remain float32. Physical geometry and optimizer state use
+Working fitting images/interpolation remain float32. Physical geometry and optimizer state use
 float64 after real-data tests exposed chunk-shape-dependent float32 rounding.
 Only the final normalized interpolation grid is cast to the image dtype. This
 is a correctness-first baseline, not a throughput-optimal precision policy.
@@ -208,8 +209,12 @@ speedup in advance. Compilation and warm steady-state timings are separate.
 ### Output resampling
 
 Apply the final mapping once to **original, unscaled intensities**, not to the
-fitting dB images. Return float32 registered samples on the fixed spatial grid,
-with original time coordinates and physical intensity units. Use the original
+fitting dB images. Retain the moving dtype, original time coordinates and physical
+intensity units. Float64 and integer images use float64 final interpolation;
+float32/float16 images use float32, then return their original dtype. Integer
+outputs are rounded nearest-even and range-clipped; reject integer inputs outside
+[-2**53, 2**53]. `interpolation="linear"` or `"nearest"` affects only this final
+resampling, not the linear sampler used for fitting. Use the original
 moving frame's minimum as the fill value and return a validity mask so that edge
 pixels need not be interpreted as genuine measurements. The reference frame can
 be copied directly.

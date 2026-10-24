@@ -128,7 +128,11 @@ def rotation_matrices(angles: torch.Tensor) -> torch.Tensor:
 
 
 def sample_rigid(
-    images: torch.Tensor, parameters: torch.Tensor, plane: Plane
+    images: torch.Tensor,
+    parameters: torch.Tensor,
+    plane: Plane,
+    *,
+    interpolation: str = "linear",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Pull-sample images under centered physical in-plane rigid transforms.
 
@@ -141,11 +145,13 @@ def sample_rigid(
     plane : Plane
         Shared plane geometry, on the same device as images and dtype as parameters.
         The final normalized interpolation grid uses the image dtype.
+    interpolation : {"linear", "nearest"}, default: "linear"
+        Sampling rule; registration fitting always uses linear.
 
     Returns
     -------
     sampled : (B, H, W) torch.Tensor
-        Bilinearly sampled images with border extension pending explicit fill.
+        Interpolated images with border extension pending explicit fill.
     valid : (B, H, W) torch.Tensor
         Pixel-center support mask, excluding out-of-field samples.
     """
@@ -175,7 +181,7 @@ def sample_rigid(
     sampled = F.grid_sample(
         images[:, None],
         grid.to(images.dtype),
-        mode="bilinear",
+        mode={"linear": "bilinear", "nearest": "nearest"}[interpolation],
         padding_mode="border",
         align_corners=True,
     )[:, 0]

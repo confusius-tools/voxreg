@@ -19,7 +19,8 @@ class RegistrationResult:
     Parameters
     ----------
     registered : xarray.DataArray
-        Original intensities resampled on the fixed VoxelData grid, float32.
+        Original intensities resampled on the fixed grid, retaining moving dtype.
+        Integer output is rounded to nearest-even and clipped to its type range.
     valid : xarray.DataArray
         Boolean VoxelData mask of valid moving-image sample centers.
     transforms : xarray.DataArray
@@ -133,6 +134,7 @@ def register_rigid(
     fixed: xr.DataArray | None = None,
     *,
     intensity_scaling: Literal["none", "db"] = "db",
+    interpolation: Literal["linear", "nearest"] = "linear",
     batch_size: int = 32,
     max_iterations: int = 100,
     learning_rate: float = 0.1,
@@ -143,13 +145,17 @@ def register_rigid(
     Parameters
     ----------
     moving : xarray.DataArray
-        Finite floating-point NumPy-backed VoxelData, (time, k=1, j, i).
+        Finite real NumPy-backed VoxelData, (time, k=1, j, i). Integer values must
+        lie within [-2**53, 2**53] for exact conversion to floating-point samples.
     fixed : xarray.DataArray, optional
         Spatial-only VoxelData on exactly the moving grid. Uses the first frame
         when not provided; that reference frame is then copied exactly.
     intensity_scaling : {"none", "db"}, default: "db"
         Fitting preprocessing only; original intensities are resampled for output.
         dB requires nonnegative power; normalized zeros are floored at 1e-12.
+    interpolation : {"linear", "nearest"}, default: "linear"
+        Final original-image resampling only; fitting always uses linear sampling.
+        Nearest is suitable for labels, not automatically for integer intensities.
     batch_size : int, default: 32
         Maximum number of independent frames per resident optimization chunk.
     max_iterations : int, default: 100
@@ -169,7 +175,7 @@ def register_rigid(
     Raises
     ------
     TypeError
-        If intensities are not NumPy-backed floating-point arrays.
+        If intensities are not supported real NumPy-backed arrays.
     ValueError
         If geometry, input values or numerical options are unsupported.
 
@@ -178,9 +184,11 @@ def register_rigid(
     Convergence requires five consecutive scaled parameter steps below 1e-4
     after at least twenty updates. Each frame has independent Adam moments,
     clock and stopping state. Physical geometry, optimizer state and NCC statistics
-    use float64 to stabilize chunk-size comparisons; interpolation/output use
-    float32. Metrics exclude invalid sample centers; outside output values use
-    each original moving frame's minimum.
+    use float64 to stabilize chunk-size comparisons; fitting images use float32.
+    Original float64 and integer images are resampled in float64, other images in
+    float32, then restored to their original dtype. Integer results use nearest-even
+    rounding and range clipping. Metrics exclude invalid sample centers; outside
+    output values use each original moving frame's minimum.
     """
     start = perf_counter()
     validate_voxeldata(moving)
@@ -197,10 +205,21 @@ def register_rigid(
             "fixed and moving must have identical native coordinates and physical geometry."
         )
     for name, data in (("moving", moving), ("fixed", fixed)):
-        if not np.issubdtype(data.dtype, np.floating):
-            raise TypeError(f"{name} intensities must be real floating-point values.")
+        integer = np.issubdtype(data.dtype, np.integer)
+        if not integer and not (
+            np.issubdtype(data.dtype, np.floating) and data.dtype.itemsize <= 8
+        ):
+            raise TypeError(
+                f"{name} intensities must be real integer or floating-point values up to float64."
+            )
         if not np.isfinite(data.values).all():
             raise ValueError(f"{name} intensities must be finite.")
+        if integer and (
+            int(data.values.min()) < -(2**53) or int(data.values.max()) > 2**53
+        ):
+            raise ValueError(
+                f"{name} integers must lie within [-2**53, 2**53] for exact floating-point representation."
+            )
     if (
         "time" not in moving.coords
         or moving.time.dims != ("time",)
@@ -222,23 +241,44 @@ def register_rigid(
         raise ValueError("device must be cpu or an available cuda device.")
     if intensity_scaling not in ("none", "db"):
         raise ValueError("intensity_scaling must be none or db.")
+    if interpolation not in ("linear", "nearest"):
+        raise ValueError("interpolation must be linear or nearest.")
     # Double physical geometry/state keeps gradient reductions stable across chunk sizes.
     plane = make_plane(fixed, device=device, dtype=torch.float64)
-    raw = moving.values[:, 0].astype(np.float32)
-    target_raw = fixed.values[0].astype(np.float32)
-    if not np.isfinite(raw).all() or not np.isfinite(target_raw).all():
-        raise ValueError("Input intensities must be representable in float32.")
-    moving_scale = float(np.abs(raw).max())
+    raw = moving.values[:, 0]
+    integer_output = np.issubdtype(raw.dtype, np.integer)
+    resampling_dtype = (
+        np.float64 if integer_output or raw.dtype.itemsize > 4 else np.float32
+    )
+    # Normalize before downcasting so float64/integer values are not quantized first.
+    preprocessing_dtype = (
+        np.float64
+        if any(
+            np.issubdtype(data.dtype, np.integer) or data.dtype.itemsize > 4
+            for data in (moving, fixed)
+        )
+        else np.float32
+    )
+    fit_raw = raw.astype(preprocessing_dtype)
+    target_raw = fixed.values[0].astype(preprocessing_dtype)
+    moving_scale = float(np.abs(fit_raw).max())
     scale = max(moving_scale, float(np.abs(target_raw).max()))
     if moving_scale == 0:
         raise ValueError("An all-zero recording cannot be registered.")
     if intensity_scaling == "db":
-        if raw.min() < 0 or target_raw.min() < 0:
+        if fit_raw.min() < 0 or target_raw.min() < 0:
             raise ValueError("dB scaling requires nonnegative power intensities.")
-        fit = 10 * np.log10(np.maximum(raw / scale, 1e-12))
+        fit = 10 * np.log10(np.maximum(fit_raw / scale, 1e-12))
         target = 10 * np.log10(np.maximum(target_raw / scale, 1e-12))
     else:
-        fit, target = raw / scale, target_raw / scale
+        fit, target = fit_raw / scale, target_raw / scale
+    if preprocessing_dtype == np.float64:
+        # NCC is affine-intensity invariant; keep low-contrast detail before float32 conversion.
+        for values in (fit, target):
+            values -= values[..., :1, :1]
+            amplitude = np.abs(values).max(axis=(-2, -1), keepdims=True)
+            values /= np.where(amplitude > 0, amplitude, 1)
+    fit, target = fit.astype(np.float32), target.astype(np.float32)
     if np.ptp(target) == 0:
         raise ValueError("The fixed image must not be constant.")
     timings = {
@@ -278,8 +318,13 @@ def register_rigid(
         timings["optimize"] += perf_counter() - start
         start = perf_counter()
         with torch.no_grad():
-            original = torch.tensor(raw[first:last], device=device)
-            sampled, valid = sample_rigid(original, physical, plane)
+            original = torch.tensor(
+                raw[first:last].astype(resampling_dtype, copy=False),
+                device=device,
+            )
+            sampled, valid = sample_rigid(
+                original, physical, plane, interpolation=interpolation
+            )
             fills = original.amin(dim=(1, 2))[:, None, None]
             sampled = torch.where(valid, sampled, fills)
             sampled = torch.where(reference[:, None, None], original, sampled)
@@ -288,7 +333,11 @@ def register_rigid(
             loss, meaningful = global_ncc(fitted, target_tensor, fit_valid)
             nonconstant = images.amax(dim=(1, 2)) > images.amin(dim=(1, 2))
             loss = torch.where(meaningful & nonconstant, loss, torch.nan)
-            outputs.append(sampled.cpu().numpy())
+            values = sampled.cpu().numpy()
+            if integer_output:
+                limits = np.iinfo(raw.dtype)
+                values = np.clip(np.rint(values), limits.min, limits.max)
+            outputs.append(values.astype(raw.dtype, copy=False))
             masks.append(valid.cpu().numpy())
             parameters.append(physical.cpu().numpy())
             clocks.append(steps.cpu().numpy())

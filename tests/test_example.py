@@ -20,12 +20,22 @@ example = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(example)
 
 
-def test_nifti_round_trip_and_window(recording_factory, tmp_path):
+@pytest.mark.parametrize(
+    "dtype", [np.float32, np.float64, np.int16, np.int64, np.uint64]
+)
+def test_nifti_round_trip_and_window(recording_factory, tmp_path, dtype):
     data, _, affine = recording_factory(oblique=True, strided=True)
+    if np.issubdtype(dtype, np.integer):
+        data = data.copy(data=np.rint(data.values * 100).astype(dtype))
+    else:
+        data = data.astype(dtype)
+        if dtype == np.float64:
+            data.values[:] += 1e-10
     path = tmp_path / "recording.nii.gz"
     example.save_nifti(path, data)
     restored = example.load_recording(path)
     assert_array_equal(restored.values, data.values)
+    assert restored.dtype == data.dtype
     assert_array_equal(restored.time, data.time)
     assert_allclose(position_to_world(restored), affine, atol=5e-6)
     assert_array_equal(

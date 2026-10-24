@@ -71,9 +71,7 @@ def load_recording(path: Path, window: slice | None = None) -> xr.DataArray:
             "VolumeTiming must contain one finite increasing time per frame."
         )
     window = window if window is not None else slice(None)
-    values = np.asarray(image.dataobj[..., window], dtype=np.float32).transpose(
-        3, 2, 1, 0
-    )
+    values = np.asarray(image.dataobj[..., window]).transpose(3, 2, 1, 0)
     affine = image.affine[np.ix_([2, 1, 0, 3], [2, 1, 0, 3])]
     result = create_voxeldata(
         values,
@@ -98,7 +96,7 @@ def save_nifti(path: Path, data: xr.DataArray) -> None:
     """
     affine = position_to_world(data)[np.ix_([2, 1, 0, 3], [2, 1, 0, 3])]
     values = data.values.astype(np.uint8) if data.dtype == bool else data.values
-    image = nib.Nifti1Image(values.transpose(3, 2, 1, 0), affine)
+    image = nib.Nifti1Image(values.transpose(3, 2, 1, 0), affine, dtype=values.dtype)
     image.header.set_xyzt_units("mm", "sec")
     image.header["pixdim"][4] = (
         np.median(np.diff(data.time.values)) if data.sizes["time"] > 1 else 1
@@ -357,11 +355,12 @@ def main() -> None:
         "window": [220, 340],
         "shape": list(data.shape),
         "input_dtype": str(data.dtype),
+        "output_dtype": str(result.registered.dtype),
         "optimizer": {
             "max_iterations": 100,
             "learning_rate": 0.1,
             "intensity_scaling": "db",
-            "sampling_dtype": "float32",
+            "fitting_sampling_dtype": "float32",
             "geometry_and_state_dtype": "float64",
             "ncc_dtype": "float64",
         },

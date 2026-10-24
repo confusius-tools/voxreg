@@ -124,6 +124,7 @@ def test_explicit_fixed_and_low_overlap(recording_factory):
         {"learning_rate": np.nan},
         {"device": "invalid"},
         {"intensity_scaling": "invalid"},
+        {"interpolation": "cubic"},
     ],
 )
 def test_invalid_options(recording_factory, option):
@@ -155,8 +156,8 @@ def test_invalid_geometry_constants_and_dtypes(recording_factory):
             data.copy(data=np.zeros_like(data.values)),
             fixed=data.isel(time=0, drop=True),
         )
-    with pytest.raises(TypeError, match="floating"):
-        register_rigid(data.astype(np.int32))
+    with pytest.raises(TypeError, match="real integer or floating"):
+        register_rigid(data.astype(bool))
     with pytest.raises(ValueError, match="time"):
         register_rigid(data.isel(time=0, drop=True))
     volume = create_voxeldata(
