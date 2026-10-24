@@ -13,7 +13,9 @@ from voxreg import position_to_world, register_rigid, rigid
 def prescribed_translation(monkeypatch):
     """Exercise output sampling with a known non-integer physical pull."""
 
-    def optimize(images, fixed, plane, reference, max_iterations, learning_rate):
+    def optimize(
+        images, fixed, plane, reference, max_iterations, learning_rate, **convergence
+    ):
         lattice = torch.linalg.inv(plane.inverse_lattice)
         pixel_shift = lattice.new_tensor([0.271828, -0.314159])
         parameters = lattice.new_zeros((len(images), 3))

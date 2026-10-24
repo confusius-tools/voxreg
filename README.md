@@ -57,9 +57,9 @@ recording = voxreg.create_voxeldata(
 )
 
 result = voxreg.register_rigid(recording, device="cuda", batch_size=32)
-registered = result.registered     # VoxelData, original intensities and dtype.
-valid = result.valid               # VoxelData, boolean sample-support mask.
-matrices = result.transforms       # (time, world_out, world_in), float64.
+registered = result.registered  # VoxelData, original intensities and dtype.
+valid = result.valid  # VoxelData, boolean sample-support mask.
+matrices = result.transforms  # (time, world_out, world_in), float64.
 print(result.diagnostics)
 ```
 
@@ -69,6 +69,32 @@ grid is also accepted. Defaults are 100 iterations, learning rate 0.1 in scaled
 physical parameters, and dB fitting intensities. Use `intensity_scaling="none"`
 for already-prepared fitting intensities or signed integer images. dB mode
 requires nonnegative power.
+
+### Convergence
+
+Each frame uses the ITK v4 window convergence calculation, implemented in PyTorch:
+a normalized energy profile fitted with ITK's first-order B-spline construction.
+Defaults match ITK gradient descent's **50-value window and 1e-8 threshold**:
+
+```python
+result = register_rigid(
+    pwd,
+    convergence_window_size=50,
+    convergence_minimum_value=1e-8,
+)
+```
+
+The monitor checks before the next Adam update; stopped frames retain independent
+optimizer state and their best-valid transforms. This matches the convergence
+calculation, not ITK's optimizer or necessarily its final transforms. A larger
+threshold permits earlier stopping; it needs quality validation for your data.
+Set `convergence_window_size=max_iterations + 1` for a fixed-budget control.
+
+History stays on the selected device, without host reads inside the iteration
+loop. Frozen frames remain in fixed-shape batches until the budget ends, so fewer
+updates **do not yet imply less wall time**. Reference comparisons, measured
+cost and the overly aggressive 10-value trial are documented in
+[research/convergence/README.md](research/convergence/README.md).
 
 ### Image dtype and final interpolation
 
@@ -151,6 +177,7 @@ A callback overrides the built-in display and receives
 ```python
 def report_progress(completed, total):
     print(f"Registered {completed:,}/{total:,} frames")
+
 
 result = voxreg.register_rigid(pwd, progress=report_progress)
 ```
@@ -261,7 +288,8 @@ are unchanged; only dense coordinate evaluation was reorganized.
   padding from downstream analyses.
 - Per-frame status distinguishes convergence, iteration limit, invalid metric,
   insufficient overlap and the fixed reference. An iteration limit is **not** a
-  convergence claim. The real recording currently reaches the 100-step limit.
+  convergence claim. With the conservative ITK defaults, 113 of 119 moving frames
+  in the checked real window still reach the 100-step limit.
 - Fitting interpolation is float32; physical geometry, optimizer state, NCC
   statistics and world matrices are float64 for stability. Final interpolation
   preserves original image precision as described above. Cross-device transforms

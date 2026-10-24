@@ -90,7 +90,9 @@ def fit32_optimizer(output):
     )
     original = rigid._optimize
 
-    def optimize(images, fixed, plane, reference, max_iterations, learning_rate):
+    def optimize(
+        images, fixed, plane, reference, max_iterations, learning_rate, **convergence
+    ):
         fit_plane = replace(
             plane,
             **{
@@ -101,7 +103,13 @@ def fit32_optimizer(output):
         )
         with patch.object(rigid, "global_ncc", ncc):
             parameters, steps, status = original(
-                images, fixed, fit_plane, reference, max_iterations, learning_rate
+                images,
+                fixed,
+                fit_plane,
+                reference,
+                max_iterations,
+                learning_rate,
+                **convergence,
             )
         return parameters.to(plane.parameter_scale.dtype), steps, status
 
@@ -271,7 +279,11 @@ def main():
                 )
                 return matrices, steps, None
             result = register_rigid(
-                data, batch_size=args.batch_size, device=args.device, progress=False
+                data,
+                batch_size=args.batch_size,
+                device=args.device,
+                progress=False,
+                convergence_window_size=101,
             )
             return (
                 result.transforms.values,

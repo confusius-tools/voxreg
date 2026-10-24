@@ -4,8 +4,9 @@ Status: eager rigid implementation available, with synthetic CPU/CUDA tests and
 real-notebook quality comparison. Isolated ITK/FireANTs time/memory comparisons are
 available in [BENCHMARK.md](BENCHMARK.md). [PERFORMANCE.md](PERFORMANCE.md) identifies
 the dense-grid bottleneck that motivated the production scalar-affine sampler.
-Fresh production time/memory comparisons validate the rewrite; real-data
-convergence calibration remains pending.
+Fresh production time/memory comparisons validate the sampler rewrite. The
+ITK-style PyTorch convergence monitor is now reference-tested; broader real-data
+threshold calibration remains pending. See [research/convergence/README.md](research/convergence/README.md).
 See [VALIDATION.md](VALIDATION.md).
 
 ## 1. Deliverable and stop condition
@@ -242,12 +243,12 @@ recording = voxreg.create_voxeldata(
 
 result = voxreg.register_rigid(
     recording,
-    fixed=None,                 # First frame; explicit fixed images use the same grid.
-    intensity_scaling="db",     # Fitting only; output retains original intensities.
+    fixed=None,  # First frame; explicit fixed images use the same grid.
+    intensity_scaling="db",  # Fitting only; output retains original intensities.
     batch_size=32,
     max_iterations=100,
-    learning_rate=0.1,           # Proposed scaled-parameter rate, not ITK's rate.
-    device="cuda",              # CPU also supported; no automatic device switch.
+    learning_rate=0.1,  # Proposed scaled-parameter rate, not ITK's rate.
+    device="cuda",  # CPU also supported; no automatic device switch.
 )
 ```
 

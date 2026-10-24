@@ -20,13 +20,34 @@ unchanged. This is a geometry/integration check, not a full-recording quality ga
 
 `uv sync` now includes ConfUSIus's larger dependency tree; the tested environment
 uses ConfUSIus 0.8.0 and xarray 2026.9.0. Numerical synthetic, dtype and registration
-gates are unchanged; **144 tests pass**. Batch progress tests cover CPU/CUDA,
+gates are unchanged; **165 tests pass**. Batch progress tests cover CPU/CUDA,
 partial/oversized batches, failed/reference frames, default Rich rendering, silent
 modes, callback overrides, errors and display cleanup. Outputs/diagnostics remain
 identical and CUDA synchronization counts match quiet calls. Timing/profiling
 harnesses explicitly disable the default display.
 The previous timing/memory reports below describe the pre-integration environment
 and have not been retimed with this dependency stack.
+
+## ITK-style convergence
+
+The PyTorch monitor is checked on CPU/CUDA against stored C++ ITK reference
+values for windows 2/10/20/50, including constant, zero, improving, worsening,
+oscillating, plateau and random losses. Absolute tolerance is 2e-15 with relative
+1e-12; startup sentinel values match exactly. Frozen histories, per-frame
+independence, pre-update stopping and fixed-budget controls are covered. The
+existing synthetic recovery and CPU/CUDA mapping tolerances are unchanged.
+The existing freeze-stress test now explicitly uses 1e-6 to exercise convergence
+within its 400-update budget; it does not change a transform-error tolerance.
+
+Defaults follow ITK gradient descent (50/1e-8). On the existing 120-frame real
+window, transforms and registered output bytes are identical to the previous
+policy on each device. CPU/CUDA median/minimum common-support NCC differ by
+less than 4e-12. Only six moving frames
+certify convergence within 100 updates. Reporting that limitation is preferable
+to relaxing the threshold silently. Separate CPU/CUDA timings and the reference
+fixture provenance are in [research/convergence/README.md](research/convergence/README.md).
+Historical fixed-budget benchmark/profiling commands now explicitly disable the
+new monitor with a window of 101, preserving their 100-update protocol.
 
 ## Historical benchmark environment and reproducibility
 
@@ -70,7 +91,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 144 passed, including Rich progress, ConfUSIus integration, dtype/interpolation and CUDA.
+# 165 passed, including ITK-style convergence, Rich progress, dtype/interpolation and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples

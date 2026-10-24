@@ -143,6 +143,7 @@ def main():
                     batch_size=batch,
                     device=args.device,
                     progress=False,
+                    convergence_window_size=101,
                 )
 
             warm = run()

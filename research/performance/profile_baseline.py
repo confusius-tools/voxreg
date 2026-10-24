@@ -73,6 +73,7 @@ def main():
                 batch_size=args.batch,
                 device=args.device,
                 progress=False,
+                convergence_window_size=101,
             )
         return benchmark.run_fireants(raw, position, args.device, args.batch)
 

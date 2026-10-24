@@ -1,0 +1,182 @@
+{
+  "baseline_commit": "dfeeef5",
+  "protocol": "One cold and three unmonitored warm calls per fresh process. CPU eight threads/batch32; CUDA batch120. Same ConfUSIus environment. Desktop activity/unfixed clocks; noisy CPU ranges overlap. No memory pass. Frozen device batches still execute the full iteration budget.",
+  "records": {
+    "old-final-cpu-32": {
+      "label": "old-final",
+      "device": "cpu",
+      "batch_size": 32,
+      "cold_seconds": 3.5663804189971415,
+      "warm_seconds": [
+        2.9582635529950494,
+        3.0320391040004324,
+        2.9145035600085976
+      ],
+      "options": {},
+      "iteration_percentiles_0_50_100": [
+        100.0,
+        100.0,
+        100.0
+      ],
+      "statuses": {
+        "max_iterations": 119
+      },
+      "median_seconds": 2.9582635529950494
+    },
+    "old-final-cuda-120": {
+      "label": "old-final",
+      "device": "cuda",
+      "batch_size": 120,
+      "cold_seconds": 1.08884214500722,
+      "warm_seconds": [
+        0.41307415600749664,
+        0.40731801999208983,
+        0.398261468988494
+      ],
+      "options": {},
+      "iteration_percentiles_0_50_100": [
+        100.0,
+        100.0,
+        100.0
+      ],
+      "statuses": {
+        "max_iterations": 119
+      },
+      "median_seconds": 0.40731801999208983
+    },
+    "final-cpu-32": {
+      "label": "final",
+      "device": "cpu",
+      "batch_size": 32,
+      "cold_seconds": 4.156805713006179,
+      "warm_seconds": [
+        3.7696095569990575,
+        3.26715068599151,
+        2.8232067749922862
+      ],
+      "options": {},
+      "iteration_percentiles_0_50_100": [
+        51.0,
+        100.0,
+        100.0
+      ],
+      "statuses": {
+        "converged": 6,
+        "max_iterations": 113
+      },
+      "median_seconds": 3.26715068599151
+    },
+    "final-cuda-120": {
+      "label": "final",
+      "device": "cuda",
+      "batch_size": 120,
+      "cold_seconds": 1.0661131009983364,
+      "warm_seconds": [
+        0.4228178420016775,
+        0.4601802989927819,
+        0.4230288569960976
+      ],
+      "options": {},
+      "iteration_percentiles_0_50_100": [
+        51.0,
+        100.0,
+        100.0
+      ],
+      "statuses": {
+        "converged": 6,
+        "max_iterations": 113
+      },
+      "median_seconds": 0.4230288569960976
+    },
+    "candidate-cuda-120": {
+      "label": "candidate",
+      "device": "cuda",
+      "batch_size": 120,
+      "cold_seconds": 0.6123487570002908,
+      "warm_seconds": [
+        0.23166715899424162,
+        0.23050106699520256,
+        0.2233836740051629
+      ],
+      "iteration_percentiles_0_50_100": [
+        10.0,
+        14.0,
+        46.0
+      ],
+      "statuses": {
+        "converged": 119
+      },
+      "median_seconds": 0.23050106699520256
+    },
+    "window20-cuda-120": {
+      "label": "window20",
+      "device": "cuda",
+      "batch_size": 120,
+      "cold_seconds": 0.6403977400041185,
+      "warm_seconds": [
+        0.25311907300783787,
+        0.25140298999031074,
+        0.25262723000196274
+      ],
+      "options": {
+        "convergence_window_size": 20,
+        "convergence_minimum_value": 1e-06
+      },
+      "iteration_percentiles_0_50_100": [
+        23.0,
+        54.0,
+        69.0
+      ],
+      "statuses": {
+        "converged": 119
+      },
+      "median_seconds": 0.25262723000196274
+    }
+  },
+  "joint_support_quality": {
+    "old-final-cpu-32": {
+      "median_ncc2": 0.9611917253349206,
+      "min_ncc2": 0.9175761688447941,
+      "common_fraction_median": 0.9833286830357143
+    },
+    "final-cpu-32": {
+      "median_ncc2": 0.9611917253349206,
+      "min_ncc2": 0.9175761688447941,
+      "common_fraction_median": 0.9833286830357143
+    },
+    "final-cuda-120": {
+      "median_ncc2": 0.9611917253312166,
+      "min_ncc2": 0.9175761688426662,
+      "common_fraction_median": 0.9833286830357143
+    },
+    "candidate-cuda-120": {
+      "median_ncc2": 0.9606103016745258,
+      "min_ncc2": 0.9153029389233507,
+      "common_fraction_median": 0.9833286830357143
+    },
+    "window20-cuda-120": {
+      "median_ncc2": 0.9611917253312166,
+      "min_ncc2": 0.9175723660957779,
+      "common_fraction_median": 0.9833286830357143
+    }
+  },
+  "fitting_source_sha256": {
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/rigid.py": "be171e4fceae2d901e6d77f10679b4a1bc5b44f20f3a62cbceb5392ea7dd8c65"
+  },
+  "limits": [
+    "Single real 120-frame window; neither NCC nor ITK agreement is biological truth.",
+    "Ten-value trial used 1e-6; twenty-value trial used 1e-6; final defaults are 50/1e-8.",
+    "Do not attribute CPU timing changes to convergence under the observed load."
+  ],
+  "same_device_before_after": {
+    "cpu": {
+      "transforms": true,
+      "registered": true
+    },
+    "cuda": {
+      "transforms": true,
+      "registered": true
+    }
+  }
+}

@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 3.16)
+project(voxreg_convergence_oracle LANGUAGES C CXX)
+find_package(ITK REQUIRED COMPONENTS ITKOptimizersv4)
+include(${ITK_USE_FILE})
+add_executable(convergence_oracle oracle.cxx)
+# Optional algorithm-header override when using a different local core SDK.
+if(ITK_CONVERGENCE_HEADERS)
+  target_include_directories(convergence_oracle BEFORE PRIVATE ${ITK_CONVERGENCE_HEADERS})
+endif()
+target_link_libraries(convergence_oracle PRIVATE ${ITK_LIBRARIES})

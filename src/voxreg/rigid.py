@@ -10,6 +10,7 @@ import torch
 import xarray as xr
 from confusius._utils.progress import progress_bar
 
+from voxreg.convergence import WindowConvergence
 from voxreg.geometry import VOXEL_DIMS, validate_voxeldata
 from voxreg.sampling import Plane, global_ncc, make_plane, sample_rigid, world_matrices
 
@@ -44,6 +45,8 @@ def _optimize(
     reference: torch.Tensor,
     max_iterations: int,
     learning_rate: float,
+    convergence_window_size: int = 50,
+    convergence_minimum_value: float = 1e-8,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run masked batched Adam without host reads in the iteration loop.
 
@@ -61,6 +64,10 @@ def _optimize(
         Maximum number of parameter updates.
     learning_rate : float
         Step size in physically scaled parameters.
+    convergence_window_size : int
+        ITK energy-profile window; larger than the iteration budget disables it.
+    convergence_minimum_value : float
+        Stop when the normalized improvement trend is at or below this threshold.
 
     Returns
     -------
@@ -77,7 +84,11 @@ def _optimize(
     best_loss = u.new_full((b,), torch.inf)
     moment, variance = torch.zeros_like(u), torch.zeros_like(u)
     steps = torch.zeros(b, dtype=torch.int64, device=images.device)
-    stable = torch.zeros_like(steps)
+    monitor = (
+        WindowConvergence(b, convergence_window_size, images.device)
+        if convergence_window_size <= max_iterations
+        else None
+    )
     constant = images.amax(dim=(1, 2)) == images.amin(dim=(1, 2))
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
     for _ in range(max_iterations):
@@ -99,6 +110,12 @@ def _optimize(
                 active & ~torch.isfinite(gradient).all(dim=1), 3, status
             )
             active = status == 0
+            if monitor is not None:
+                value = monitor.update(loss, active)
+                status = torch.where(
+                    active & (value <= convergence_minimum_value), 1, status
+                )
+                active = status == 0
             gradient = torch.nan_to_num(gradient)
             steps = steps + active
             moment = torch.where(active[:, None], 0.9 * moment + 0.1 * gradient, moment)
@@ -112,10 +129,6 @@ def _optimize(
                 / ((variance / (1 - 0.999**clock)).sqrt() + 1e-8)
             )
             candidate = u - torch.where(active[:, None], delta, 0)
-            stable = torch.where(
-                active & (delta.abs().amax(dim=1) < 1e-4), stable + 1, 0
-            )
-            status = torch.where(active & (steps >= 20) & (stable >= 5), 1, status)
         u = candidate.detach().requires_grad_(True)
     with torch.no_grad():
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
@@ -140,6 +153,8 @@ def register_rigid(
     batch_size: int = 32,
     max_iterations: int = 100,
     learning_rate: float = 0.1,
+    convergence_window_size: int = 50,
+    convergence_minimum_value: float = 1e-8,
     device: Literal["cpu", "cuda"] = "cpu",
     progress: bool | Callable[[int, int], None] | None = True,
 ) -> RegistrationResult:
@@ -165,6 +180,12 @@ def register_rigid(
         Maximum Adam steps per frame.
     learning_rate : float, default: 0.1
         Step size in physically scaled rotation/translation parameters.
+    convergence_window_size : int, default: 50
+        ITK-style metric-history window, at least two values. A window larger
+        than max_iterations disables convergence checks for a fixed-budget run.
+    convergence_minimum_value : float, default: 1e-8
+        Stop when ITK's normalized B-spline improvement trend is at or below this
+        nonnegative threshold. This is not a raw NCC difference or parameter step.
     device : {"cpu", "cuda"}, default: "cpu"
         Explicit Torch device; unavailable CUDA is an error, not a fallback.
     progress : bool or callable, default: True
@@ -191,9 +212,11 @@ def register_rigid(
 
     Notes
     -----
-    Convergence requires five consecutive scaled parameter steps below 1e-4
-    after at least twenty updates. Each frame has independent Adam moments,
-    clock and stopping state. Physical geometry, optimizer state and NCC statistics
+    Convergence follows ITK v4's accumulated-absolute-energy normalization and
+    first-order B-spline window gradient, checked before the next Adam update.
+    Each frame has independent metric history, Adam moments, clock and stopping
+    state. Frozen frames remain in fixed-shape device batches until the iteration
+    budget ends; convergence does not introduce host reads inside the loop. Physical geometry, optimizer state and NCC statistics
     use float64 to stabilize chunk-size comparisons; fitting images use float32.
     Original float64 and integer images are resampled in float64, other images in
     float32, then restored to their original dtype. Integer results use nearest-even
@@ -243,6 +266,15 @@ def register_rigid(
         or max_iterations < 1
     ):
         raise ValueError("batch_size and max_iterations must be positive integers.")
+    if type(convergence_window_size) is not int or convergence_window_size < 2:
+        raise ValueError("convergence_window_size must be an integer of at least two.")
+    if (
+        not isinstance(convergence_minimum_value, (int, float, np.integer, np.floating))
+        or isinstance(convergence_minimum_value, bool)
+        or not np.isfinite(convergence_minimum_value)
+        or convergence_minimum_value < 0
+    ):
+        raise ValueError("convergence_minimum_value must be finite and nonnegative.")
     if not np.isfinite(learning_rate) or learning_rate <= 0:
         raise ValueError("learning_rate must be finite and positive.")
     if device not in ("cpu", "cuda") or (
@@ -330,7 +362,14 @@ def register_rigid(
             timings["upload"] += perf_counter() - start
             start = perf_counter()
             physical, steps, status = _optimize(
-                images, target_tensor, plane, reference, max_iterations, learning_rate
+                images,
+                target_tensor,
+                plane,
+                reference,
+                max_iterations,
+                learning_rate,
+                convergence_window_size=convergence_window_size,
+                convergence_minimum_value=convergence_minimum_value,
             )
             if device == "cuda":
                 torch.cuda.synchronize()

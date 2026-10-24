@@ -156,7 +156,7 @@ def test_rich_display_is_closed_on_registration_error(
 ):
     data, _, _ = recording_factory()
 
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise RuntimeError("optimizer failed")
 
     monkeypatch.setattr(rigid, "_optimize", fail)

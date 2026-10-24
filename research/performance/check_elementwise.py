@@ -60,7 +60,12 @@ def main():
 
     for device in args.devices:
         baseline = register_rigid(
-            moving, fixed=fixed, device=device, batch_size=len(moving), progress=False
+            moving,
+            fixed=fixed,
+            device=device,
+            batch_size=len(moving),
+            progress=False,
+            convergence_window_size=101,
         )
         save(f"baseline-{device}", baseline.transforms.values)
         reference = None
@@ -74,7 +79,12 @@ def main():
             with patch.object(vr, "sample_rigid", sampler):
                 start = perf_counter()
                 result = register_rigid(
-                    moving, fixed=fixed, device=device, batch_size=batch, progress=False
+                    moving,
+                    fixed=fixed,
+                    device=device,
+                    batch_size=batch,
+                    progress=False,
+                    convergence_window_size=101,
                 )
                 print(name, perf_counter() - start, flush=True)
             matrices = result.transforms.values

@@ -374,6 +374,7 @@ def worker(args) -> None:
                     device="cuda" if cuda else "cpu",
                     batch_size=batch,
                     progress=False,
+                    convergence_window_size=101,
                 )
                 return (
                     result.registered.values,
@@ -515,7 +516,7 @@ def main() -> None:
         "input": str(args.input.resolve()),
         "notes": [
             "Warm end-to-end calls on resident host inputs, including fitting preprocessing and original-power resampling/return to host; no data loading or output-file compression in the timed region.",
-            "ITK caches its immutable fixed fitting image; process workers cache inputs; scheduling and result IPC are timed. ITK uses 1 work unit per worker (8 for the explicit -t8 single-process control), global NCC, Euler2D, GD rate .1 (validated on synthetic motions; rate 1 overshot), 100 maximum iterations, 1e-6 convergence window 10. voxreg uses its default Adam rate .1 and stopping rule.",
+            "ITK caches its immutable fixed fitting image; process workers cache inputs; scheduling and result IPC are timed. ITK uses 1 work unit per worker (8 for the explicit -t8 single-process control), global NCC, Euler2D, GD rate .1 (validated on synthetic motions; rate 1 overshot), 100 maximum iterations, 1e-6 convergence window 10. voxreg uses Adam rate .1 and a convergence window of 101 to retain the fixed 100-update protocol (as for FireANTs); this is not the default early-freeze policy.",
             "Separate fresh processes for time and memory passes. RSS/PSS sampled during setup, cold and warm calls at ~20ms intervals (longer for CUDA nvidia-smi queries); sampled peaks may miss brief transients. RSS sums double-count shared pages; PSS apportions them. CUDA allocator counters are exact peaks since warmup, not full context memory; nvidia-smi is sampled process VRAM.",
             "GPU cold-call time includes CUDA setup; ITK parallel cold-call time includes worker creation/template loading. Warm timings exclude those startup costs. Check for competing workloads before running; this script does not enforce machine idleness. Normal desktop activity may affect timings.",
             "FireANTs uses native float32 2D rigid/Adam rate .01 for 100 updates, no multiresolution or scaling; a custom per-frame global squared NCC excludes invalid samples via a warped ones channel. Original-power resampling/host return and per-call image construction/upload are included. Selected optional fused-ops backend is recorded per worker.",

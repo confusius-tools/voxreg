@@ -91,10 +91,21 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
         combined.diagnostics.translation_j[2],
         atol=3e-4,
     )
-    long = register_rigid(data, intensity_scaling="none", max_iterations=400)
+    # Exercise freezing within this budget; ITK's default 1e-8 is more conservative.
+    long = register_rigid(
+        data,
+        intensity_scaling="none",
+        max_iterations=400,
+        convergence_minimum_value=1e-6,
+    )
     assert np.all(long.diagnostics.status[1:].values == "converged")
     # Continuing the chunk cannot move frames whose own optimizer has stopped.
-    longer = register_rigid(data, intensity_scaling="none", max_iterations=450)
+    longer = register_rigid(
+        data,
+        intensity_scaling="none",
+        max_iterations=450,
+        convergence_minimum_value=1e-6,
+    )
     assert_array_equal(long.transforms, longer.transforms)
     assert_array_equal(long.diagnostics.n_iterations, longer.diagnostics.n_iterations)
 
