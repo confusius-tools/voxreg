@@ -1,6 +1,10 @@
 # ITK, FireANTs and voxreg: time and memory
 
-## Current: dtype-preserving output and simpler eager NCC
+> **Dependency boundary:** the measured results below predate the temporary
+> ConfUSIus VoxelData integration. Registration math is unchanged, but the new
+> dependency/import stack has not been retimed. See [VALIDATION.md](VALIDATION.md).
+
+## Latest measured: dtype-preserving output and simpler eager NCC
 
 Current source retains image dtype and adds final-output linear/nearest sampling.
 The fitting precision policy remains unchanged: float32 images/interpolation and

@@ -15,7 +15,7 @@ from voxreg.sampling import global_ncc, make_plane, sample_rigid, world_matrices
 def test_physical_sampler_against_scipy(recording_factory, strided, sheared):
     data, _, _ = recording_factory(oblique=True, strided=strided)
     if sheared:
-        affine = data.xindexes["z"].transform.voxel_to_world.copy()
+        affine = data.xindexes["z"].voxel_to_world.copy()
         affine[:3, 1] += 0.35 * affine[:3, 2]
         data = create_voxeldata(
             data.values,

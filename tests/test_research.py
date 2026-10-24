@@ -42,7 +42,7 @@ def test_batch_check_generates_its_own_comparison(recording_factory, tmp_path, s
     np.savez(
         path,
         values=data.values,
-        voxel_to_world=data.xindexes["z"].transform.voxel_to_world,
+        voxel_to_world=data.xindexes["z"].voxel_to_world,
         **{dim: data[dim].values for dim in data.dims},
     )
     output = tmp_path / "results"

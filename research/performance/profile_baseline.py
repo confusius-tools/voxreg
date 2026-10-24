@@ -68,7 +68,11 @@ def main():
     def run():
         if args.backend == "voxreg":
             return register_rigid(
-                moving, fixed=fixed, batch_size=args.batch, device=args.device
+                moving,
+                fixed=fixed,
+                batch_size=args.batch,
+                device=args.device,
+                progress=False,
             )
         return benchmark.run_fireants(raw, position, args.device, args.batch)
 

@@ -32,9 +32,9 @@ def recording_factory():
         affine[:3, :3] = orientation @ np.diag([0.5, 0.2, 0.12])
         affine[:3, 3] = [104.0, -73.0, 29.0]
         coords = {
-            "k": np.array([7.0]),
-            "j": np.arange(h, dtype=float),
-            "i": np.arange(w, dtype=float),
+            "k": np.array([7]),
+            "j": np.arange(h),
+            "i": np.arange(w),
         }
         if strided:
             coords["j"] = 5 - 2 * coords["j"]

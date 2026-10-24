@@ -138,7 +138,11 @@ def main():
 
             def run():
                 return register_rigid(
-                    moving, fixed=fixed, batch_size=batch, device=args.device
+                    moving,
+                    fixed=fixed,
+                    batch_size=batch,
+                    device=args.device,
+                    progress=False,
                 )
 
             warm = run()

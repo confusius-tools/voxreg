@@ -332,7 +332,9 @@ def main() -> None:
     elapsed = []
     for _ in range(args.repeats):
         start = perf_counter()
-        result = register_rigid(data, device=args.device, batch_size=args.batch_size)
+        result = register_rigid(
+            data, device=args.device, batch_size=args.batch_size, progress=False
+        )
         elapsed.append(perf_counter() - start)
     args.output.mkdir(parents=True, exist_ok=True)
     reference = None

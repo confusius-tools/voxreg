@@ -235,7 +235,7 @@ def main():
                 )
                 return matrices, steps, None
             result = register_rigid(
-                data, batch_size=args.batch_size, device=args.device
+                data, batch_size=args.batch_size, device=args.device, progress=False
             )
             return (
                 result.transforms.values,

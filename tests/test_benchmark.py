@@ -25,7 +25,7 @@ def test_direct_itk_recovers_known_motion(recording_factory, tmp_path):
     np.savez(
         path,
         values=data.values,
-        voxel_to_world=data.xindexes["z"].transform.voxel_to_world,
+        voxel_to_world=data.xindexes["z"].voxel_to_world,
         **{dim: data[dim].values for dim in data.dims},
     )
     benchmark.initialize_itk(str(path))

@@ -5,7 +5,30 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented recording only; this is not a
 general-purpose registration library.
 
-## Environment and reproducibility
+## Temporary ConfUSIus VoxelData integration
+
+The duplicated voxel-to-world classes have been removed. ConfUSIus is now a
+runtime dependency (`confusius>=0.8.0`, installed from the released package). Direct ConfUSIus
+constructor inputs and voxreg's registered/valid outputs are checked with both
+libraries' validators, preserving geometry, coordinate metadata and reference
+identity. Native voxel indices now follow ConfUSIus's integer-coordinate contract.
+
+The user's ALD001 ref24 run-2 NIfTI was loaded with `cf.load(...).compute()` for a
+four-frame, 100-iteration smoke check on CPU and CUDA, without any conversion.
+Both output arrays validate as ConfUSIus VoxelData; the input and reference are
+unchanged. This is a geometry/integration check, not a full-recording quality gate.
+
+`uv sync` now includes ConfUSIus's larger dependency tree; the tested environment
+uses ConfUSIus 0.8.0 and xarray 2026.9.0. Numerical synthetic, dtype and registration
+gates are unchanged; **144 tests pass**. Batch progress tests cover CPU/CUDA,
+partial/oversized batches, failed/reference frames, default Rich rendering, silent
+modes, callback overrides, errors and display cleanup. Outputs/diagnostics remain
+identical and CUDA synchronization counts match quiet calls. Timing/profiling
+harnesses explicitly disable the default display.
+The previous timing/memory reports below describe the pre-integration environment
+and have not been retimed with this dependency stack.
+
+## Historical benchmark environment and reproducibility
 
 - Python 3.14.8, NumPy 2.5.4, xarray 2026.9.0.
 - PyTorch 2.14.1+cu130, RTX 5080 Laptop GPU, Linux.
@@ -47,7 +70,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 118 passed, including dtype/interpolation, CUDA, geometry, gradients and research CLI checks.
+# 144 passed, including Rich progress, ConfUSIus integration, dtype/interpolation and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples
@@ -145,7 +168,7 @@ time t, and ends with zero. It is not a sum of Euler-angle derivatives.
    over ConfUSIus's full public pipeline, which has not been cleanly retimed.
    The notebook/reference exporters still default to quality-only mode.
 3. **Profiling/optimization:** the production scalar-affine sampler removes dense
-   grid GEMMs while retaining float64 geometry/state/NCC. All 118 tests pass,
+   grid GEMMs while retaining float64 geometry/state/NCC. All 144 tests pass,
    including expanded sheared geometry, native support tolerance and CUDA batch
    checks. Real recording batch sizes 1/32/120 differ by at most 6.95e-9 pixels RMS
    on CUDA; same-device mapping change from baseline is below 6.70e-6 pixels RMS.

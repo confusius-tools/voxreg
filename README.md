@@ -1,7 +1,7 @@
 # voxreg
 
-A standalone proof of concept for **batched physical-space rigid registration**
-using PyTorch and xarray-based VoxelData. No ConfUSIus runtime dependency.
+A proof of concept for **batched physical-space rigid registration** using
+PyTorch and ConfUSIus's xarray-based VoxelData implementation.
 
 The initial engine corrects in-plane rotation and translation in single-slice
 recordings with dimensions `(time, k=1, j, i)`. CPU and CUDA are supported. This
@@ -13,7 +13,7 @@ See [DESIGN.md](DESIGN.md) for conventions and scope, and
 
 ## Install and test
 
-Requires Python **3.14**. CUDA execution has been checked on Linux with an RTX
+Requires Python **3.14** (`>=3.14,<3.15`, matching the temporary ConfUSIus dependency). CUDA execution has been checked on Linux with an RTX
 5080 Laptop GPU. The default PyTorch distribution includes large CUDA runtime
 packages; a CPU-only package source is not configured here.
 
@@ -28,10 +28,17 @@ uv sync --extra examples
 uv run --extra examples pytest
 ```
 
-The CUDA test runs when CUDA is available and otherwise skips. Examples use
-Matplotlib, nibabel and SciPy; the engine itself depends only on NumPy, xarray
-and PyTorch. ITK and a pinned upstream FireANTs archive are development-only
-comparison dependencies; `uv sync --no-dev` keeps both out of a runtime-only environment.
+The CUDA test runs when CUDA is available and otherwise skips. The registration
+engine uses NumPy, xarray and PyTorch, with **ConfUSIus temporarily required for
+VoxelData** (`confusius>=0.8.0`). `uv sync` installs the released package; no
+sibling checkout is required. ConfUSIus brings its full dependency stack,
+including ITK/napari and Rich. The NumPy minimum matches ConfUSIus (2.3.4) to
+keep its platform dependency constraints resolvable; this Linux environment
+uses NumPy 2.5.4 and xarray 2026.9.0.
+
+FireANTs remains a pinned development-only comparison dependency. Matplotlib,
+nibabel and SciPy are listed in the `examples` extra, although ConfUSIus also
+installs them transitively. No registration is delegated to ConfUSIus or ITK.
 
 ## Use
 
@@ -100,11 +107,61 @@ native coordinates and a lazy `VoxelToWorldIndex`. Use
 needed. Assigning new native coordinates without rebuilding the world index is
 an error, not a supported way to relocate an image.
 
-The index is an independent implementation of the VoxelData model. It is **not**
-class-identical to ConfUSIus's private index. Exchange arrays plus geometry at an
-I/O boundary, or use the NIfTI example; do not assume the two index classes are
-interchangeable. World-label lookup is not implemented; slice native `k/j/i`
-coordinates instead.
+### Using ConfUSIus VoxelData directly
+
+There is now one index implementation: ConfUSIus's. No conversion is needed:
+
+```python
+import confusius as cf
+import voxreg
+
+pwd = cf.load(path).compute()
+result = voxreg.register_rigid(pwd, device="cuda", batch_size=120)
+```
+
+Inputs and registered/valid outputs use the same geometry class, including
+ConfUSIus's world-coordinate lookup. Voxreg still enforces its registration subset:
+NumPy-backed arrays, integer native voxel indices, uniform spatial steps, mm,
+identical grids and a single slice. It does not modify source values or geometry.
+Start with `pwd.isel(time=slice(0, 120))` before processing a long recording.
+The default device is CPU; select CUDA explicitly when available.
+
+`voxreg.create_voxeldata(..., coords=...)` remains a thin compatibility constructor
+that attaches ConfUSIus's index; it does not implement another index/transform.
+Use `cf.create_voxeldata` for the full acquisition-metadata constructor. Existing
+floating native-coordinate arrays must use integer voxel indices; no rounding or
+coordinate rebasing is performed automatically. Restart an existing Python kernel
+after `uv sync` to discard the previous duplicated index implementation.
+
+### CPU and CUDA progress
+
+**Rich progress is enabled by default** on both CPU and CUDA, reusing
+ConfUSIus's progress-bar style: percentage, frame counts, elapsed time and ETA.
+No callback is needed:
+
+```python
+result = voxreg.register_rigid(pwd, device="cuda", batch_size=120)
+# Quiet execution: progress=False (or None).
+result = voxreg.register_rigid(pwd, device="cpu", progress=False)
+```
+
+A callback overrides the built-in display and receives
+`(completed_frames, total_frames)` after each completed batch:
+
+```python
+def report_progress(completed, total):
+    print(f"Registered {completed:,}/{total:,} frames")
+
+result = voxreg.register_rigid(pwd, progress=report_progress)
+```
+
+Progress counts processed frames, including reference/failed frames, not optimizer
+updates. Updates happen after the existing CPU downloads, with no additional CUDA
+synchronization. Preparation and final output assembly do not emit events; smaller
+batches give more frequent updates but may reduce throughput. Reporting updates
+are outside stage timings; callback exceptions propagate and the built-in display
+is closed on errors. Timed/profiling harnesses explicitly use `progress=False`.
+No extra dependency or per-iteration GPU polling is added.
 
 ## Reproduce the real motion-correction example
 
@@ -129,8 +186,8 @@ Artifacts stay local and are ignored by Git.
 ### Optional frozen ITK comparison
 
 The reference exporter uses **an existing ConfUSIus environment**, solely to run
-its original public registration functions. ConfUSIus is not installed into
-voxreg; ITK is now available separately as a development dependency. With the neighboring checkout layout used during development:
+its original public registration functions. ConfUSIus is also installed into
+voxreg for shared VoxelData; the reference still runs a separate numerical pipeline. With the neighboring checkout layout used during development:
 
 ```bash
 # Run with ConfUSIus's interpreter; quality export only, no timing repetitions.
@@ -138,7 +195,7 @@ uv run --directory ../../confusius-tools/confusius python \
     "$PWD/examples/freeze_itk_reference.py" "$INPUT" \
     "$PWD/artifacts/notebook/itk_reference.npz"
 
-# Back in the standalone environment: no ConfUSIus imports in this command.
+# Back in voxreg's environment: registration still uses voxreg's PyTorch engine.
 uv run --extra examples python examples/notebook_motion_correction.py \
     "$INPUT" --device cuda --output artifacts/notebook \
     --reference artifacts/notebook/itk_reference.npz
@@ -161,7 +218,7 @@ Run each configuration separately; do not infer speedups from contested timings.
 
 The motion-correction example also writes `artifacts/notebook/input.npz`. This
 neutral input artifact lets the ITK/FireANTs benchmark run entirely in voxreg's
-Python environment, without ConfUSIus:
+Python environment, without calling ConfUSIus's registration pipeline:
 
 ```bash
 # Practical subset; run only on an otherwise idle machine.

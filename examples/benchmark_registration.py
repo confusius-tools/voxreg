@@ -370,7 +370,10 @@ def worker(args) -> None:
 
             def run():
                 result = register_rigid(
-                    data, device="cuda" if cuda else "cpu", batch_size=batch
+                    data,
+                    device="cuda" if cuda else "cpu",
+                    batch_size=batch,
+                    progress=False,
                 )
                 return (
                     result.registered.values,

@@ -1,4 +1,4 @@
-"""Independent, lazy xarray geometry for the VoxelData model."""
+"""ConfUSIus VoxelData geometry with voxreg's registration restrictions."""
 
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
@@ -6,32 +6,16 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
-from xarray.indexes import CoordinateTransform, CoordinateTransformIndex
+from confusius._utils.geometry import VoxelToWorldIndex, attach_voxel_to_world_index
 
 VOXEL_DIMS = ("k", "j", "i")
-"""Native voxel dimensions, always last in a VoxelData array."""
+"""Native voxel dimensions, always last in a supported registration array."""
 WORLD_DIMS = ("z", "y", "x")
 """World coordinate and affine component order."""
 
 
 def _check_affine(affine: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Validate and copy a homogeneous native-to-world affine.
-
-    Parameters
-    ----------
-    affine : array-like
-        Homogeneous k/j/i to z/y/x affine.
-
-    Returns
-    -------
-    matrix : (4, 4) numpy.ndarray
-        Read-only float64 affine.
-
-    Raises
-    ------
-    ValueError
-        If the affine is nonfinite, singular or not homogeneous.
-    """
+    """Check the finite, nonsingular 3D affine required by the rigid sampler."""
     matrix = np.array(affine, dtype=np.float64, copy=True)
     if matrix.shape != (4, 4) or not np.isfinite(matrix).all():
         raise ValueError("voxel_to_world must be a finite (4, 4) affine.")
@@ -43,172 +27,6 @@ def _check_affine(affine: npt.ArrayLike) -> npt.NDArray[np.float64]:
     return matrix
 
 
-class VoxelToWorldTransform(CoordinateTransform):
-    """Lazily map array positions through native coordinates into world space.
-
-    Parameters
-    ----------
-    coordinates : mapping
-        One-dimensional native k/j/i coordinate arrays.
-    voxel_to_world : array-like
-        Homogeneous k/j/i to z/y/x affine.
-    units : str, default: "mm"
-        Shared spatial unit.
-    """
-
-    def __init__(
-        self,
-        coordinates: Mapping[str, npt.ArrayLike],
-        voxel_to_world: npt.ArrayLike,
-        units: str = "mm",
-    ) -> None:
-        self.coordinates = {
-            dim: np.array(coordinates[dim], dtype=float, copy=True)
-            for dim in VOXEL_DIMS
-        }
-        for coordinate in self.coordinates.values():
-            coordinate.setflags(write=False)
-        self.voxel_to_world = _check_affine(voxel_to_world)
-        self.units = units
-        super().__init__(
-            WORLD_DIMS, {dim: len(self.coordinates[dim]) for dim in VOXEL_DIMS}
-        )
-
-    def forward(self, dim_positions: dict[str, Any]) -> dict[str, Any]:
-        """Derive world coordinates at integer array positions.
-
-        Parameters
-        ----------
-        dim_positions : dict
-            Broadcastable positional k/j/i indexers.
-
-        Returns
-        -------
-        coordinates : dict
-            World z/y/x coordinate values.
-        """
-        native = np.broadcast_arrays(
-            *[self.coordinates[dim][dim_positions[dim]] for dim in VOXEL_DIMS]
-        )
-        return {
-            world: self.voxel_to_world[row, 3]
-            + sum(
-                self.voxel_to_world[row, column] * value
-                for column, value in enumerate(native)
-            )
-            for row, world in enumerate(WORLD_DIMS)
-        }
-
-    def equals(self, other: CoordinateTransform, **kwargs: Any) -> bool:
-        """Compare geometry without generating world-coordinate meshes.
-
-        Parameters
-        ----------
-        other : xarray.indexes.CoordinateTransform
-            Transform to compare.
-        **kwargs : object
-            Xarray alignment options; all spatial geometry is compared.
-
-        Returns
-        -------
-        equal : bool
-            Whether the native coordinates, affine and units agree exactly.
-        """
-        return (
-            isinstance(other, VoxelToWorldTransform)
-            and self.units == other.units
-            and np.array_equal(self.voxel_to_world, other.voxel_to_world)
-            and all(
-                np.array_equal(self.coordinates[dim], other.coordinates[dim])
-                for dim in VOXEL_DIMS
-            )
-        )
-
-
-class VoxelToWorldIndex(CoordinateTransformIndex):
-    """World-coordinate index retaining native geometry through spatial slicing.
-
-    Parameters
-    ----------
-    transform : VoxelToWorldTransform
-        Lazy world transform.
-    """
-
-    transform: VoxelToWorldTransform
-
-    def create_variables(self, variables: Mapping | None = None) -> dict:
-        """Create lazy world variables with spatial units.
-
-        Parameters
-        ----------
-        variables : mapping, optional
-            Existing coordinate variables whose attrs should be retained.
-
-        Returns
-        -------
-        variables : dict
-            Lazy world-coordinate variables.
-        """
-        result = super().create_variables(variables)
-        for variable in result.values():
-            variable.attrs["units"] = self.transform.units
-        return result
-
-    def isel(self, indexers: Mapping) -> VoxelToWorldIndex | None:
-        """Rebuild geometry after positional selection without reindexing voxels.
-
-        Parameters
-        ----------
-        indexers : mapping
-            Xarray spatial indexers.
-
-        Returns
-        -------
-        index : VoxelToWorldIndex, optional
-            Updated index. Removing a spatial dimension leaves the VoxelData model.
-
-        Raises
-        ------
-        ValueError
-            If a vectorized indexer would introduce new spatial dimensions.
-        """
-        coordinates = {}
-        for dim in VOXEL_DIMS:
-            indexer = indexers.get(dim, slice(None))
-            if isinstance(indexer, xr.Variable):
-                if indexer.dims != (dim,):
-                    raise ValueError("Vectorized spatial indexing is not supported.")
-                indexer = indexer.values
-            values = self.transform.coordinates[dim][indexer]
-            if np.ndim(values) == 0:
-                return None
-            coordinates[dim] = values
-        return type(self)(
-            VoxelToWorldTransform(
-                coordinates, self.transform.voxel_to_world, self.transform.units
-            )
-        )
-
-    def sel(self, labels: dict, **kwargs: Any) -> Any:
-        """Reject world-label lookup in this narrow registration prototype.
-
-        Parameters
-        ----------
-        labels : dict
-            Requested world labels.
-        **kwargs : object
-            Selection options.
-
-        Raises
-        ------
-        NotImplementedError
-            World-label lookup is outside the current API.
-        """
-        raise NotImplementedError(
-            "Select native k/j/i coordinates instead of world labels."
-        )
-
-
 def create_voxeldata(
     values: npt.ArrayLike,
     *,
@@ -218,7 +36,7 @@ def create_voxeldata(
     units: str = "mm",
     attrs: Mapping[str, Any] | None = None,
 ) -> xr.DataArray:
-    """Construct a VoxelData array with lazy physical coordinates.
+    """Construct an array using ConfUSIus's voxel-to-world index.
 
     Parameters
     ----------
@@ -227,23 +45,25 @@ def create_voxeldata(
     dims : sequence of str
         Exactly k/j/i, optionally preceded by time.
     voxel_to_world : (4, 4) array-like
-        Native k/j/i to world z/y/x affine; not an array-position affine.
+        Native k/j/i to world z/y/x affine, not an array-position affine.
     coords : mapping, optional
-        Native and time coordinates. Unspecified coordinates start at zero.
+        Integer native voxel indices and optional time labels. Unspecified
+        coordinates start at zero. Coordinate DataArrays retain their attrs.
     units : str, default: "mm"
-        Spatial units; this prototype accepts mm only.
+        Spatial units; registration currently accepts mm only.
     attrs : mapping, optional
-        Intensity and recording metadata, not another geometry definition.
+        Intensity and recording metadata.
 
     Returns
     -------
     data : xarray.DataArray
-        Data with an independent VoxelToWorldIndex on z/y/x.
+        Array with the same index implementation as ConfUSIus-loaded VoxelData.
 
-    Raises
-    ------
-    ValueError
-        If dimensions, units, geometry or coordinates are invalid.
+    Notes
+    -----
+    This compatibility constructor keeps voxreg's ``coords=`` API. For full
+    acquisition metadata and other ConfUSIus options, use
+    ``confusius.create_voxeldata`` directly; registration accepts its output.
     """
     array = np.asarray(values)
     dims = tuple(dims)
@@ -261,29 +81,26 @@ def create_voxeldata(
     data = xr.DataArray(
         array, dims=dims, coords=dimension_coords, attrs=dict(attrs or {})
     )
-    transform = VoxelToWorldTransform(
-        {dim: data.coords[dim].values for dim in VOXEL_DIMS}, voxel_to_world, units
-    )
-    index = VoxelToWorldIndex(transform)
-    data = data.assign_coords(xr.Coordinates.from_xindex(index))
+    data = attach_voxel_to_world_index(data, _check_affine(voxel_to_world), units=units)
     validate_voxeldata(data)
     return data
 
 
 def validate_voxeldata(data: xr.DataArray) -> None:
-    """Check the independent VoxelData structure and uniform native coordinates.
+    """Check the ConfUSIus geometry subset supported by registration.
 
     Parameters
     ----------
     data : xarray.DataArray
-        Array to validate; both intensity images and boolean masks are accepted.
+        NumPy-backed spatial or time-dependent VoxelData. Boolean masks are also
+        accepted here; registration validates intensity types separately.
 
     Raises
     ------
     TypeError
-        If the input is not a DataArray or is not NumPy-backed.
+        If the input is not a NumPy-backed DataArray or native indices are not integers.
     ValueError
-        If geometry, dimensions, units or coordinates violate the model.
+        If geometry, dimensions, units or coordinates are unsupported.
     """
     if not isinstance(data, xr.DataArray):
         raise TypeError("Expected an xarray.DataArray.")
@@ -299,21 +116,21 @@ def validate_voxeldata(data: xr.DataArray) -> None:
     if not isinstance(index, VoxelToWorldIndex) or any(
         data.xindexes.get(world) is not index for world in WORLD_DIMS
     ):
-        raise ValueError("VoxelData requires one VoxelToWorldIndex on z/y/x.")
-    transform = index.transform
-    _check_affine(transform.voxel_to_world)
+        raise ValueError("VoxelData requires ConfUSIus's VoxelToWorldIndex on z/y/x.")
+    matrix = _check_affine(index.voxel_to_world)
     for world in WORLD_DIMS:
-        if data.coords[world].attrs.get("units") != "mm" or transform.units != "mm":
+        if data.coords[world].attrs.get("units") != "mm" or index.units != "mm":
             raise ValueError("World coordinate units must be mm.")
+    coordinates = {}
     for dim in VOXEL_DIMS:
         if dim not in data.coords or data.coords[dim].dims != (dim,):
             raise ValueError(f"Missing one-dimensional {dim} coordinate.")
         values = data.coords[dim].values
-        if not np.issubdtype(values.dtype, np.number) or not np.isfinite(values).all():
-            raise ValueError(f"{dim} coordinates must be finite numeric values.")
-        if not np.array_equal(values, transform.coordinates[dim]):
+        if not np.issubdtype(values.dtype, np.integer):
+            raise TypeError(f"{dim} coordinates must be integer native voxel indices.")
+        if int(values.min()) < -(2**63) or int(values.max()) > 2**63 - 1:
             raise ValueError(
-                f"{dim} coordinates disagree with the world index; rebuild VoxelData after assigning coordinates."
+                f"{dim} coordinates must fit ConfUSIus's signed int64 indices."
             )
         if len(values) > 1:
             steps = np.diff(values.astype(float))
@@ -321,6 +138,14 @@ def validate_voxeldata(data: xr.DataArray) -> None:
                 raise ValueError(
                     f"{dim} coordinates must be uniformly spaced and strictly monotonic."
                 )
+        coordinates[dim] = values
+    # Detect coordinate reassignment without inspecting ConfUSIus's transform internals.
+    expected = VoxelToWorldIndex.from_affine(coordinates, matrix, units=index.units)
+    if not index.equals(expected):
+        raise ValueError(
+            "Native coordinates disagree with the world index; rebuild VoxelData "
+            "after assigning coordinates."
+        )
 
 
 def position_to_world(data: xr.DataArray) -> npt.NDArray[np.float64]:
@@ -329,7 +154,7 @@ def position_to_world(data: xr.DataArray) -> npt.NDArray[np.float64]:
     Parameters
     ----------
     data : xarray.DataArray
-        VoxelData with uniform native coordinates.
+        VoxelData with uniform integer native coordinates.
 
     Returns
     -------
@@ -341,6 +166,8 @@ def position_to_world(data: xr.DataArray) -> npt.NDArray[np.float64]:
     for axis, dim in enumerate(VOXEL_DIMS):
         values = data.coords[dim].values
         conversion[axis, 3] = values[0]
-        conversion[axis, axis] = values[1] - values[0] if len(values) > 1 else 1.0
+        conversion[axis, axis] = (
+            int(values[1]) - int(values[0]) if len(values) > 1 else 1.0
+        )
     index = cast(VoxelToWorldIndex, data.xindexes["z"])
-    return index.transform.voxel_to_world @ conversion
+    return index.voxel_to_world @ conversion

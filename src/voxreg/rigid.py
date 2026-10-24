@@ -1,5 +1,6 @@
 """Independent per-frame rigid optimization on a shared physical voxel plane."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Literal
@@ -7,6 +8,7 @@ from typing import Literal
 import numpy as np
 import torch
 import xarray as xr
+from confusius._utils.progress import progress_bar
 
 from voxreg.geometry import VOXEL_DIMS, validate_voxeldata
 from voxreg.sampling import Plane, global_ncc, make_plane, sample_rigid, world_matrices
@@ -139,6 +141,7 @@ def register_rigid(
     max_iterations: int = 100,
     learning_rate: float = 0.1,
     device: Literal["cpu", "cuda"] = "cpu",
+    progress: bool | Callable[[int, int], None] | None = True,
 ) -> RegistrationResult:
     """Register independent single-slice frames to a shared fixed VoxelData grid.
 
@@ -164,6 +167,13 @@ def register_rigid(
         Step size in physically scaled rotation/translation parameters.
     device : {"cpu", "cuda"}, default: "cpu"
         Explicit Torch device; unavailable CUDA is an error, not a fallback.
+    progress : bool or callable, default: True
+        True displays ConfUSIus's Rich progress bar with frame counts, elapsed time
+        and ETA. False or None disables reporting. A callable overrides the bar and
+        receives ``(completed_frames, total_frames)`` after each batch's results
+        reach the CPU, on either device. Counts include reference and failed frames,
+        not optimizer updates. No preparation/final-assembly events are emitted.
+        Callback exceptions propagate; reporting updates are outside stage timings.
 
     Returns
     -------
@@ -175,7 +185,7 @@ def register_rigid(
     Raises
     ------
     TypeError
-        If intensities are not supported real NumPy-backed arrays.
+        If intensities or the progress option have unsupported types.
     ValueError
         If geometry, input values or numerical options are unsupported.
 
@@ -243,6 +253,14 @@ def register_rigid(
         raise ValueError("intensity_scaling must be none or db.")
     if interpolation not in ("linear", "nearest"):
         raise ValueError("interpolation must be linear or nearest.")
+    if (
+        progress is not None
+        and not isinstance(progress, bool)
+        and not callable(progress)
+    ):
+        raise TypeError(
+            "progress must be True, False, None, or a callable accepting (completed, total)."
+        )
     # Double physical geometry/state keeps gradient reductions stable across chunk sizes.
     plane = make_plane(fixed, device=device, dtype=torch.float64)
     raw = moving.values[:, 0]
@@ -296,55 +314,60 @@ def register_rigid(
         [],
         [],
     )
-    for first in range(0, len(raw), batch_size):
-        last = min(first + batch_size, len(raw))
-        if device == "cuda":
-            torch.cuda.synchronize()
-        start = perf_counter()
-        images = torch.tensor(fit[first:last], device=device)
-        target_tensor = torch.tensor(target, device=device)
-        reference = torch.zeros(last - first, dtype=torch.bool, device=device)
-        if implicit_fixed and first == 0:
-            reference[0] = True
-        if device == "cuda":
-            torch.cuda.synchronize()
-        timings["upload"] += perf_counter() - start
-        start = perf_counter()
-        physical, steps, status = _optimize(
-            images, target_tensor, plane, reference, max_iterations, learning_rate
-        )
-        if device == "cuda":
-            torch.cuda.synchronize()
-        timings["optimize"] += perf_counter() - start
-        start = perf_counter()
-        with torch.no_grad():
-            original = torch.tensor(
-                raw[first:last].astype(resampling_dtype, copy=False),
-                device=device,
+    with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
+        for first in range(0, len(raw), batch_size):
+            last = min(first + batch_size, len(raw))
+            if device == "cuda":
+                torch.cuda.synchronize()
+            start = perf_counter()
+            images = torch.tensor(fit[first:last], device=device)
+            target_tensor = torch.tensor(target, device=device)
+            reference = torch.zeros(last - first, dtype=torch.bool, device=device)
+            if implicit_fixed and first == 0:
+                reference[0] = True
+            if device == "cuda":
+                torch.cuda.synchronize()
+            timings["upload"] += perf_counter() - start
+            start = perf_counter()
+            physical, steps, status = _optimize(
+                images, target_tensor, plane, reference, max_iterations, learning_rate
             )
-            sampled, valid = sample_rigid(
-                original, physical, plane, interpolation=interpolation
-            )
-            fills = original.amin(dim=(1, 2))[:, None, None]
-            sampled = torch.where(valid, sampled, fills)
-            sampled = torch.where(reference[:, None, None], original, sampled)
-            valid = valid | reference[:, None, None]
-            fitted, fit_valid = sample_rigid(images, physical, plane)
-            loss, meaningful = global_ncc(fitted, target_tensor, fit_valid)
-            nonconstant = images.amax(dim=(1, 2)) > images.amin(dim=(1, 2))
-            loss = torch.where(meaningful & nonconstant, loss, torch.nan)
-            values = sampled.cpu().numpy()
-            if integer_output:
-                limits = np.iinfo(raw.dtype)
-                values = np.clip(np.rint(values), limits.min, limits.max)
-            outputs.append(values.astype(raw.dtype, copy=False))
-            masks.append(valid.cpu().numpy())
-            parameters.append(physical.cpu().numpy())
-            clocks.append(steps.cpu().numpy())
-            statuses.append(status.cpu().numpy())
-            objectives.append(loss.cpu().numpy())
-            overlaps.append(valid.float().mean(dim=(1, 2)).cpu().numpy())
-        timings["resample_download"] += perf_counter() - start
+            if device == "cuda":
+                torch.cuda.synchronize()
+            timings["optimize"] += perf_counter() - start
+            start = perf_counter()
+            with torch.no_grad():
+                original = torch.tensor(
+                    raw[first:last].astype(resampling_dtype, copy=False),
+                    device=device,
+                )
+                sampled, valid = sample_rigid(
+                    original, physical, plane, interpolation=interpolation
+                )
+                fills = original.amin(dim=(1, 2))[:, None, None]
+                sampled = torch.where(valid, sampled, fills)
+                sampled = torch.where(reference[:, None, None], original, sampled)
+                valid = valid | reference[:, None, None]
+                fitted, fit_valid = sample_rigid(images, physical, plane)
+                loss, meaningful = global_ncc(fitted, target_tensor, fit_valid)
+                nonconstant = images.amax(dim=(1, 2)) > images.amin(dim=(1, 2))
+                loss = torch.where(meaningful & nonconstant, loss, torch.nan)
+                values = sampled.cpu().numpy()
+                if integer_output:
+                    limits = np.iinfo(raw.dtype)
+                    values = np.clip(np.rint(values), limits.min, limits.max)
+                outputs.append(values.astype(raw.dtype, copy=False))
+                masks.append(valid.cpu().numpy())
+                parameters.append(physical.cpu().numpy())
+                clocks.append(steps.cpu().numpy())
+                statuses.append(status.cpu().numpy())
+                objectives.append(loss.cpu().numpy())
+                overlaps.append(valid.float().mean(dim=(1, 2)).cpu().numpy())
+            timings["resample_download"] += perf_counter() - start
+            if progress is True:
+                advance(last - first)
+            elif callable(progress):
+                progress(last, len(raw))
     params = np.concatenate(parameters)
     labels = np.array(
         [

@@ -12,8 +12,9 @@ See [VALIDATION.md](VALIDATION.md).
 
 Build a standalone PyTorch proof of concept that corrects **in-plane rigid motion
 in a single-slice recording**. Its public inputs and registered output are xarray
-DataArrays following the VoxelData model. No ConfUSIus, ITK, FireANTs, syntx or
-ANTs imports belong in the engine.
+DataArrays using ConfUSIus's VoxelData implementation. ConfUSIus is temporarily
+a runtime dependency for geometry; registration remains voxreg's PyTorch engine,
+not an ITK, FireANTs, syntx, ANTs or ConfUSIus registration call.
 
 The first milestone is complete when it:
 
@@ -45,17 +46,22 @@ Use Python **3.14**. Python 3.12 was needed for some comparison-library packages
 not for voxreg. The implementation and CUDA tests run on Python 3.14.8 with
 NumPy 2.5.4, xarray 2026.9.0 and PyTorch 2.14.1 on the current Linux machine.
 
-The engine needs only:
+The engine directly uses:
 
 - NumPy for host-side geometry and validation.
 - xarray for the public data model and labeled results.
 - PyTorch for interpolation, differentiation and batched optimization.
+- ConfUSIus >=0.8.0 for the canonical VoxelData index and Rich progress reporter.
+  This temporarily replaces the duplicated geometry implementation.
 
 Pytest, Ruff and the independent SciPy interpolation reference are development
 dependencies. Matplotlib, nibabel and SciPy are in the optional `examples` extra.
 The optional reference exporter runs with an existing ConfUSIus interpreter;
-ConfUSIus is not installed into voxreg. ITK and a pinned upstream FireANTs archive
-are development-only comparison dependencies, never engine/runtime dependencies.
+ConfUSIus is now installed into voxreg and brings its full transitive dependency
+stack, including ITK/napari. FireANTs remains development-only. Python is currently
+restricted to >=3.14,<3.15 by this integration. The released ConfUSIus package is
+installed normally; no sibling checkout is required. Historical benchmarks predate
+this dependency change.
 
 ## 3. VoxelData contract
 
@@ -73,7 +79,7 @@ For this milestone accept only:
 - Fixed image: `(k, j, i)`, with `k=1`.
 - Real, finite NumPy-backed integer or floating data up to float64. Integers must
   be exactly representable in float64 (values within [-2**53, 2**53]).
-- Uniform, strictly monotonic native spatial coordinates; nonzero offsets and
+- Integer, uniform, strictly monotonic native spatial coordinates; nonzero offsets and
   strides are supported. Spatial units must be consistently declared as mm.
 - A finite, nonsingular voxel-to-world affine and the required lazy world index.
 - Fixed and moving images with identical native coordinates and physical geometry.
@@ -84,20 +90,22 @@ reference-selection option. Time labels need not start at zero and are preserved
 A pose dimension is rejected in this first version; the general model requires
 one affine per pose, never a shared affine when pose is present.
 
-### Independent implementation, not a ConfUSIus dependency
+### Temporary shared implementation via ConfUSIus
 
-Provide a small `create_voxeldata` constructor, validator and independent xarray
-index implementation. Geometry is authoritative in the index, not duplicated in
-mutable DataArray attrs. Test that spatial slicing and reduction over time retain
-correct geometry. Do not implement world-coordinate lookup/reindexing features
-that registration does not need in the first milestone.
+Use ConfUSIus's actual `VoxelToWorldIndex`; do not duplicate its index/transform
+classes. Both `cf.load(...).compute()` and `cf.create_voxeldata(...)` feed the
+registration API directly, and registered/valid outputs retain that same model.
+Geometry stays authoritative in the index rather than mutable DataArray attrs.
 
-Following the same model does not automatically make two separately implemented
-index classes interchangeable. No class-identity compatibility with ConfUSIus's
-private index is promised. Reference-data interchange uses arrays, native
-coordinates and the affine to construct voxreg VoxelData at the boundary. A shared
-index protocol or neutral geometry package is a separate decision, not a reason
-to import ConfUSIus internals.
+Keep voxreg's existing `create_voxeldata(..., coords=...)` as a thin constructor
+that delegates index attachment to ConfUSIus. Keep only registration-specific
+validation and array-position affine conversion locally. The bridge imports
+ConfUSIus's geometry helpers in one module; changing private upstream helpers is
+therefore an explicit integration risk, covered by shared-class and regression
+tests. ConfUSIus's indexing features are inherited, not reimplemented.
+
+A future independent VoxelData package is deferred. Reverting this dependency
+migration does not require rewriting or resampling stored image arrays.
 
 ## 4. Physical geometry and transform convention
 
@@ -274,8 +282,8 @@ The example uses ITK learning rate 1.0; that value is not transplanted into Adam
 Prepare a frozen input/reference artifact outside the voxreg engine, including
 original intensities, time labels, native coordinates, affine, ITK pull matrices,
 registered outputs and exact reference settings. NIfTI reading in the standalone
-example must reconstruct VoxelData correctly; it must not sneak in a ConfUSIus
-runtime dependency. Identify the input artifact/version in the results.
+example must reconstruct VoxelData correctly using the shared index. ConfUSIus is
+now an explicit runtime dependency. Identify the input artifact/version in results.
 
 Produce:
 
@@ -340,7 +348,7 @@ assumed speed or quality advantage over batched FireANTs.
 
 ## 9. Minimal implementation order
 
-1. Add numerical/test dependencies and a small independent geometry module with
+1. Add numerical/test dependencies and a small geometry adapter with
    constructor/validation/slicing tests.
 2. Implement physical pull-grid construction and sampling, tested against known
    mappings before adding any optimizer.
