@@ -1,0 +1,34 @@
+[project]
+name = "voxreg"
+version = "0.1.0"
+description = "Batched physical-space image registration using xarray-based VoxelData."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "numpy>=2.5.4",
+    "torch>=2.14.1",
+    "xarray>=2026.9.0",
+]
+
+[project.optional-dependencies]
+examples = [
+    "matplotlib>=3.11.2",
+    "nibabel>=5.4.2",
+    "scipy>=1.18.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "fireants",
+    "itk>=5.4.7",
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+    "scipy>=1.18.1",
+]
+
+[tool.uv.sources]
+fireants = { url = "https://github.com/rohitrango/FireANTs/archive/f8a9cc259ab9113fc43bd99797000fa8fc34eb59.tar.gz" }

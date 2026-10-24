@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+
+# Local validation data and generated images.
+artifacts/
+
+# Virtual environments
+.venv
+
+# Local TLS certificates and private keys.
+*.crt
+*.key

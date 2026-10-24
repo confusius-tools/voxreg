@@ -1,0 +1,195 @@
+# Performance investigation: threads, dense grids and CUDA
+
+**Finding:** the largest identified bottleneck is generic matrix multiplication
+on dense float64 coordinate fields, including unfavorable shapes/layout and
+associated copies/backpropagation. It is not xarray overhead, and reducing
+precision is not necessary to remove it.
+
+This investigation does **not change the engine**. The faster sampler described
+below is an isolated, locally substituted prototype, not the implementation
+currently exported by `voxreg.register_rigid`.
+
+## 1. Single-thread controls
+
+Single-thread voxreg was measured in the original benchmark but omitted from the
+shortened FireANTs comparison. Fresh sequential measurements on the same complete
+120-frame recording, three warm calls and separate memory passes:
+
+| Engine | Batch | Torch threads | Median seconds |
+|---|---:|---:|---:|
+| voxreg | 1 | 1 | 9.484 |
+| voxreg | 32 | 1 | 8.823 |
+| voxreg | 32 | 8 | 3.305 |
+| voxreg | 120 | 1 | 8.683 |
+| FireANTs | 1 | 1 | 7.154 |
+| FireANTs | 32 | 1 | 2.647 |
+| FireANTs | 32 | 8 | 0.943 |
+
+Eight threads help both engines. Single threading does not resolve voxreg's
+performance gap. See `artifacts/benchmark-threads/summary.json` for full timings,
+memory and shared-support quality. These workstation measurements vary between
+sessions; do not mix them into the earlier table as if measured simultaneously.
+
+## 2. What the profiler actually shows
+
+Profiles capture **five steady optimizer iterations** after 20 waiting and two
+warmup iterations, separately from timing runs. CPU profiles use 32 moving frames;
+CUDA profiles use all 119 moving frames. Both engines optimize against the same
+first-frame reference. FireANTs uses native float32; voxreg retains its float64
+geometry/state/NCC and float32 interpolation. No optional FireANTs fused extension,
+Torch compilation or CUDA Graphs are involved.
+
+### CPU
+
+Selected inclusive forward/backward scope times over five profiled iterations:
+
+| Region | voxreg, 1 thread | FireANTs, 1 thread | voxreg, 8 threads | FireANTs, 8 threads |
+|---|---:|---:|---:|---:|
+| Sampling forward, including grid | 48.05 ms | 9.45 ms | 15.00 ms | 2.96 ms |
+| NCC forward | 21.22 ms | 6.51 ms | 3.60 ms | 1.66 ms |
+| Backward | 43.03 ms | 18.93 ms | 14.99 ms | 8.06 ms |
+
+These are instrumented scope times, not throughput benchmarks. Voxreg's hot
+operators include large multiplies, copies, matrix multiplications and divisions.
+The bilinear image sampler itself is **not** the primary explanation: FireANTs
+actually samples two channels (intensity plus validity) versus voxreg's one.
+
+`sample_rigid` first rotates every physical point with an `einsum`, adds a dense
+translation field, then multiplies the entire field by the inverse lattice.
+`mapped @ plane.inverse_lattice.T` treats `(batch, height)` as matrix batch axes.
+For CUDA batch 119 and shape 112 × 128 that becomes:
+
+```text
+[13328, 128, 2] @ [13328, 2, 2]       # forward and backward
+[1, 238, 2] @ [1, 2, 14336]          # dense rotation
+[1, 238, 14336] @ [1, 14336, 2]      # rotation-gradient reduction
+```
+
+Profiler traces also expose image-sized clones/copies around these operations.
+These are poor general-purpose GEMM workloads for a two-dimensional affine map.
+Voxreg then makes multiple full-image float64 passes for weighted NCC, its guards
+and gradients. That is extra work versus FireANTs's float32 custom loss, but the
+sampler ablation below shows that the dense-grid implementation is independently
+responsible for a substantial part of the gap.
+
+### CUDA
+
+GPU activity is counted from trace events with category `kernel`, avoiding double
+counting the CPU operator aggregates and corresponding GPU events:
+
+| Five-iteration capture | GPU kernel time sum | Kernel count |
+|---|---:|---:|
+| Current voxreg | 52.98 ms | 1,061 |
+| Native float32 FireANTs | 11.47 ms | 795 |
+| Float64 scalar-affine prototype | 8.58 ms | 1,190 |
+
+About **80%** of current voxreg's captured GPU kernel time is in float64 GEMM
+kernels. The prototype is much faster **despite launching more kernels**: avoiding
+the wrong operations matters before reducing launch count.
+
+The per-call stage timings also rule out wrapper/I/O as the main problem: in the
+matched CUDA baseline, optimization takes 1.143 s out of 1.164 s; preparation is
+about 7 ms and upload below 1 ms. Xarray/validation/upload are not useful first
+optimization targets here.
+
+## 3. Isolated sampler experiments
+
+The experiments leave Adam, per-frame guards, independent clocks, best-valid
+selection, stopping rules, NCC, output resampling and world-matrix export intact.
+They substitute only the sampler used by the public registration API.
+
+The matched ablation processes **119 moving frames with an explicitly supplied
+fixed reference**, from the same 120-frame recording. Three warm calls are timed,
+with no profiler/memory monitor running. CPU uses batch 32; CUDA uses one full
+119-frame batch. Thus these are prototype comparisons against their own local
+baseline, not a replacement for the isolated-process benchmark leaderboard.
+
+| Configuration | Current sampler | Float64 scalar-affine prototype | Speed ratio |
+|---|---:|---:|---:|
+| CPU, 1 thread | 8.824 s | 5.820 s | 1.5× |
+| CPU, 8 threads | 3.203 s | 1.524 s | 2.1× |
+| CUDA, full batch | 1.164 s | 0.232 s | 5.0× |
+
+### The change in mathematical organization
+
+Compose the tiny physical-to-normalized affine **once per frame and iteration**,
+not by applying several transforms separately to every voxel. Cache constant
+lattice/normalization factors and one-dimensional normalized coordinate axes.
+Then evaluate the two grid coordinates as broadcast scalar expressions.
+
+Writing `L` for the intrinsic physical lattice and `D` for the diagonal matrix of
+half image extents:
+
+```text
+Q = D⁻¹ L⁻¹ (R - I) L D
+c = D⁻¹ L⁻¹ t
+
+grid_x = nx + Q00*nx + Q01*ny + c0
+grid_y = ny + Q10*nx + Q11*ny + c1
+```
+
+Only the small matrices use matrix multiplication. There is no image-sized GEMM
+or `(batch × height)` batch of tiny matrices. The displacement-from-identity form
+also avoids needless identity cancellation. All geometry expressions remain
+float64; the completed grid is cast to float32 for the existing image sampler,
+just as in the current implementation. Obliquity/anisotropy/native-coordinate
+semantics remain represented by the intrinsic lattice.
+
+### Validation of that prototype
+
+- **All 43 existing tests pass** with the diagnostic sampler temporarily substituted,
+  including independent interpolation, gradient checks, synthetic recovery,
+  oblique/strided geometry, failure/convergence behavior and CPU/CUDA tests.
+- Worst real-recording mapping disagreement with the matched baseline:
+  **6.69e-6 minimum-spacing pixels RMS** across frames.
+- Real-recording batch sizes 1 versus 32 versus 119: worst RMS difference below
+  **3e-16 pixels on CPU**, **6.95e-9 pixels on CUDA**, below the unchanged 0.001-pixel
+  batch gate.
+- Independent common-support median NCC² remains **0.961167622**, indistinguishable
+  from baseline at displayed precision.
+
+### Rejected shortcut: just use float32 affine grids
+
+A standard `affine_grid` with float32 coefficients was also faster, but changed
+the worst real-frame mapping by about **0.13 pixel RMS** relative to baseline.
+Both standard affine-grid variants initially failed one tight low-level identity
+interpolation test (42/43 passed). Keeping `affine_grid` float64 helped CPU but did
+not improve CUDA. These experiments do not justify silently relaxing precision
+or weakening tests: the scalar float64 formulation is the better first candidate.
+
+## 4. What to borrow from FireANTs—and what not to copy
+
+1. **Borrow compact affine composition and efficient normalized-grid evaluation.**
+   This is the demonstrated first fix. Preserve physical float64 parameters and
+   statistics; avoid making the entire dense transform a BLAS problem.
+2. **Then fuse repeated elementwise work/reductions.** Once the GEMM bottleneck is
+   gone, NCC, coordinate evaluation and small optimizer/status kernels are the
+   next candidates for a compiled functional step. Profile that version before
+   choosing `torch.compile`, CUDA Graphs or a custom kernel. None is needed to
+   demonstrate the first improvement above.
+3. **Keep per-frame correctness policies.** Native batch Adam/convergence is not
+   automatically a substitute for independently frozen moments/clocks, overlap
+   handling and best-valid snapshots. Those policies were retained in this probe.
+4. **Do not copy FireANTs's per-iteration `loss.item()`.** It forces a CUDA-to-host
+   synchronization for its convergence monitor. Voxreg already avoids that.
+   The measured FireANTs advantage did not require a fused extension or secret
+   CUDA backend; its better-organized computation mattered more here.
+5. **Calibrate convergence separately.** ITK's median 31 updates versus voxreg's
+   100 contributes to their comparison, but cannot explain the gap to FireANTs,
+   which also takes 100 updates. Do not merely lower the iteration count to make
+   the benchmark look better.
+
+## Evidence and next action
+
+The four harnesses are tracked in [research/performance/](research/performance/README.md),
+with reproducible commands and a [compact historical snapshot](research/performance/results.json).
+Raw JSON, CPU/CUDA traces, output matrices, quality and full historical test logs
+remain local under ignored `artifacts/performance-investigation/`. Historical
+43-test counts above predate the research CLI cleanup tests. No engine source or
+dependency was changed for these probes.
+
+The next implementation should be a narrow sampler rewrite with these regression
+checks, followed by fresh-process time/**memory** benchmarking against ITK and
+FireANTs. Prototype peak memory, a compiled variant and broader datasets were not
+measured; the unchanged real-data convergence rule still reaches its iteration
+limit. Do not interpret prototype timing as an already shipped improvement.
