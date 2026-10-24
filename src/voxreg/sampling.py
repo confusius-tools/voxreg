@@ -214,10 +214,10 @@ def global_ncc(
     moved, fixed = moved.to(torch.float64), fixed.to(torch.float64)
     weights = valid.to(moved.dtype)
     count = weights.sum(dim=axes, keepdim=True).clamp_min(1)
-    x = moved - (moved * weights).sum(dim=axes, keepdim=True) / count
-    y = fixed - (fixed * weights).sum(dim=axes, keepdim=True) / count
-    vx = (x.square() * weights).sum(dim=axes)
-    vy = (y.square() * weights).sum(dim=axes)
+    x = (moved - (moved * weights).sum(dim=axes, keepdim=True) / count) * weights
+    y = (fixed - (fixed * weights).sum(dim=axes, keepdim=True) / count) * weights
+    vx = x.square().sum(dim=axes)
+    vy = y.square().sum(dim=axes)
     denominator = vx * vy
     meaningful = (
         (count[:, 0, 0] > 1)
@@ -229,7 +229,7 @@ def global_ncc(
     safe_denominator = torch.where(
         meaningful, denominator, torch.ones_like(denominator)
     )
-    loss = -(x * y * weights).sum(dim=axes).square() / safe_denominator
+    loss = -(x * y).sum(dim=axes).square() / safe_denominator
     return torch.where(meaningful, loss, torch.zeros_like(loss)), meaningful
 
 
