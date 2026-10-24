@@ -15,7 +15,13 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "research/performance"
 
 @pytest.mark.parametrize(
     "script",
-    ["affine_probe", "profile_baseline", "validate_probe", "check_elementwise"],
+    [
+        "affine_probe",
+        "profile_baseline",
+        "validate_probe",
+        "check_elementwise",
+        "cpu_ablation",
+    ],
 )
 def test_research_help_needs_no_inputs(script, tmp_path):
     result = subprocess.run(

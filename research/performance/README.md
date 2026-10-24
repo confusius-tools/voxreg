@@ -18,6 +18,26 @@ require commit `83b6dd6` or the archived-source `PYTHONPATH` recipe in BENCHMARK
 Comparing the current engine with the elementwise prototype should no longer
 reproduce the historical 5× improvement.
 
+## Current dtype/precision result
+
+[DTYPE.md](DTYPE.md) and [dtype-results.json](dtype-results.json) record the shipped
+dtype-preserving output contract, eager NCC cleanup, rejected float32 fitting
+candidates, broader real-window gates, fresh backend time/memory comparison and
+package structure review. `validate_probe.py production --fit32` and `--ncc32`
+are deliberately unqualified research variants, not public precision modes.
+
+## CPU follow-up
+
+[CPU.md](CPU.md) investigates the remaining gap at `857e792` with fresh profiles
+and precision ablations. `cpu_ablation.py` runs one variant per interpreter and
+retains checked generated source, timings and transforms.
+[cpu-results.json](cpu-results.json) is its compact snapshot. Precision-changing
+variants are diagnostics, not production optimizations; the engine is unchanged.
+[NCC.md](NCC.md) and [ncc-results.json](ncc-results.json) record the subsequent
+float64-preserving eager/compiled NCC tests, cold-cache distinctions, limitations
+and pinned FireANTs dtype checks. The same harness now accepts `--device` and
+`--batch-size` for matched CUDA follow-ups.
+
 ## Reproduce from the repository root
 
 Install the locked environment with `uv sync --extra examples`. Prepare

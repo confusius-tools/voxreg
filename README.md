@@ -39,7 +39,7 @@ comparison dependencies; `uv sync --no-dev` keeps both out of a runtime-only env
 import numpy as np
 import voxreg
 
-# values: floating-point NumPy array (time, 1, j, i).
+# values: real NumPy array (time, 1, j, i); its dtype is retained.
 # Affine rows/columns are world z/y/x and native voxel k/j/i, respectively.
 recording = voxreg.create_voxeldata(
     values,
@@ -50,17 +50,43 @@ recording = voxreg.create_voxeldata(
 )
 
 result = voxreg.register_rigid(recording, device="cuda", batch_size=32)
-registered = result.registered     # VoxelData, original intensities, float32.
+registered = result.registered     # VoxelData, original intensities and dtype.
 valid = result.valid               # VoxelData, boolean sample-support mask.
 matrices = result.transforms       # (time, world_out, world_in), float64.
 print(result.diagnostics)
 ```
 
-Registration defaults to the first frame, which is preserved exactly after the
-explicit float32 conversion. An explicit spatial-only `fixed=` image on the same
+Registration defaults to the first frame, which is preserved exactly, including
+its original dtype. An explicit spatial-only `fixed=` image on the same
 grid is also accepted. Defaults are 100 iterations, learning rate 0.1 in scaled
 physical parameters, and dB fitting intensities. Use `intensity_scaling="none"`
-for already-prepared fitting intensities. dB mode requires nonnegative power.
+for already-prepared fitting intensities or signed integer images. dB mode
+requires nonnegative power.
+
+### Image dtype and final interpolation
+
+Input arrays are never modified. Working fitting images are float32; geometry,
+Adam state, NCC and world matrices remain float64. Integer/float64 preprocessing
+runs in float64 and uses NCC's intensity-offset/scale invariance to retain
+low-contrast detail before conversion to fitting tensors.
+
+Final resampling uses the **original values**, once, independently of fitting:
+
+- Float64 images are interpolated in float64 and returned as float64—not sampled
+  in float32 and merely cast back. Float32 images stay float32; float16 output is
+  retained after float32 interpolation.
+- Integer images are interpolated in float64, rounded to nearest-even, clipped
+  to their type range and returned in their original dtype. This necessarily
+  quantizes fractional intensities. Integer values outside `[-2**53, 2**53]` are
+  rejected rather than silently losing precision on conversion.
+- `interpolation="linear"` is the default; `"nearest"` changes **final output only**.
+  Fitting always uses differentiable linear interpolation. Nearest is appropriate
+  for categorical labels, not automatically for integer-valued intensity images.
+- Boolean/complex/extended-precision floating intensity arrays are not supported.
+
+There is no public compute-precision or compiler switch. Float32 fitting and
+float32-only NCC failed the existing CPU/CUDA agreement gates; see
+[the dtype validation report](research/performance/DTYPE.md).
 
 **Transform direction:** `moving_world = matrix @ fixed_world`, using homogeneous
 **z/y/x** vectors. These are physical pull mappings, not normalized Torch grids.
@@ -122,8 +148,9 @@ The frozen reference records source hashes, resolved ITK registration settings,
 input arrays/coordinates, pull matrices and original-power registered outputs.
 The comparison uses one independent SciPy bilinear sampler on dB inputs and
 **common valid support**, not each implementation's internal optimizer score.
-The reference retains the source's float64 intensities; voxreg explicitly uses
-float32 samples with float64 NCC statistics.
+Both outputs retain the source's decoded intensity dtype. Voxreg uses float32
+working fitting images with float64 NCC statistics, then resamples the original
+float64 intensities for this NIfTI example.
 
 Timing repetitions default to **zero**. Only on an otherwise idle machine, add
 `--repeats 3` to the respective scripts. The reference exporter measures the warm
@@ -154,10 +181,10 @@ Process-parallel ITK includes scheduling and result-transfer overhead. Startup
 costs and loaded-input/warm memory baselines are recorded separately.
 
 See [BENCHMARK.md](BENCHMARK.md) for measured timings, memory, quality and caveats.
-The scalar-affine sampler is now used by the engine: matched warm timings improve
-from 1.18 to **0.23 s on full-batch CUDA** and 3.09 to **1.98 s on eight-thread CPU**.
-The fresh FireANTs controls take 0.35 s and 0.93 s respectively: CUDA is competitive,
-while CPU remains slower than native float32 FireANTs. These are not precision-
+The latest float32-input benchmark takes **0.219 s on full-batch CUDA** and
+**2.128 s on eight-thread CPU**. Fresh FireANTs controls take 0.355 s and 0.963 s
+respectively: CUDA is competitive, while CPU remains slower than native float32
+FireANTs. These are not precision-
 matched solvers or universal speedup guarantees. Comparisons use direct 2D APIs,
 not the ConfUSIus pipeline or its earlier frozen-reference optimizer configuration.
 See the report for memory, quality, source hashes and the pinned FireANTs archive.
@@ -170,7 +197,7 @@ are unchanged; only dense coordinate evaluation was reorganized.
 
 - Single-slice rigid only; no full 3D, affine, deformable or multi-pose registration.
 - Identical fixed/moving grids, uniform native coordinates, mm units and finite
-  NumPy-backed floating-point input; no masks, Dask or multiresolution.
+  NumPy-backed real input with supported dtype/range; no masks, Dask or multiresolution.
 - A frame losing more than 10% overlap is flagged and retains its best valid
   transform. Constant/invalid fitting metrics are diagnosed separately.
 - Output fill is each original frame's minimum. Use `result.valid` to exclude
@@ -178,10 +205,10 @@ are unchanged; only dense coordinate evaluation was reorganized.
 - Per-frame status distinguishes convergence, iteration limit, invalid metric,
   insufficient overlap and the fixed reference. An iteration limit is **not** a
   convergence claim. The real recording currently reaches the 100-step limit.
-- Interpolation/output are float32; physical geometry, optimizer state, NCC
-  statistics and world matrices are float64 for batch stability. This is a
-  correctness-first precision policy, not a GPU throughput optimum. Cross-device
-  results are numerically, not bitwise, equal.
+- Fitting interpolation is float32; physical geometry, optimizer state, NCC
+  statistics and world matrices are float64 for stability. Final interpolation
+  preserves original image precision as described above. Cross-device transforms
+  are numerically, not bitwise, equal; output dtype is not a transform-accuracy guarantee.
 - The lazy index builds on xarray's experimental coordinate-transform index API.
 
 No compiled engine, affine/deformable extension or compatibility layer is included.

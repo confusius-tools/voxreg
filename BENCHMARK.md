@@ -1,6 +1,55 @@
 # ITK, FireANTs and voxreg: time and memory
 
-## Production scalar-affine sampler
+## Current: dtype-preserving output and simpler eager NCC
+
+Current source retains image dtype and adds final-output linear/nearest sampling.
+The fitting precision policy remains unchanged: float32 images/interpolation and
+float64 geometry/state/NCC. Full float32 fitting and metric-only float32 failed
+existing CPU/CUDA agreement gates; no public precision/compiler switch is added.
+See [DTYPE.md](research/performance/DTYPE.md) for validation and package review,
+and [dtype-results.json](research/performance/dtype-results.json) for the compact
+snapshot, source hashes, ranges and before/after results.
+
+The fresh comparison below uses the **same neutral float32 120-frame input** as
+previous backend runs. Each case has fresh interpreters, three unmonitored warm
+calls and a separate memory pass; all phases completed sequentially. Native
+float64/int output correctness is tested separately, not claimed by these timings.
+Normal desktop activity and unfixed laptop clocks remain sources of variation.
+
+| Configuration | Median warm, s | Peak RSS, MiB | Peak PSS, MiB | Process VRAM, MiB |
+|---|---:|---:|---:|---:|
+| ITK, 1 process × 1 thread | 6.052 | 1425 | 1407 | — |
+| ITK, 1 process × 8 threads | 2.145 | 1426 | 1408 | — |
+| ITK, 8 processes × 1 thread | 1.599 | 11849 | 6821 | — |
+| voxreg CPU, batch32, 1 thread | 5.691 | 726 | 695 | — |
+| voxreg CPU, batch32, 8 threads | 2.128 | 730 | 702 | — |
+| voxreg CUDA, batch32 | 0.780 | 1549 | 1464 | 370 |
+| voxreg CUDA, batch120 | **0.219** | 1548 | 1463 | 464 |
+| FireANTs CPU, batch32, 1 thread | 3.014 | 1072 | 987 | — |
+| FireANTs CPU, batch32, 8 threads | **0.963** | 1071 | 986 | — |
+| FireANTs CUDA, batch32 | 0.840 | 1935 | 1849 | 430 |
+| FireANTs CUDA, batch120 | 0.355 | 1945 | 1859 | 510 |
+
+Host figures are sampled whole-process-tree peaks including initialization;
+process VRAM includes context. CUDA counters overlap these figures, not add to
+these figures: voxreg full-batch allocated/reserved **175.2/204 MiB**, FireANTs
+**173.5/194 MiB**. Native solver precision and optimizer policies still differ;
+these are not biological-accuracy-matched speedup guarantees.
+
+Against a fresh frozen `857e792` control, voxreg medians change:
+CPU1-thread **5.935→5.691 s**, CPU8-thread **2.458→2.128 s**, CUDA32
+**0.829→0.780 s**, CUDA120 **0.234→0.219 s**. Small CPU differences overlap across
+repetitions; interpret them as a trend, not a universal speed ratio. Full-batch
+CUDA allocation **189.2→175.2 MiB**, reservation **218→204 MiB**, process VRAM
+**478→464 MiB**. All four neutral-input cases retain bitwise-identical transforms,
+registered samples and iteration counts.
+
+Before/after and backend controls were rescored together on common support:
+median NCC² **0.961168 voxreg**, **0.961191 FireANTs**, **0.961099 ITK**.
+Raw runs are in ignored `artifacts/benchmark-dtype-baseline/` and
+`artifacts/benchmark-dtype-policy/`. This section supersedes timings below.
+
+## Historical: scalar-affine sampler checkpoint (`857e792`)
 
 The engine now uses the validated scalar-affine sampler. Float64 geometry,
 optimizer state, NCC and world transforms are retained; interpolation remains

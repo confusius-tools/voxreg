@@ -1,0 +1,714 @@
+{
+  "status": "Research only. No production precision, compiler mode or API change.",
+  "source_commit": "857e792",
+  "source_sha256": {
+    "src/voxreg/rigid.py": "70af88dfe195f1129fcc39c06773cd381e61583841322edbd37004291afead2f",
+    "src/voxreg/__init__.py": "44e0eb964c1f83f3b397bada7fe85c1c40255de06b6c116a7d35358eef36d641",
+    "src/voxreg/sampling.py": "a348c7107a897da5cd772fc9dbd53c1789dbad1edb65234cdb4abe4edce30a73",
+    "src/voxreg/geometry.py": "a3b1b123a14c5458d49285258504556e6a8e992858f3d2ea0e622542aad7bf8b"
+  },
+  "environment": {
+    "python": "3.14.8 (main, Oct  2 2026, 10:23:31) [GCC 16.2.1 20260810]",
+    "torch": "2.14.1+cu130",
+    "numpy": "2.5.4",
+    "xarray": "2026.9.0",
+    "itk": "5.4.7",
+    "fireants": "1.5.1",
+    "simpleitk": "2.5.6",
+    "hardware": {
+      "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+      "ram_mib": 31508.0546875,
+      "gpu_driver": "NVIDIA GeForce RTX 5080 Laptop GPU, 615.78.08"
+    },
+    "fireants_source": "https://github.com/rohitrango/FireANTs/archive/f8a9cc259ab9113fc43bd99797000fa8fc34eb59.tar.gz"
+  },
+  "dataset": {
+    "source_file": "sub-rat75_ses-20220523_task-openfield_acq-slice32_pwd.nii.gz",
+    "sha256": "f2d0a5e4daa10afc979b47d926af4e1ba3b2368c1384e32944ef9d3d8687e9b3",
+    "sidecar_sha256": "d582135c35ccb870d57c83630d017bac4aed266f58cf0e6a556e0ed003e3e1c7",
+    "frame_window_start_stop": [
+      220,
+      340
+    ],
+    "input_shape": [
+      120,
+      1,
+      112,
+      128
+    ],
+    "reference": "first frame",
+    "units": "mm"
+  },
+  "protocol": "Sequential fresh interpreters per variant/device/threads/batch. One first registration call then three unmonitored warm calls. Inputs loaded and VoxelData created beforehand. torch.compile wrapper construction outside first-call timer. CUDA synchronized before/after measured calls. No peak-memory pass. Clock/affinity not fixed; normal desktop remained active.",
+  "variants": {
+    "fireants-t1": {
+      "warm_seconds": [
+        2.5964227500007837,
+        2.656039551999129,
+        2.6486118879984133
+      ],
+      "first_call_seconds": 3.5161149720006506,
+      "stage_median_seconds": null,
+      "quality": {
+        "median_ncc2": 0.9612078845114175,
+        "min_ncc2": 0.917575960746816,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "fireants-t1-cuda-b120": {
+      "warm_seconds": [
+        0.32589227599964943,
+        0.37153471000056015,
+        0.3521639669997967
+      ],
+      "first_call_seconds": 1.4246275089972187,
+      "stage_median_seconds": null,
+      "quality": {
+        "median_ncc2": 0.9612078844233811,
+        "min_ncc2": 0.9175759577580525,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "fireants-t1-cuda-b32": {
+      "warm_seconds": [
+        0.8258473500027321,
+        0.8206532459953451,
+        0.8267845779992058
+      ],
+      "first_call_seconds": 1.8314089240011526,
+      "stage_median_seconds": null,
+      "quality": {
+        "median_ncc2": 0.9612078844233811,
+        "min_ncc2": 0.9175759577580525,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "fireants-t8": {
+      "warm_seconds": [
+        0.9127920600003563,
+        0.9347737610005424,
+        0.9367414480002481
+      ],
+      "first_call_seconds": 1.7467659100002493,
+      "stage_median_seconds": null,
+      "quality": {
+        "median_ncc2": 0.9612078845114175,
+        "min_ncc2": 0.917575960746816,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "voxreg-compiled-ncc-split-bounds-t1": {
+      "warm_seconds": [
+        3.3199026540023624,
+        3.1886833739990834,
+        3.3668790810042992
+      ],
+      "first_call_seconds": 4.832106132998888,
+      "stage_median_seconds": {
+        "prepare": 0.007749437005259097,
+        "upload": 0.0005069219987490214,
+        "optimize": 3.270263211998099,
+        "resample_download": 0.03872255400347058
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447939,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 5.883026850469425e-10
+    },
+    "voxreg-compiled-ncc-split-bounds-t1-cuda-b120": {
+      "warm_seconds": [
+        0.20108451600390254,
+        0.19284620899998117,
+        0.18967076699482277
+      ],
+      "first_call_seconds": 1.410668081996846,
+      "stage_median_seconds": {
+        "prepare": 0.007589443994220346,
+        "upload": 0.0007517460035160184,
+        "optimize": 0.1802402120010811,
+        "resample_download": 0.002524955998524092
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 6.9416806011450696e-09
+    },
+    "voxreg-compiled-ncc-split-bounds-t1-cuda-b32": {
+      "warm_seconds": [
+        0.7351017629989656,
+        0.7475050659995759,
+        0.6647727180024958
+      ],
+      "first_call_seconds": 1.982476992001466,
+      "stage_median_seconds": {
+        "prepare": 0.00748100000055274,
+        "upload": 0.0008569159908802249,
+        "optimize": 0.7202258370089112,
+        "resample_download": 0.003916916000889614
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 6.9416806011450696e-09
+    },
+    "voxreg-compiled-ncc-split-bounds-t8": {
+      "warm_seconds": [
+        1.387669410003582,
+        1.2542581369998516,
+        1.3905305780062918
+      ],
+      "first_call_seconds": 2.548032239996246,
+      "stage_median_seconds": {
+        "prepare": 0.010283411997079384,
+        "upload": 0.0004433149952092208,
+        "optimize": 1.353707611997379,
+        "resample_download": 0.017846870992798358
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447939,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 5.883026850469425e-10
+    },
+    "voxreg-compiled-ncc-t1": {
+      "warm_seconds": [
+        3.827980274996662,
+        3.727843822998693,
+        3.8314447500015376
+      ],
+      "first_call_seconds": 9.11623928800691,
+      "stage_median_seconds": {
+        "prepare": 0.007559646001027431,
+        "upload": 0.0005146449984749779,
+        "optimize": 3.773165914004494,
+        "resample_download": 0.04427428800408961
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447939,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 5.883026850469425e-10
+    },
+    "voxreg-compiled-ncc-t1-cuda-b120": {
+      "warm_seconds": [
+        0.20236625899997307,
+        0.19612638899707235,
+        0.1957197020019521
+      ],
+      "first_call_seconds": 1.402154588002304,
+      "stage_median_seconds": {
+        "prepare": 0.007673443004023284,
+        "upload": 0.0006100289974710904,
+        "optimize": 0.18351208599779056,
+        "resample_download": 0.0024965459961094894
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 6.9416806011450696e-09
+    },
+    "voxreg-compiled-ncc-t1-cuda-b32": {
+      "warm_seconds": [
+        0.6622057849963312,
+        0.6533167439993122,
+        0.6595900950051146
+      ],
+      "first_call_seconds": 3.179580084994086,
+      "stage_median_seconds": {
+        "prepare": 0.007449788005033042,
+        "upload": 0.0007694450032431632,
+        "optimize": 0.6404884689982282,
+        "resample_download": 0.0037931780025246553
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 6.9416806011450696e-09
+    },
+    "voxreg-compiled-ncc-t8": {
+      "warm_seconds": [
+        1.4077908089966513,
+        1.4060848880035337,
+        1.407433733002108
+      ],
+      "first_call_seconds": 9.926406133003184,
+      "stage_median_seconds": {
+        "prepare": 0.01122088500414975,
+        "upload": 0.0004239529953338206,
+        "optimize": 1.3746527300027083,
+        "resample_download": 0.017232585996680427
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447939,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 5.883026850469425e-10
+    },
+    "voxreg-masked-ncc-split-bounds-t1": {
+      "warm_seconds": [
+        4.569573100998241,
+        4.5763708320009755,
+        4.743436969998584
+      ],
+      "first_call_seconds": 5.071919301000889,
+      "stage_median_seconds": {
+        "prepare": 0.007721429996308871,
+        "upload": 0.0005279639881337062,
+        "optimize": 4.520155232996331,
+        "resample_download": 0.046243712000432424
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-masked-ncc-split-bounds-t1-cuda-b120": {
+      "warm_seconds": [
+        0.2132131179969292,
+        0.21397758199600503,
+        0.24716829099634197
+      ],
+      "first_call_seconds": 0.6050556660047732,
+      "stage_median_seconds": {
+        "prepare": 0.007329996005864814,
+        "upload": 0.0005147379997652024,
+        "optimize": 0.20073695100290934,
+        "resample_download": 0.0027855540029122494
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-masked-ncc-split-bounds-t1-cuda-b32": {
+      "warm_seconds": [
+        0.8446177219957463,
+        0.9369201529989368,
+        0.8555699789940263
+      ],
+      "first_call_seconds": 1.1962600549959461,
+      "stage_median_seconds": {
+        "prepare": 0.009561833998304792,
+        "upload": 0.0008068250026553869,
+        "optimize": 0.8373139469986199,
+        "resample_download": 0.0054752310024923645
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-masked-ncc-split-bounds-t8": {
+      "warm_seconds": [
+        1.7606360510035302,
+        1.7656352849953691,
+        1.7090455970028415
+      ],
+      "first_call_seconds": 1.9850513079945813,
+      "stage_median_seconds": {
+        "prepare": 0.010893977996602189,
+        "upload": 0.0004565250055748038,
+        "optimize": 1.731978355004685,
+        "resample_download": 0.014306967001175508
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-masked-ncc-t1": {
+      "warm_seconds": [
+        5.734832277004898,
+        5.490701222995995,
+        5.881910707001225
+      ],
+      "first_call_seconds": 5.6843814910025685,
+      "stage_median_seconds": {
+        "prepare": 0.007439433000399731,
+        "upload": 0.0005351350046112202,
+        "optimize": 5.660023813994485,
+        "resample_download": 0.06479720599600114
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-masked-ncc-t1-cuda-b120": {
+      "warm_seconds": [
+        0.21268361900001764,
+        0.21329968699865276,
+        0.24815747700631618
+      ],
+      "first_call_seconds": 0.5951180550036952,
+      "stage_median_seconds": {
+        "prepare": 0.007406797994917724,
+        "upload": 0.0005492979980772361,
+        "optimize": 0.20038080499944044,
+        "resample_download": 0.00277467100386275
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-masked-ncc-t1-cuda-b32": {
+      "warm_seconds": [
+        0.8168587899999693,
+        0.8056970089965034,
+        0.8123060760044609
+      ],
+      "first_call_seconds": 1.1953832459985279,
+      "stage_median_seconds": {
+        "prepare": 0.007312490000913385,
+        "upload": 0.000678898002661299,
+        "optimize": 0.7983347320041503,
+        "resample_download": 0.0040414340037386864
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-masked-ncc-t8": {
+      "warm_seconds": [
+        2.2891096259991173,
+        1.8520393520011567,
+        1.8580927980001434
+      ],
+      "first_call_seconds": 2.0332166560037876,
+      "stage_median_seconds": {
+        "prepare": 0.011645124999631662,
+        "upload": 0.0004483319935388863,
+        "optimize": 1.8221393179992447,
+        "resample_download": 0.018752344010863453
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-split-bounds-t1-cuda-b120": {
+      "warm_seconds": [
+        0.2330588139957399,
+        0.22711820800032,
+        0.312916482995206
+      ],
+      "first_call_seconds": 0.6013396229973296,
+      "stage_median_seconds": {
+        "prepare": 0.0075451090015121736,
+        "upload": 0.0005682970004272647,
+        "optimize": 0.21562429099867586,
+        "resample_download": 0.002944510997622274
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-split-bounds-t1-cuda-b32": {
+      "warm_seconds": [
+        0.8285430010000709,
+        0.8269089679961326,
+        0.8239692990027834
+      ],
+      "first_call_seconds": 1.1994759239969426,
+      "stage_median_seconds": {
+        "prepare": 0.007363388001977,
+        "upload": 0.0006940870080143213,
+        "optimize": 0.8127050490002148,
+        "resample_download": 0.0041952439860324375
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-t1": {
+      "warm_seconds": [
+        6.001539645003504,
+        5.87203097800375,
+        6.34857630499755
+      ],
+      "first_call_seconds": 5.896308474999387,
+      "stage_median_seconds": {
+        "prepare": 0.007482982997316867,
+        "upload": 0.00050697400001809,
+        "optimize": 5.924422141994,
+        "resample_download": 0.06657453998923302
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-t1-cuda-b120": {
+      "warm_seconds": [
+        0.22866544099815655,
+        0.22734344699711073,
+        0.3070502949994989
+      ],
+      "first_call_seconds": 0.5874486190004973,
+      "stage_median_seconds": {
+        "prepare": 0.007719410001300275,
+        "upload": 0.0006293889964581467,
+        "optimize": 0.21501484000327764,
+        "resample_download": 0.0030218179963412695
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-t1-cuda-b32": {
+      "warm_seconds": [
+        0.8480351389953285,
+        0.8466633369971532,
+        0.8522640529990895
+      ],
+      "first_call_seconds": 1.203717617005168,
+      "stage_median_seconds": {
+        "prepare": 0.009930175998306368,
+        "upload": 0.0008186099948943593,
+        "optimize": 0.8294142320009996,
+        "resample_download": 0.00528167599986773
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    },
+    "voxreg-t8": {
+      "warm_seconds": [
+        1.880864635000762,
+        2.4948654800027725,
+        1.9821389690041542
+      ],
+      "first_call_seconds": 2.413377457000024,
+      "stage_median_seconds": {
+        "prepare": 0.010667314003512729,
+        "upload": 0.0004438880059751682,
+        "optimize": 1.9489888989992323,
+        "resample_download": 0.01899397800298175
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "rms_pixels_max_vs_eager": 0.0
+    }
+  },
+  "fireants_1_5_1_dtype_probe": {
+    "image=torch.float32,registration=torch.float32": {
+      "ok": true,
+      "image": "torch.float32",
+      "geometry": "torch.float32",
+      "rotation": "torch.float32",
+      "translation": "torch.float32"
+    },
+    "image=torch.float32,registration=torch.float64": {
+      "ok": false,
+      "error": "expected scalar type Double but found Float",
+      "type": "RuntimeError"
+    },
+    "image=torch.float64,registration=torch.float32": {
+      "ok": true,
+      "image": "torch.float64",
+      "geometry": "torch.float32",
+      "rotation": "torch.float32",
+      "translation": "torch.float32"
+    },
+    "image=torch.float64,registration=torch.float64": {
+      "ok": false,
+      "error": "expected scalar type Double but found Float",
+      "type": "RuntimeError"
+    }
+  },
+  "compiled_real_batch_gates": {
+    "cpu-b1-vs-b1": {
+      "rms_pixels_max": 0.0
+    },
+    "cpu-b1-vs-b32": {
+      "rms_pixels_max": 2.9226862142039885e-16
+    },
+    "cpu-b1-vs-b119": {
+      "rms_pixels_max": 2.9226862142039885e-16
+    },
+    "cuda-b1-vs-b1": {
+      "rms_pixels_max": 0.0
+    },
+    "cuda-b1-vs-b32": {
+      "rms_pixels_max": 5.226907216925002e-16
+    },
+    "cuda-b1-vs-b119": {
+      "rms_pixels_max": 5.226907216925002e-16
+    },
+    "quality": {
+      "baseline-cpu": {
+        "median_ncc2": 0.9611917253349206,
+        "min_ncc2": 0.9175761688447939,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cpu-b1": {
+        "median_ncc2": 0.9611917253349206,
+        "min_ncc2": 0.9175761688447939,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cpu-b32": {
+        "median_ncc2": 0.9611917253349206,
+        "min_ncc2": 0.9175761688447939,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cpu-b119": {
+        "median_ncc2": 0.9611917253349206,
+        "min_ncc2": 0.9175761688447939,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "baseline-cuda": {
+        "median_ncc2": 0.9611917253312166,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cuda-b1": {
+        "median_ncc2": 0.9611917253312166,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cuda-b32": {
+        "median_ncc2": 0.9611917253312166,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cuda-b119": {
+        "median_ncc2": 0.9611917253312166,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      }
+    }
+  },
+  "compiled_one_shot_gradient_comparison": {
+    "cpu-torch.float32-ordinary": {
+      "loss_abs_max": 3.469446951953614e-18,
+      "gradient_abs_max": 0.0
+    },
+    "cpu-torch.float32-empty": {
+      "loss_abs_max": 0.0,
+      "gradient_abs_max": 0.0
+    },
+    "cpu-torch.float32-constant": {
+      "loss_abs_max": 0.0,
+      "gradient_abs_max": 0.0
+    },
+    "cpu-torch.float32-near_identity": {
+      "loss_abs_max": 2.220446049250313e-16,
+      "gradient_abs_max": 5.551115123125783e-17
+    },
+    "cpu-torch.float64-ordinary": {
+      "loss_abs_max": 6.505213034913027e-19,
+      "gradient_abs_max": 1.463672932855431e-18
+    },
+    "cpu-torch.float64-empty": {
+      "loss_abs_max": 0.0,
+      "gradient_abs_max": 0.0
+    },
+    "cpu-torch.float64-constant": {
+      "loss_abs_max": 0.0,
+      "gradient_abs_max": 0.0
+    },
+    "cpu-torch.float64-near_identity": {
+      "loss_abs_max": 1.1102230246251565e-16,
+      "gradient_abs_max": 9.974659986866641e-18
+    },
+    "cuda-torch.float32-ordinary": {
+      "loss_abs_max": 3.469446951953614e-18,
+      "gradient_abs_max": 0.0
+    },
+    "cuda-torch.float32-empty": {
+      "loss_abs_max": 0.0,
+      "gradient_abs_max": 0.0
+    },
+    "cuda-torch.float32-constant": {
+      "loss_abs_max": 0.0,
+      "gradient_abs_max": 0.0
+    },
+    "cuda-torch.float32-near_identity": {
+      "loss_abs_max": 5.551115123125783e-16,
+      "gradient_abs_max": 0.0
+    },
+    "cuda-torch.float64-ordinary": {
+      "loss_abs_max": 1.734723475976807e-18,
+      "gradient_abs_max": 8.673617379884035e-19
+    },
+    "cuda-torch.float64-empty": {
+      "loss_abs_max": 0.0,
+      "gradient_abs_max": 0.0
+    },
+    "cuda-torch.float64-constant": {
+      "loss_abs_max": 0.0,
+      "gradient_abs_max": 0.0
+    },
+    "cuda-torch.float64-near_identity": {
+      "loss_abs_max": 6.661338147750939e-16,
+      "gradient_abs_max": 2.1116531375049707e-17
+    }
+  },
+  "checks": {
+    "compiled_registration_alias": "59 passed",
+    "masked_ncc_aliases": "59 passed",
+    "direct_compiled_helper_entire_suite": "57 passed, 2 failed: default Dynamo recompile limit 8 across heterogeneous helper test signatures",
+    "direct_compiled_helper_sampling_suite": "11 passed, 1 failed: AOT donated buffers do not permit retain_graph=True used by gradcheck",
+    "compiled_one_shot_gradients": "16 CPU/CUDA float32/float64 ordinary/empty/constant/near-identity cases agree with eager",
+    "cuda_default_compilation_workers": "Failed: SubprocPool unclean exit / Attempting to use a closed pool. Unknown root cause; no OOM evidence observed.",
+    "cuda_serial_compilation_workers": "Succeeded with TORCHINDUCTOR_COMPILE_THREADS=1; no library source patches.",
+    "unchanged_production": "59 passed"
+  },
+  "cold_cache_notes": [
+    "First compiled CPU1 and CPU8 cases used fresh dedicated cache directories. The combined sampler cases reused each directory and hit the compiler disk cache.",
+    "CUDA32 first attempt with default parallel compilation failed; successful runs used one compile thread. CUDA120 reused that cache. First-call times are not uniformly cold disk-cache measurements.",
+    "Compile creation/import setup is outside the registration-call timer; recorded first-call times are not complete process startup measurements."
+  ],
+  "research_source_sha256": {
+    "research/performance/cpu_ablation.py": "6f95c020161f4132155f2c4f9a4ff2fb7ae0966e2a4a4ebebf93d1bcea0489e2",
+    "research/performance/validate_probe.py": "1b4bbe342c4c9613c1e0ce4dea3034806191265a0d2d8c568265a4bcfc2f692c"
+  }
+}

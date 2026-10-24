@@ -11,6 +11,29 @@ see [BENCHMARK.md](BENCHMARK.md) for fresh production time/memory comparisons,
 source hashes and regression gates. Historical prototype timings are retained
 here rather than presented as current benchmark results.
 
+## Current dtype and eager NCC result
+
+[DTYPE.md](research/performance/DTYPE.md) records the dtype-preserving output
+contract and the small eager NCC cleanup now in production, with a fresh full
+backend time/memory comparison. Float32 fitting candidates fail existing
+CPU/CUDA gates, so mixed computation precision is retained. The package review
+keeps the four-module runtime and adds no compiler/precision/backend framework.
+Earlier CPU/NCC experiments below are historical evidence.
+
+## CPU follow-up after the sampler rewrite
+
+[research/performance/CPU.md](research/performance/CPU.md) profiles the remaining
+CPU gap at `857e792`. Isolating NCC arithmetic dtype removes about 40–44% of
+voxreg's CPU runtime; the reverse FireANTs ablation corroborates the cost. The
+remaining signal is bulk grid/mask/autograd work, not primarily independent Adam
+bookkeeping or xarray. These are diagnostics, not a new production precision
+policy; source remains unchanged.
+
+The subsequent [NCC follow-up](research/performance/NCC.md) tests a simpler eager
+loss and compiled float64 NCC. Compilation improves warm throughput but introduces
+startup/toolchain constraints; neither a public compiler mode nor automatic dtype
+selection was added.
+
 ## 1. Single-thread controls
 
 Single-thread voxreg was measured in the original benchmark but omitted from the

@@ -10,8 +10,9 @@ general-purpose registration library.
 - Python 3.14.8, NumPy 2.5.4, xarray 2026.9.0.
 - PyTorch 2.14.1+cu130, RTX 5080 Laptop GPU, Linux.
 - Reference: ConfUSIus 0.9.0.dev0 and ITK 5.4.7, in a separate interpreter.
-- Voxreg: float32 interpolation/output; float64 physical geometry, optimizer state,
-  NCC statistics and exported matrices.
+- Voxreg: float32 fitting images/interpolation; float64 geometry/state/NCC and
+  exported matrices. Final interpolation/output retain original image precision
+  and dtype, with documented rounding/range checks for integers.
 - Input: Cybis Pereira 2026 rawdata, rat75 / 20220523 / slice32, frames 220:340,
   shape `(120, 1, 112, 128)`.
 - Source NIfTI SHA-256:
@@ -21,15 +22,32 @@ general-purpose registration library.
 The ignored `artifacts/notebook/` directory contains frozen reference inputs,
 source-code fingerprints, resolved ITK settings, matrices, original-power output,
 framewise-displacement references, and machine-readable comparison results. The
-reference retains source float64 intensities; voxreg converts them to float32.
-The example verifies equality after that declared conversion and checks the
-source hash. No optimizer parameters were tuned against this recording.
+initial comparison used float32 voxreg samples against float64 reference samples.
+The current example retains decoded source dtype and checks exact reference-input
+values plus source hash; the neutral backend benchmark still deliberately uses
+common float32 input. No optimizer parameters were tuned against this recording.
+
+## Current dtype/precision validation
+
+[DTYPE.md](research/performance/DTYPE.md) records the new input/output contract,
+float32 qualification failures, fresh time/memory benchmark and package review.
+All supported output dtypes are checked against independent fractional sampling,
+with exact reference identity and integer rounding/clipping tests. Float64 detail
+below float32 resolution survives final output, including low-contrast fitting.
+The optional NIfTI example also round-trips float64 and signed/unsigned integers.
+
+Full float32 fitting and metric-only float32 each fail the unchanged synthetic
+CPU/CUDA agreement gate. The production mixed policy is retained; no precision
+selector, compiler requirement or metric framework was added. Additional slice32
+and slice37 windows pass batch gates, including native decoded float64 output.
+Real CPU/CUDA mapping disagreements are reported separately, not claimed as truth
+errors or forced below the synthetic tolerance.
 
 ## Automated tests
 
 ```bash
 uv run --extra examples pytest -q
-# 58 passed, including CUDA, sheared/strided SciPy sampling, gradients and research CLI checks.
+# 118 passed, including dtype/interpolation, CUDA, geometry, gradients and research CLI checks.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples
@@ -127,7 +145,7 @@ time t, and ends with zero. It is not a sum of Euler-angle derivatives.
    over ConfUSIus's full public pipeline, which has not been cleanly retimed.
    The notebook/reference exporters still default to quality-only mode.
 3. **Profiling/optimization:** the production scalar-affine sampler removes dense
-   grid GEMMs while retaining float64 geometry/state/NCC. All 58 tests pass,
+   grid GEMMs while retaining float64 geometry/state/NCC. All 118 tests pass,
    including expanded sheared geometry, native support tolerance and CUDA batch
    checks. Real recording batch sizes 1/32/120 differ by at most 6.95e-9 pixels RMS
    on CUDA; same-device mapping change from baseline is below 6.70e-6 pixels RMS.
