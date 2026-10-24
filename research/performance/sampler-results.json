@@ -1,0 +1,585 @@
+{
+  "status": "Production scalar-affine sampler: same optimizer, float64 geometry/state/NCC, float32 interpolation. No compilation or convergence changes.",
+  "baseline_commit": "83b6dd6",
+  "production_source_sha256": {
+    "src/voxreg/rigid.py": "70af88dfe195f1129fcc39c06773cd381e61583841322edbd37004291afead2f",
+    "src/voxreg/__init__.py": "44e0eb964c1f83f3b397bada7fe85c1c40255de06b6c116a7d35358eef36d641",
+    "src/voxreg/sampling.py": "a348c7107a897da5cd772fc9dbd53c1789dbad1edb65234cdb4abe4edce30a73",
+    "src/voxreg/geometry.py": "a3b1b123a14c5458d49285258504556e6a8e992858f3d2ea0e622542aad7bf8b"
+  },
+  "dataset": {
+    "source_file": "sub-rat75_ses-20220523_task-openfield_acq-slice32_pwd.nii.gz",
+    "sha256": "f2d0a5e4daa10afc979b47d926af4e1ba3b2368c1384e32944ef9d3d8687e9b3",
+    "sidecar_sha256": "d582135c35ccb870d57c83630d017bac4aed266f58cf0e6a556e0ed003e3e1c7",
+    "frame_window_start_stop": [
+      220,
+      340
+    ],
+    "input_shape": [
+      120,
+      1,
+      112,
+      128
+    ],
+    "reference": "first frame",
+    "units": "mm"
+  },
+  "environment": {
+    "python": "3.14.8 (main, Oct  2 2026, 10:23:31) [GCC 16.2.1 20260810]",
+    "torch": "2.14.1+cu130",
+    "numpy": "2.5.4",
+    "xarray": "2026.9.0",
+    "itk": "5.4.7",
+    "fireants": "1.5.1",
+    "simpleitk": "2.5.6",
+    "hardware": {
+      "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+      "ram_mib": 31508.0546875,
+      "gpu_driver": "NVIDIA GeForce RTX 5080 Laptop GPU, 615.78.08"
+    },
+    "fireants_source": "https://github.com/rohitrango/FireANTs/archive/f8a9cc259ab9113fc43bd99797000fa8fc34eb59.tar.gz"
+  },
+  "protocol": "Four frozen-baseline cases followed by eleven production/comparison cases, sequential fresh-process time/memory passes. Three unmonitored warm calls, one separate cold-plus-warm memory pass. No competing compute/build observed at launch; normal desktop applications remained running. All scores recomputed on common support across both runs and batch-validation cases.",
+  "baseline": {
+    "cpu-32": {
+      "warm_seconds": [
+        8.360558337997645,
+        8.400017928994203,
+        8.55503063499782
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 615.3671875,
+        "warm_root_baseline_rss_mib": 692.296875,
+        "warm_tree_baseline_rss_mib": 692.296875,
+        "warm_tree_baseline_pss_mib": 661.533203125,
+        "tree_peak_rss_mib": 968.109375,
+        "tree_peak_pss_mib": 950.7978515625,
+        "sampled_gpu_process_peak_mib": 0
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "cpu-32-t8": {
+      "warm_seconds": [
+        3.233255763996567,
+        3.08662094999454,
+        3.0675096819977625
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 615.3046875,
+        "warm_root_baseline_rss_mib": 717.953125,
+        "warm_tree_baseline_rss_mib": 717.953125,
+        "warm_tree_baseline_pss_mib": 687.193359375,
+        "tree_peak_rss_mib": 760.203125,
+        "tree_peak_pss_mib": 729.443359375,
+        "sampled_gpu_process_peak_mib": 0
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "cuda-32": {
+      "warm_seconds": [
+        1.303160219998972,
+        1.3161432100023376,
+        1.3106985070044175
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 615.25390625,
+        "warm_root_baseline_rss_mib": 1571.09375,
+        "warm_tree_baseline_rss_mib": 1571.09375,
+        "warm_tree_baseline_pss_mib": 1486.0693359375,
+        "cuda_peak_allocated_mib": 110.8564453125,
+        "cuda_peak_reserved_mib": 130.0,
+        "tree_peak_rss_mib": 1571.09375,
+        "tree_peak_pss_mib": 1486.0693359375,
+        "sampled_gpu_process_peak_mib": 390
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048959,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "cuda-120": {
+      "warm_seconds": [
+        1.178194658998109,
+        1.174561095001991,
+        1.180156716996862
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 615.1875,
+        "warm_root_baseline_rss_mib": 1571.73046875,
+        "warm_tree_baseline_rss_mib": 1571.73046875,
+        "warm_tree_baseline_pss_mib": 1486.681640625,
+        "cuda_peak_allocated_mib": 212.49462890625,
+        "cuda_peak_reserved_mib": 254.0,
+        "tree_peak_rss_mib": 1571.73046875,
+        "tree_peak_pss_mib": 1486.681640625,
+        "sampled_gpu_process_peak_mib": 514
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048963,
+        "min_ncc2": 0.9175761688426661,
+        "common_fraction_median": 0.9833286830357143
+      }
+    }
+  },
+  "production_and_controls": {
+    "itk-1": {
+      "warm_seconds": [
+        5.8874011210064054,
+        5.895045762998052,
+        5.934702935002861
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 774.03125,
+        "warm_root_baseline_rss_mib": 1410.4765625,
+        "warm_tree_baseline_rss_mib": 1424.5078125,
+        "warm_tree_baseline_pss_mib": 1406.921875,
+        "tree_peak_rss_mib": 1431.21875,
+        "tree_peak_pss_mib": 1413.6328125,
+        "sampled_gpu_process_peak_mib": 0
+      },
+      "quality": {
+        "median_ncc2": 0.9610990616255706,
+        "min_ncc2": 0.9175592307332755,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "itk-1-t8": {
+      "warm_seconds": [
+        2.1418070169966086,
+        2.143313879001653,
+        2.1377610490017105
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 774.08203125,
+        "warm_root_baseline_rss_mib": 1411.17578125,
+        "warm_tree_baseline_rss_mib": 1425.2890625,
+        "warm_tree_baseline_pss_mib": 1407.62890625,
+        "tree_peak_rss_mib": 1432.00390625,
+        "tree_peak_pss_mib": 1414.34375,
+        "sampled_gpu_process_peak_mib": 0
+      },
+      "quality": {
+        "median_ncc2": 0.9610990616255706,
+        "min_ncc2": 0.9175592307332755,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "itk-8": {
+      "warm_seconds": [
+        1.4749471090035513,
+        1.481826174996968,
+        1.4760634750055033
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 752.6796875,
+        "warm_root_baseline_rss_mib": 759.7734375,
+        "warm_tree_baseline_rss_mib": 11996.99609375,
+        "warm_tree_baseline_pss_mib": 6925.96875,
+        "tree_peak_rss_mib": 11997.0390625,
+        "tree_peak_pss_mib": 6926.01171875,
+        "sampled_gpu_process_peak_mib": 0
+      },
+      "quality": {
+        "median_ncc2": 0.9610990616255706,
+        "min_ncc2": 0.9175592307332755,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "cpu-32": {
+      "warm_seconds": [
+        5.972197073002462,
+        5.712876699995832,
+        5.868903225993563
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 615.296875,
+        "warm_root_baseline_rss_mib": 696.9609375,
+        "warm_tree_baseline_rss_mib": 696.9609375,
+        "warm_tree_baseline_pss_mib": 666.2412109375,
+        "tree_peak_rss_mib": 733.3515625,
+        "tree_peak_pss_mib": 702.6318359375,
+        "sampled_gpu_process_peak_mib": 0
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "cpu-32-t8": {
+      "warm_seconds": [
+        1.9789415359991835,
+        2.21055461299693,
+        1.9350972940010251
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 615.26953125,
+        "warm_root_baseline_rss_mib": 686.4375,
+        "warm_tree_baseline_rss_mib": 686.4375,
+        "warm_tree_baseline_pss_mib": 655.640625,
+        "tree_peak_rss_mib": 731.125,
+        "tree_peak_pss_mib": 704.2841796875,
+        "sampled_gpu_process_peak_mib": 0
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "cuda-32": {
+      "warm_seconds": [
+        0.8226852110019536,
+        0.818489684999804,
+        0.8171240820011008
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 615.30078125,
+        "warm_root_baseline_rss_mib": 1554.67578125,
+        "warm_tree_baseline_rss_mib": 1554.67578125,
+        "warm_tree_baseline_pss_mib": 1469.6845703125,
+        "cuda_peak_allocated_mib": 103.640625,
+        "cuda_peak_reserved_mib": 110.0,
+        "tree_peak_rss_mib": 1554.67578125,
+        "tree_peak_pss_mib": 1469.6845703125,
+        "sampled_gpu_process_peak_mib": 370
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "cuda-120": {
+      "warm_seconds": [
+        0.2301439310031128,
+        0.22746967899729498,
+        0.3094175959995482
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 615.328125,
+        "warm_root_baseline_rss_mib": 1553.69921875,
+        "warm_tree_baseline_rss_mib": 1553.69921875,
+        "warm_tree_baseline_pss_mib": 1468.6513671875,
+        "cuda_peak_allocated_mib": 189.21630859375,
+        "cuda_peak_reserved_mib": 218.0,
+        "tree_peak_rss_mib": 1553.69921875,
+        "tree_peak_pss_mib": 1468.6513671875,
+        "sampled_gpu_process_peak_mib": 478
+      },
+      "quality": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "fireants-cpu-32": {
+      "warm_seconds": [
+        2.5531234390000463,
+        2.7125813320017187,
+        2.7120032550010365
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 565.58203125,
+        "warm_root_baseline_rss_mib": 1040.921875,
+        "warm_tree_baseline_rss_mib": 1040.921875,
+        "warm_tree_baseline_pss_mib": 955.8623046875,
+        "tree_peak_rss_mib": 1077.7421875,
+        "tree_peak_pss_mib": 992.6826171875,
+        "sampled_gpu_process_peak_mib": 0
+      },
+      "quality": {
+        "median_ncc2": 0.9611912493281184,
+        "min_ncc2": 0.917575960746816,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "fireants-cpu-32-t8": {
+      "warm_seconds": [
+        0.9324938380013919,
+        0.8006906669979799,
+        0.9402994010015391
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 565.6953125,
+        "warm_root_baseline_rss_mib": 1051.29296875,
+        "warm_tree_baseline_rss_mib": 1051.29296875,
+        "warm_tree_baseline_pss_mib": 966.28515625,
+        "tree_peak_rss_mib": 1075.36328125,
+        "tree_peak_pss_mib": 991.2421875,
+        "sampled_gpu_process_peak_mib": 0
+      },
+      "quality": {
+        "median_ncc2": 0.9611912493281184,
+        "min_ncc2": 0.917575960746816,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "fireants-cuda-32": {
+      "warm_seconds": [
+        0.7126236589974724,
+        0.7097692320021451,
+        0.717111231002491
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 565.65625,
+        "warm_root_baseline_rss_mib": 1936.5390625,
+        "warm_tree_baseline_rss_mib": 1936.5390625,
+        "warm_tree_baseline_pss_mib": 1851.4404296875,
+        "cuda_peak_allocated_mib": 100.42138671875,
+        "cuda_peak_reserved_mib": 114.0,
+        "tree_peak_rss_mib": 3378.38671875,
+        "tree_peak_pss_mib": 3208.185546875,
+        "sampled_gpu_process_peak_mib": 430
+      },
+      "quality": {
+        "median_ncc2": 0.9611911894957477,
+        "min_ncc2": 0.9175759577580525,
+        "common_fraction_median": 0.9833286830357143
+      }
+    },
+    "fireants-cuda-120": {
+      "warm_seconds": [
+        0.3199127359985141,
+        0.3689216069979011,
+        0.34934231100487523
+      ],
+      "memory": {
+        "loaded_baseline_rss_mib": 565.72265625,
+        "warm_root_baseline_rss_mib": 1946.5546875,
+        "warm_tree_baseline_rss_mib": 1946.5546875,
+        "warm_tree_baseline_pss_mib": 1861.455078125,
+        "cuda_peak_allocated_mib": 173.54833984375,
+        "cuda_peak_reserved_mib": 194.0,
+        "tree_peak_rss_mib": 1946.57421875,
+        "tree_peak_pss_mib": 1861.474609375,
+        "sampled_gpu_process_peak_mib": 510
+      },
+      "quality": {
+        "median_ncc2": 0.9611911894957477,
+        "min_ncc2": 0.9175759577580525,
+        "common_fraction_median": 0.9833286830357143
+      }
+    }
+  },
+  "validation": {
+    "production-cpu-b1": {
+      "batch_rms_pixels_max": 0.0,
+      "baseline_rms_pixels_max": 6.689476441257316e-06
+    },
+    "production-cpu-b32": {
+      "batch_rms_pixels_max": 2.9226862142039885e-16,
+      "baseline_rms_pixels_max": 6.689476441257316e-06
+    },
+    "production-cpu-b120": {
+      "batch_rms_pixels_max": 2.9226862142039885e-16,
+      "baseline_rms_pixels_max": 6.689476441257316e-06
+    },
+    "production-cuda-b1": {
+      "batch_rms_pixels_max": 0.0,
+      "baseline_rms_pixels_max": 6.685886875971033e-06
+    },
+    "production-cuda-b32": {
+      "batch_rms_pixels_max": 6.9416806011450696e-09,
+      "baseline_rms_pixels_max": 6.685886875971033e-06
+    },
+    "production-cuda-b120": {
+      "batch_rms_pixels_max": 6.9416806011450696e-09,
+      "baseline_rms_pixels_max": 6.685886875971033e-06
+    },
+    "quality": {
+      "old-cpu-32": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "old-cpu-32-t8": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "old-cuda-32": {
+        "median_ncc2": 0.9611676218048959,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "old-cuda-120": {
+        "median_ncc2": 0.9611676218048963,
+        "min_ncc2": 0.9175761688426661,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-itk-1": {
+        "median_ncc2": 0.9610990616255706,
+        "min_ncc2": 0.9175592307332755,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-itk-1-t8": {
+        "median_ncc2": 0.9610990616255706,
+        "min_ncc2": 0.9175592307332755,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-itk-8": {
+        "median_ncc2": 0.9610990616255706,
+        "min_ncc2": 0.9175592307332755,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-cpu-32": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-cpu-32-t8": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-cuda-32": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-cuda-120": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-fireants-cpu-32": {
+        "median_ncc2": 0.9611912493281184,
+        "min_ncc2": 0.917575960746816,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-fireants-cpu-32-t8": {
+        "median_ncc2": 0.9611912493281184,
+        "min_ncc2": 0.917575960746816,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-fireants-cuda-32": {
+        "median_ncc2": 0.9611911894957477,
+        "min_ncc2": 0.9175759577580525,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "new-fireants-cuda-120": {
+        "median_ncc2": 0.9611911894957477,
+        "min_ncc2": 0.9175759577580525,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cpu-b1": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cpu-b32": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cpu-b120": {
+        "median_ncc2": 0.9611676218054845,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cuda-b1": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cuda-b32": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cuda-b120": {
+        "median_ncc2": 0.9611676218048949,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      }
+    }
+  },
+  "notes": [
+    "Benchmark input loading and compressed output saving excluded; preprocessing, fitting, original-power resampling and host return included.",
+    "Host RSS/PSS are sampled process-tree peaks including cold initialization, not just tensor working sets.",
+    "FireANTs CUDA batch32 showed a cold transient peak of 3208 MiB PSS; its post-warmup baseline was 1851 MiB PSS. Retained as measured, not treated as steady-state memory."
+  ],
+  "production_profile_five_iterations": {
+    "kernel_count": 1180,
+    "kernel_time_sum_ms": 8.537752000000001,
+    "bmm_shapes": {
+      "[[119, 2, 2], [119, 2, 2]]": 10
+    }
+  },
+  "production_fixed_reference_batch_gate": {
+    "cpu-b1-vs-b1": {
+      "rms_pixels_max": 0.0
+    },
+    "cpu-b1-vs-b32": {
+      "rms_pixels_max": 2.9226862142039885e-16
+    },
+    "cpu-b1-vs-b119": {
+      "rms_pixels_max": 2.9226862142039885e-16
+    },
+    "cuda-b1-vs-b1": {
+      "rms_pixels_max": 0.0
+    },
+    "cuda-b1-vs-b32": {
+      "rms_pixels_max": 6.9416806011450696e-09
+    },
+    "cuda-b1-vs-b119": {
+      "rms_pixels_max": 6.9416806011450696e-09
+    },
+    "quality": {
+      "baseline-cpu": {
+        "median_ncc2": 0.9611917253349206,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cpu-b1": {
+        "median_ncc2": 0.9611917253349206,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cpu-b32": {
+        "median_ncc2": 0.9611917253349206,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cpu-b119": {
+        "median_ncc2": 0.9611917253349206,
+        "min_ncc2": 0.9175761688447941,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "baseline-cuda": {
+        "median_ncc2": 0.9611917253312166,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cuda-b1": {
+        "median_ncc2": 0.9611917253312166,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cuda-b32": {
+        "median_ncc2": 0.9611917253312166,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      },
+      "production-cuda-b119": {
+        "median_ncc2": 0.9611917253312166,
+        "min_ncc2": 0.9175761688426662,
+        "common_fraction_median": 0.9833286830357143
+      }
+    }
+  },
+  "test_results": {
+    "baseline_suite_after_rewrite": "58 passed",
+    "coverage": "CPU/CUDA, oblique/strided/sheared independent interpolation, support tolerance, gradients, independent stopping and research commands"
+  }
+}

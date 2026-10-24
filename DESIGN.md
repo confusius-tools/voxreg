@@ -3,8 +3,9 @@
 Status: eager rigid implementation available, with synthetic CPU/CUDA tests and
 real-notebook quality comparison. Isolated ITK/FireANTs time/memory comparisons are
 available in [BENCHMARK.md](BENCHMARK.md). [PERFORMANCE.md](PERFORMANCE.md) identifies
-the dense-grid bottleneck and validates an isolated faster sampler prototype;
-production optimization and real-data convergence calibration remain pending.
+the dense-grid bottleneck that motivated the production scalar-affine sampler.
+Fresh production time/memory comparisons validate the rewrite; real-data
+convergence calibration remains pending.
 See [VALIDATION.md](VALIDATION.md).
 
 ## 1. Deliverable and stop condition

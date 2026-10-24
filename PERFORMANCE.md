@@ -5,9 +5,11 @@ on dense float64 coordinate fields, including unfavorable shapes/layout and
 associated copies/backpropagation. It is not xarray overhead, and reducing
 precision is not necessary to remove it.
 
-This investigation does **not change the engine**. The faster sampler described
-below is an isolated, locally substituted prototype, not the implementation
-currently exported by `voxreg.register_rigid`.
+This is the historical investigation of baseline commit `83b6dd6`. The float64
+scalar-affine candidate described below has **now been brought into the engine**;
+see [BENCHMARK.md](BENCHMARK.md) for fresh production time/memory comparisons,
+source hashes and regression gates. Historical prototype timings are retained
+here rather than presented as current benchmark results.
 
 ## 1. Single-thread controls
 
@@ -188,8 +190,9 @@ remain local under ignored `artifacts/performance-investigation/`. Historical
 43-test counts above predate the research CLI cleanup tests. No engine source or
 dependency was changed for these probes.
 
-The next implementation should be a narrow sampler rewrite with these regression
-checks, followed by fresh-process time/**memory** benchmarking against ITK and
-FireANTs. Prototype peak memory, a compiled variant and broader datasets were not
-measured; the unchanged real-data convergence rule still reaches its iteration
-limit. Do not interpret prototype timing as an already shipped improvement.
+The narrow sampler rewrite and fresh-process time/**memory** benchmarking are now
+complete; [sampler-results.json](research/performance/sampler-results.json) records
+the production results. Dense pixel-sized GEMMs are replaced by cached normalized
+axes and scalar affine expressions. The baseline optimizer, precision and frame
+policies remain intact. A compiled variant and broader datasets remain untested;
+the unchanged real-data convergence rule still reaches its iteration limit.

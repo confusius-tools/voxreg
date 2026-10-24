@@ -192,10 +192,13 @@ def test_empty_and_invalid_time_labels(recording_factory):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
-def test_cuda_matches_cpu(recording_factory):
+@pytest.mark.parametrize("batch_size", [1, 3])
+def test_cuda_matches_cpu(recording_factory, batch_size):
     data, _, _ = recording_factory(oblique=True, strided=True)
     cpu = register_rigid(data, intensity_scaling="none")
-    cuda = register_rigid(data, intensity_scaling="none", device="cuda")
+    cuda = register_rigid(
+        data, intensity_scaling="none", device="cuda", batch_size=batch_size
+    )
     assert_mapping_close(data, cuda.transforms, cpu.transforms, 1e-3)
     common = cuda.valid.values & cpu.valid.values
     assert_allclose(

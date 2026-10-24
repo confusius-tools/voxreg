@@ -2,7 +2,9 @@
 
 These are **diagnostic harnesses, not a second registration API**. They temporarily
 substitute a sampler or attach profiler scopes inside their own process. Nothing
-here is imported by the engine. See [PERFORMANCE.md](../../PERFORMANCE.md) for the
+here is imported by the engine. The engine now includes the scalar-affine rewrite;
+[sampler-results.json](sampler-results.json) records its production benchmarks.
+`results.json` remains the historical pre-optimization snapshot. See [PERFORMANCE.md](../../PERFORMANCE.md) for the
 findings and [BENCHMARK.md](../../BENCHMARK.md) for the backend comparison.
 
 [`results.json`](results.json) preserves compact historical measurements, dataset
@@ -10,7 +12,11 @@ hashes, hardware/versions, kernel counts, quality, batch agreement and test outc
 It deliberately omits original recordings, registered arrays, large traces,
 process IDs and machine-local paths. Its 43-test counts describe the suite when
 the measurements were captured, before the research CLI cleanup tests were added.
-The snapshot is not regenerated automatically when a command runs.
+The snapshot is not regenerated automatically when a command runs. A harness's
+"baseline" means the currently imported engine: comparisons to the old engine
+require commit `83b6dd6` or the archived-source `PYTHONPATH` recipe in BENCHMARK.md.
+Comparing the current engine with the elementwise prototype should no longer
+reproduce the historical 5× improvement.
 
 ## Reproduce from the repository root
 
@@ -41,6 +47,10 @@ uv run python research/performance/affine_probe.py cuda \
 
 # Run the existing test suite with the proposed sampler substituted.
 uv run python research/performance/validate_probe.py elementwise64
+
+# Check the shipped sampler directly (same fixed reference, no substitution).
+uv run python research/performance/check_elementwise.py --sampler production \
+    --devices cpu cuda --output artifacts/production-batch-gate
 
 # Generate fresh baseline/variant outputs, test batch invariance, score common support.
 # No dependency on a previous probe or an ITK/FireANTs result directory.

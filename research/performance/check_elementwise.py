@@ -1,4 +1,4 @@
-"""Check real-recording batch invariance and shared-support prototype quality."""
+"""Check real-recording batch invariance for production or the sampler prototype."""
 
 import argparse
 import importlib.util
@@ -26,6 +26,9 @@ def main():
     )
     parser.add_argument(
         "--devices", nargs="+", choices=["cpu", "cuda"], default=["cpu", "cuda"]
+    )
+    parser.add_argument(
+        "--sampler", choices=["production", "elementwise64"], default="elementwise64"
     )
     args = parser.parse_args()
     torch.set_num_threads(1)
@@ -62,8 +65,13 @@ def main():
         save(f"baseline-{device}", baseline.transforms.values)
         reference = None
         for batch in sorted({1, 32, len(moving)}):
-            name = f"elementwise64-{device}-b{batch}"
-            with patch.object(vr, "sample_rigid", make_sampler(elementwise=True)):
+            name = f"{args.sampler}-{device}-b{batch}"
+            sampler = (
+                vr.sample_rigid
+                if args.sampler == "production"
+                else make_sampler(elementwise=True)
+            )
+            with patch.object(vr, "sample_rigid", sampler):
                 start = perf_counter()
                 result = register_rigid(
                     moving, fixed=fixed, device=device, batch_size=batch
@@ -79,9 +87,12 @@ def main():
             if rms.max() >= 0.001:
                 raise AssertionError(f"{name} exceeds the 0.001-pixel batch gate.")
     report["quality"] = benchmark.score(args.input, files)
-    (args.output / "elementwise-validation.json").write_text(
-        json.dumps(report, indent=2) + "\n"
+    filename = (
+        "production-validation.json"
+        if args.sampler == "production"
+        else "elementwise-validation.json"
     )
+    (args.output / filename).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
 
 

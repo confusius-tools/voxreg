@@ -1,5 +1,105 @@
 # ITK, FireANTs and voxreg: time and memory
 
+## Production scalar-affine sampler
+
+The engine now uses the validated scalar-affine sampler. Float64 geometry,
+optimizer state, NCC and world transforms are retained; interpolation remains
+float32. There is no compilation, convergence change or new public option.
+
+Fresh sequential runs compare the frozen `83b6dd6` engine with the new source on
+**the same 120-frame recording**. Baseline code was extracted with `git archive`
+and selected via `PYTHONPATH`, using the same locked environment and benchmark
+script. Every case uses fresh interpreters, three unmonitored warm calls and a
+separate memory pass. Normal desktop applications remained running; processor
+clocks were not fixed. Raw phase outputs are in
+`artifacts/benchmark-sampler-baseline/` and `artifacts/benchmark-sampler-production/`.
+A compact snapshot, source hashes and quality/gate results are tracked in
+[research/performance/sampler-results.json](research/performance/sampler-results.json).
+
+### Before / after
+
+| Configuration | Frozen baseline, s | Production, s | Median speed ratio |
+|---|---:|---:|---:|
+| CPU, batch 32, 1 thread | 8.400 | 5.869 | 1.4× |
+| CPU, batch 32, 8 threads | 3.087 | 1.979 | 1.6× |
+| CUDA, batch 32 | 1.311 | 0.818 | 1.6× |
+| CUDA, batch 120 | 1.178 | **0.230** | **5.1×** |
+
+### Fresh backend controls
+
+RAM is sampled whole-process-tree PSS including cold initialization; VRAM is
+sampled full-process device memory, not just live tensors.
+
+| Configuration | Median time, s | Range of 3 calls, s | Host PSS, GiB | Process VRAM, MiB |
+|---|---:|---:|---:|---:|
+| ITK, 1 process × 1 thread | 5.895 | 5.887–5.935 | 1.381 | — |
+| ITK, 1 process × 8 threads | 2.142 | 2.138–2.143 | 1.381 | — |
+| ITK, 8 processes × 1 thread | 1.476 | 1.475–1.482 | 6.764 | — |
+| voxreg CPU, batch 32, 1 thread | 5.869 | 5.713–5.972 | 0.686 | — |
+| voxreg CPU, batch 32, 8 threads | 1.979 | 1.935–2.211 | 0.688 | — |
+| voxreg CUDA, batch 32 | 0.818 | 0.817–0.823 | 1.435 | 370 |
+| voxreg CUDA, batch 120 | **0.230** | 0.227–0.309 | 1.434 | 478 |
+| FireANTs CPU, batch 32, 1 thread | 2.712 | 2.553–2.713 | 0.969 | — |
+| FireANTs CPU, batch 32, 8 threads | **0.932** | 0.801–0.940 | 0.968 | — |
+| FireANTs CUDA, batch 32 | **0.713** | 0.710–0.717 | 3.133* | 430 |
+| FireANTs CUDA, batch 120 | 0.349 | 0.320–0.369 | 1.818 | 510 |
+
+*The FireANTs CUDA batch-32 pass had a cold transient PSS peak of 3,208 MiB;
+post-warmup PSS was 1,851 MiB. The peak is retained as measured, not interpreted as
+steady-state memory. Sampled peaks and laptop timings vary across runs.
+
+Full-batch CUDA is about 1.5× faster than native FireANTs in this run. At batch 32,
+FireANTs remains slightly faster. CPU now approaches single-process threaded ITK,
+but native float32 FireANTs is still faster; its statistics/optimizer policies are
+not precision-matched to voxreg. Neither backend comparison proves equivalent
+biological accuracy or performance across other recordings.
+
+### Correctness and memory gates
+
+All cases were rescored together with the independent SciPy sampler on one common
+support: median NCC² is **0.961168 before and after**, **0.961191 FireANTs** and
+**0.961099 ITK**. Reference identity/intensities/time labels, status policy and the
+100-update moving-frame counts remain unchanged.
+
+- Worst same-device mapping RMS change from baseline: **6.69e-6 minimum-spacing
+  pixels**. No optimizer/stopping policy was changed to obtain the speedup.
+- Production real-data batch sizes 1/32/120 agree within **3e-16 pixels RMS on CPU**
+  and **6.95e-9 on CUDA**, below the unchanged 0.001-pixel gate. The separate-fixed
+  reference checker also passes with batch sizes 1/32/119 (119 moving frames).
+- **58 tests pass**, including sheared/oblique/strided SciPy sampling, gradients,
+  support-boundary tolerance, failure/convergence isolation and CUDA batch checks.
+- Full-batch CUDA allocator peak: **212.5 → 189.2 MiB allocated**,
+  **254 → 218 MiB reserved**; process VRAM **514 → 478 MiB**.
+- A steady-state production profile has only small 2×2 geometry GEMMs; the
+  image-sized GEMMs are gone. Compilation and broader-data validation remain open.
+
+Reproduce the production cases with the existing benchmark CLI:
+
+```bash
+uv run python examples/benchmark_registration.py \
+    --output artifacts/benchmark-sampler-production \
+    --cases itk-1 itk-1-t8 itk-8 cpu-32 cpu-32-t8 cuda-32 cuda-120 \
+            fireants-cpu-32 fireants-cpu-32-t8 fireants-cuda-32 fireants-cuda-120
+uv run python research/performance/check_elementwise.py --sampler production \
+    --devices cpu cuda --output artifacts/production-batch-gate
+```
+
+The original baseline remains available at commit `83b6dd6`. To reproduce that
+control without changing the working tree:
+
+```bash
+mkdir -p artifacts/sampler-baseline-source
+git archive 83b6dd6 src | tar -x -C artifacts/sampler-baseline-source
+PYTHONPATH="$PWD/artifacts/sampler-baseline-source/src" uv run python \
+    examples/benchmark_registration.py --output artifacts/benchmark-sampler-baseline \
+    --cases cpu-32 cpu-32-t8 cuda-32 cuda-120
+```
+
+## Historical baseline comparison (`83b6dd6`)
+
+The following measurements describe the unoptimized baseline, not current engine
+performance. They are retained to explain the investigation and its limitations.
+
 Measured on the same **120-frame** rat75/slice32 window, shape
 `(120, 1, 112, 128)`. All eleven configurations below were remeasured sequentially
 in one session after adding FireANTs. This compares **direct 2D rigid registration**,
@@ -37,7 +137,7 @@ GPU memory is sampled per-process VRAM, including CUDA context/library overhead.
 
 ### What this says
 
-- **Yes: the current voxreg CPU implementation is slower than ITK.** Eight-thread
+- **At the baseline checkpoint, voxreg CPU was slower than ITK.** Eight-thread
   voxreg takes 4.30 s versus 2.56 s for eight-thread ITK here. This eager prototype
   is a correctness baseline, not a demonstrated CPU performance win.
 - FireANTs shows that PyTorch is not inherently the problem: its eight-thread CPU

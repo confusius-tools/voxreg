@@ -17,12 +17,20 @@ class Plane:
 
     Parameters
     ----------
-    points : torch.Tensor
-        Centered physical plane coordinates (H, W, 2), ordered i, j.
     inverse_lattice : torch.Tensor
         Plane distance to pixel-offset map (2, 2).
-    image_center : torch.Tensor
-        Image center in i, j pixel positions.
+    plane_to_normalized : torch.Tensor
+        Physical plane distances to normalized grid offsets (2, 2).
+    normalized_to_plane : torch.Tensor
+        Normalized grid offsets to physical plane distances (2, 2).
+    normalized_i : torch.Tensor
+        Normalized i positions (1, 1, W).
+    normalized_j : torch.Tensor
+        Normalized j positions (1, H, 1).
+    support_tolerance : torch.Tensor
+        Normalized equivalent of the native 1e-5-pixel support tolerance (2,).
+    identity : torch.Tensor
+        Cached identity rotation (2, 2).
     basis : numpy.ndarray
         Orthonormal world z/y/x plane basis (3, 2).
     center : numpy.ndarray
@@ -31,9 +39,13 @@ class Plane:
         Radian/mm conversion for scaled optimizer parameters.
     """
 
-    points: torch.Tensor
     inverse_lattice: torch.Tensor
-    image_center: torch.Tensor
+    plane_to_normalized: torch.Tensor
+    normalized_to_plane: torch.Tensor
+    normalized_i: torch.Tensor
+    normalized_j: torch.Tensor
+    support_tolerance: torch.Tensor
+    identity: torch.Tensor
     basis: npt.NDArray[np.float64]
     center: npt.NDArray[np.float64]
     parameter_scale: torch.Tensor
@@ -81,13 +93,20 @@ def make_plane(
     radius = np.sqrt(np.mean(np.sum(points**2, axis=-1)))
     ell = np.linalg.norm(pixels, axis=0).min()
     options = {"device": device, "dtype": dtype}
+    inverse_lattice = torch.tensor(np.linalg.inv(lattice), **options)
+    half = torch.tensor(center_pixel, **options)
+    bounds = 2 * half
     return Plane(
-        torch.tensor(points, **options),
-        torch.tensor(np.linalg.inv(lattice), **options),
-        torch.tensor(center_pixel, **options),
-        basis,
-        affine[:3, 3] + pixels @ center_pixel,
-        torch.tensor([ell / radius, ell, ell], **options),
+        inverse_lattice=inverse_lattice,
+        plane_to_normalized=inverse_lattice / half[:, None],
+        normalized_to_plane=torch.tensor(lattice, **options) * half[None, :],
+        normalized_i=torch.arange(w, **options)[None, None, :] / bounds[0] * 2 - 1,
+        normalized_j=torch.arange(h, **options)[None, :, None] / bounds[1] * 2 - 1,
+        support_tolerance=2e-5 / bounds,
+        identity=torch.eye(2, **options),
+        basis=basis,
+        center=affine[:3, 3] + pixels @ center_pixel,
+        parameter_scale=torch.tensor([ell / radius, ell, ell], **options),
     )
 
 
@@ -126,20 +145,33 @@ def sample_rigid(
     Returns
     -------
     sampled : (B, H, W) torch.Tensor
-        Bilinearly sampled images; outside values are zero pending explicit fill.
+        Bilinearly sampled images with border extension pending explicit fill.
     valid : (B, H, W) torch.Tensor
         Pixel-center support mask, excluding out-of-field samples.
     """
     rotation = rotation_matrices(parameters[:, 0])
-    mapped = (
-        torch.einsum("bij,hwj->bhwi", rotation, plane.points)
-        + parameters[:, None, None, 1:]
+    # Compose tiny matrices first; dense, skinny GEMMs are slow on CPU and CUDA.
+    delta = (
+        plane.plane_to_normalized
+        @ (rotation - plane.identity)
+        @ plane.normalized_to_plane
     )
-    positions = mapped @ plane.inverse_lattice.T + plane.image_center
-    bounds = images.new_tensor([images.shape[2] - 1, images.shape[1] - 1])
-    # A tiny tolerance keeps roundoff at exact identity boundaries from losing pixels.
-    valid = ((positions >= -1e-5) & (positions <= bounds + 1e-5)).all(dim=-1)
-    grid = positions.clamp(min=0) / bounds * 2 - 1
+    translation = parameters[:, 1:] @ plane.plane_to_normalized.T
+    nx, ny = plane.normalized_i, plane.normalized_j
+    # Displacement from identity avoids cancellation at zero motion.
+    gx = nx + (
+        delta[:, 0, 0, None, None] * nx
+        + delta[:, 0, 1, None, None] * ny
+        + translation[:, 0, None, None]
+    )
+    gy = ny + (
+        delta[:, 1, 0, None, None] * nx
+        + delta[:, 1, 1, None, None] * ny
+        + translation[:, 1, None, None]
+    )
+    grid = torch.stack((gx, gy), dim=-1)
+    tolerance = plane.support_tolerance
+    valid = ((grid >= -1 - tolerance) & (grid <= 1 + tolerance)).all(dim=-1)
     sampled = F.grid_sample(
         images[:, None],
         grid.to(images.dtype),

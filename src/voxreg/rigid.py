@@ -69,7 +69,7 @@ def _optimize(
         1 converged, 2 insufficient overlap, 3 invalid metric, 4 reference, 5 limit.
     """
     b = len(images)
-    u = plane.points.new_zeros((b, 3), requires_grad=True)
+    u = plane.parameter_scale.new_zeros((b, 3), requires_grad=True)
     best = torch.zeros_like(u)
     best_loss = u.new_full((b,), torch.inf)
     moment, variance = torch.zeros_like(u), torch.zeros_like(u)

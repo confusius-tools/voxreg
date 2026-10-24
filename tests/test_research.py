@@ -29,7 +29,8 @@ def test_research_help_needs_no_inputs(script, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_batch_check_generates_its_own_comparison(recording_factory, tmp_path):
+@pytest.mark.parametrize("sampler", ["production", "elementwise64"])
+def test_batch_check_generates_its_own_comparison(recording_factory, tmp_path, sampler):
     data, _, _ = recording_factory()
     path = tmp_path / "input.npz"
     np.savez(
@@ -49,6 +50,8 @@ def test_batch_check_generates_its_own_comparison(recording_factory, tmp_path):
             str(output),
             "--devices",
             "cpu",
+            "--sampler",
+            sampler,
         ],
         cwd=tmp_path,
         capture_output=True,
@@ -61,12 +64,17 @@ def test_batch_check_generates_its_own_comparison(recording_factory, tmp_path):
             OPENBLAS_NUM_THREADS="1",
         ),
     )
-    report = json.loads((output / "elementwise-validation.json").read_text())
+    filename = (
+        "production-validation.json"
+        if sampler == "production"
+        else "elementwise-validation.json"
+    )
+    report = json.loads((output / filename).read_text())
     quality = report["quality"]
     baseline = quality["baseline-cpu"]["median_ncc2"]
     assert 0.99 < baseline <= 1
     for batch in (1, 2, 32):
         assert report[f"cpu-b1-vs-b{batch}"]["rms_pixels_max"] < 0.001
         assert_allclose(
-            quality[f"elementwise64-cpu-b{batch}"]["median_ncc2"], baseline, atol=1e-7
+            quality[f"{sampler}-cpu-b{batch}"]["median_ncc2"], baseline, atol=1e-7
         )

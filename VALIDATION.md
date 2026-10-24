@@ -1,8 +1,9 @@
 # Initial rigid validation
 
 Status: **numerical and real-data quality checks pass; isolated ITK/FireANTs
-performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.md). This is not yet a throughput-tuned engine or a general-purpose
-registration library.
+performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.md).
+Throughput measurements cover the documented recording only; this is not a
+general-purpose registration library.
 
 ## Environment and reproducibility
 
@@ -28,7 +29,7 @@ source hash. No optimizer parameters were tuned against this recording.
 
 ```bash
 uv run --extra examples pytest -q
-# 48 passed, including CUDA, ITK/FireANTs recovery, process-tree memory and research CLI checks.
+# 58 passed, including CUDA, sheared/strided SciPy sampling, gradients and research CLI checks.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples
@@ -120,16 +121,19 @@ time t, and ends with zero. It is not a sum of Euler-angle derivatives.
 2. **Runtime comparison:** the original contested timings were discarded. New
    isolated ITK/FireANTs comparisons include single-thread, eight-thread and
    eight-process ITK controls, CPU/CUDA FireANTs batching, separate timing/memory
-   passes, and common quality scoring. Current eager voxreg is slower than
-   eight-thread ITK on CPU and full-batch FireANTs on CUDA. See [BENCHMARK.md](BENCHMARK.md). These do not establish a speedup
+   passes, and common quality scoring. The production scalar-affine sampler
+   improves full-batch CUDA from 1.18 to 0.23 s and eight-thread CPU from 3.09 to
+   1.98 s in matched runs. CPU remains slower than native float32 FireANTs. See [BENCHMARK.md](BENCHMARK.md). These do not establish a speedup
    over ConfUSIus's full public pipeline, which has not been cleanly retimed.
    The notebook/reference exporters still default to quality-only mode.
-3. **Profiling/optimization:** [PERFORMANCE.md](PERFORMANCE.md) identifies dense
-   float64 grid GEMMs as the principal CUDA bottleneck. An isolated scalar-affine
-   sampler retaining float64 passes all 43 tests and real-data batch gates,
-   improving matched CPU/CUDA timings. It has not been applied to engine source
-   or subjected to fresh-process peak-memory benchmarking. No compiled variant
-   or float32-only fast path has been introduced.
+3. **Profiling/optimization:** the production scalar-affine sampler removes dense
+   grid GEMMs while retaining float64 geometry/state/NCC. All 58 tests pass,
+   including expanded sheared geometry, native support tolerance and CUDA batch
+   checks. Real recording batch sizes 1/32/120 differ by at most 6.95e-9 pixels RMS
+   on CUDA; same-device mapping change from baseline is below 6.70e-6 pixels RMS.
+   Fresh-process full-batch CUDA peak allocation falls from 212.5 to 189.2 MiB,
+   with process VRAM 514 to 478 MiB. See [BENCHMARK.md](BENCHMARK.md) and its tracked
+   snapshot. Further fusion/compilation and broader-data validation remain open.
 4. **Broader scope:** no full 3D, multi-pose, multiresolution, arbitrary-mask,
    differing-grid, affine or deformable validation has been attempted. These
    inputs are deliberately unsupported rather than silently approximated.

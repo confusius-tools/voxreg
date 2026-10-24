@@ -5,7 +5,8 @@ using PyTorch and xarray-based VoxelData. No ConfUSIus runtime dependency.
 
 The initial engine corrects in-plane rotation and translation in single-slice
 recordings with dimensions `(time, k=1, j, i)`. CPU and CUDA are supported. This
-is an eager correctness baseline, not yet a tuned high-throughput engine.
+is an eager single-slice engine with validated throughput on the documented
+recording, not a general-purpose registration replacement.
 
 See [DESIGN.md](DESIGN.md) for conventions and scope, and
 [VALIDATION.md](VALIDATION.md) for the measured quality checks and remaining gates.
@@ -153,16 +154,17 @@ Process-parallel ITK includes scheduling and result-transfer overhead. Startup
 costs and loaded-input/warm memory baselines are recorded separately.
 
 See [BENCHMARK.md](BENCHMARK.md) for measured timings, memory, quality and caveats.
-The current eager voxreg CPU path is slower than ITK and FireANTs. Native
-float32 FireANTs is also faster on full-batch CUDA; these are not precision-matched
-solvers. Both comparisons use direct 2D APIs, not the ConfUSIus pipeline or its
-earlier frozen-reference optimizer configuration. See the report for the pinned
-FireANTs archive and its Python 3.14 packaging rationale.
+The scalar-affine sampler is now used by the engine: matched warm timings improve
+from 1.18 to **0.23 s on full-batch CUDA** and 3.09 to **1.98 s on eight-thread CPU**.
+The fresh FireANTs controls take 0.35 s and 0.93 s respectively: CUDA is competitive,
+while CPU remains slower than native float32 FireANTs. These are not precision-
+matched solvers or universal speedup guarantees. Comparisons use direct 2D APIs,
+not the ConfUSIus pipeline or its earlier frozen-reference optimizer configuration.
+See the report for memory, quality, source hashes and the pinned FireANTs archive.
 
-[PERFORMANCE.md](PERFORMANCE.md) diagnoses the hot path with fresh single-thread
-controls and profiler evidence. An isolated float64 scalar-affine sampler prototype
-is about 2× faster on threaded CPU and 5× on CUDA while passing the current tests;
-that optimization has **not** been applied to the engine yet.
+[PERFORMANCE.md](PERFORMANCE.md) preserves the profiler investigation that led to
+this rewrite. Float64 physical geometry/state/NCC and independent frame policies
+are unchanged; only dense coordinate evaluation was reorganized.
 
 ## Current limits
 
@@ -182,5 +184,5 @@ that optimization has **not** been applied to the engine yet.
   results are numerically, not bitwise, equal.
 - The lazy index builds on xarray's experimental coordinate-transform index API.
 
-No compiled engine, speedup claim, affine/deformable extension or compatibility
-layer is included in this first implementation.
+No compiled engine, affine/deformable extension or compatibility layer is included.
+Performance claims are limited to the documented single-recording comparisons.
