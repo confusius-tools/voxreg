@@ -28,6 +28,10 @@ are deliberately unqualified research variants, not public precision modes.
 
 ## CPU follow-up
 
+[CPU-current.md](CPU-current.md) adds shared-NCC controls inside FireANTs and
+fresh CPU profiles/timings. Those measurements predate the ConfUSIus integration;
+the updated reproducer explicitly disables Rich progress.
+
 [CPU.md](CPU.md) investigates the remaining gap at `857e792` with fresh profiles
 and precision ablations. `cpu_ablation.py` runs one variant per interpreter and
 retains checked generated source, timings and transforms.

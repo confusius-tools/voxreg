@@ -1,0 +1,312 @@
+{
+  "baseline_commit": "8ba7ec0",
+  "measurement_boundary": "Before the ConfUSIus dependency migration and Rich default. Final reproducer uses shared ConfUSIus geometry and explicitly disables progress; timings have not been rerun for that dependency environment.",
+  "protocol": "Sequential fresh interpreters; one cold and three unmonitored warm calls; 120 neutral float32 frames; batch32; 100 updates per moving frame. Separate 32-moving-frame five-iteration profiles. Desktop activity and unfixed clocks remain. No new memory pass.",
+  "records": {
+    "voxreg-t1": {
+      "variant": "voxreg",
+      "threads": 1,
+      "warm_seconds": [
+        6.903716389002511,
+        6.672615194009268,
+        6.785924655006966
+      ],
+      "median_seconds": 6.785924655006966,
+      "cold_seconds": 6.795617066003615,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "fireants-t1": {
+      "variant": "fireants",
+      "threads": 1,
+      "warm_seconds": [
+        2.9099189289991045,
+        3.2729341210069833,
+        2.988397534005344
+      ],
+      "median_seconds": 2.988397534005344,
+      "cold_seconds": 3.8606914799893275,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "voxreg-ncc32-t1": {
+      "variant": "voxreg-ncc32",
+      "threads": 1,
+      "warm_seconds": [
+        4.366091513002175,
+        4.178591057003359,
+        4.399103283998556
+      ],
+      "median_seconds": 4.366091513002175,
+      "cold_seconds": 4.308695508007077,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "fireants-shared32-t1": {
+      "variant": "fireants-shared32",
+      "threads": 1,
+      "warm_seconds": [
+        2.5441024259926053,
+        2.9093296969949733,
+        2.730737649995717
+      ],
+      "median_seconds": 2.730737649995717,
+      "cold_seconds": 3.7816622559912503,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "fireants-shared64-t1": {
+      "variant": "fireants-shared64",
+      "threads": 1,
+      "warm_seconds": [
+        4.964188005993492,
+        5.110506289987825,
+        4.698084778006887
+      ],
+      "median_seconds": 4.964188005993492,
+      "cold_seconds": 5.118217749011819,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "voxreg-split-bounds-t1": {
+      "variant": "voxreg-split-bounds",
+      "threads": 1,
+      "warm_seconds": [
+        5.912565599006484,
+        6.940545120000024,
+        6.0243404989887495
+      ],
+      "median_seconds": 6.0243404989887495,
+      "cold_seconds": 5.647936997993384,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "voxreg-t8": {
+      "variant": "voxreg",
+      "threads": 8,
+      "warm_seconds": [
+        1.771435989998281,
+        1.749354098996264,
+        1.6885602999973344
+      ],
+      "median_seconds": 1.749354098996264,
+      "cold_seconds": 2.0958014550124062,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "fireants-t8": {
+      "variant": "fireants",
+      "threads": 8,
+      "warm_seconds": [
+        1.1615454599959776,
+        1.1046680150029715,
+        1.1874053369974717
+      ],
+      "median_seconds": 1.1615454599959776,
+      "cold_seconds": 2.0579632459994173,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "voxreg-ncc32-t8": {
+      "variant": "voxreg-ncc32",
+      "threads": 8,
+      "warm_seconds": [
+        1.0571687500050757,
+        1.1063711419992615,
+        1.1521175160014536
+      ],
+      "median_seconds": 1.1063711419992615,
+      "cold_seconds": 1.4191218100022525,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "fireants-shared32-t8": {
+      "variant": "fireants-shared32",
+      "threads": 8,
+      "warm_seconds": [
+        0.9523818279994885,
+        1.0048453049967065,
+        1.063391274001333
+      ],
+      "median_seconds": 1.0048453049967065,
+      "cold_seconds": 1.7074053940013982,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "fireants-shared64-t8": {
+      "variant": "fireants-shared64",
+      "threads": 8,
+      "warm_seconds": [
+        1.3935000670026056,
+        1.2140240269945934,
+        1.6446414640086005
+      ],
+      "median_seconds": 1.3935000670026056,
+      "cold_seconds": 2.375265971000772,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    },
+    "voxreg-split-bounds-t8": {
+      "variant": "voxreg-split-bounds",
+      "threads": 8,
+      "warm_seconds": [
+        1.8176125560130458,
+        1.7803278089995729,
+        1.7259403619973455
+      ],
+      "median_seconds": 1.7803278089995729,
+      "cold_seconds": 1.9004295769991586,
+      "torch": "2.14.1+cu130",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ]
+    }
+  },
+  "profiles": {
+    "voxreg-cpu-b32-t8": {
+      "voxreg::sample": {
+        "calls": 5,
+        "inclusive_cpu_ms": 5.652349999999998
+      },
+      "voxreg::ncc": {
+        "calls": 5,
+        "inclusive_cpu_ms": 4.047039
+      },
+      "voxreg::backward": {
+        "calls": 5,
+        "inclusive_cpu_ms": 7.929098
+      }
+    },
+    "fireants-cpu-b32-t8": {
+      "fireants::sample": {
+        "calls": 5,
+        "inclusive_cpu_ms": 2.6864600000000007
+      },
+      "fireants::ncc": {
+        "calls": 5,
+        "inclusive_cpu_ms": 1.7478250000000017
+      },
+      "fireants::backward": {
+        "calls": 5,
+        "inclusive_cpu_ms": 7.1315
+      },
+      "fireants::adam": {
+        "calls": 5,
+        "inclusive_cpu_ms": 0.8829269999999997
+      }
+    },
+    "fireants-cpu-b32-t1": {
+      "fireants::sample": {
+        "calls": 5,
+        "inclusive_cpu_ms": 10.895922000000002
+      },
+      "fireants::ncc": {
+        "calls": 5,
+        "inclusive_cpu_ms": 6.896637000000005
+      },
+      "fireants::backward": {
+        "calls": 5,
+        "inclusive_cpu_ms": 21.112230000000004
+      },
+      "fireants::adam": {
+        "calls": 5,
+        "inclusive_cpu_ms": 0.9395790000000097
+      }
+    },
+    "voxreg-cpu-b32-t1": {
+      "voxreg::sample": {
+        "calls": 5,
+        "inclusive_cpu_ms": 35.475877999999994
+      },
+      "voxreg::ncc": {
+        "calls": 5,
+        "inclusive_cpu_ms": 21.079146
+      },
+      "voxreg::backward": {
+        "calls": 5,
+        "inclusive_cpu_ms": 29.151810000000008
+      }
+    }
+  },
+  "baseline_source_sha256": {
+    "src/voxreg/geometry.py": "a3b1b123a14c5458d49285258504556e6a8e992858f3d2ea0e622542aad7bf8b",
+    "src/voxreg/rigid.py": "29aae918eed6b48127e7e17dec030b9f522c879cc04567549ba91b73b9650239",
+    "src/voxreg/sampling.py": "378212785218b68417dd84ab79b0df6c5f159f812c2d2558902db7b490e4ae2f"
+  },
+  "current_reproducer_sha256": "256d7b4bf63b58138803de8019a87c8ade91517bfb13dcb94b37dc6c82f42d8a",
+  "generated_substitution_sha256": {
+    "artifacts/cpu-current/fireants-shared32-t1-backend.py": "32962f66a40d3b59ff505a01b224cf9d769892445cfa5ce507121faa21b62c39",
+    "artifacts/cpu-current/fireants-shared32-t1-ncc.py": "ff46fba12e36c70ba5812e7f064c1f8267c85173af4fa7e5eae8ef867c6debfd",
+    "artifacts/cpu-current/fireants-shared32-t8-backend.py": "32962f66a40d3b59ff505a01b224cf9d769892445cfa5ce507121faa21b62c39",
+    "artifacts/cpu-current/fireants-shared32-t8-ncc.py": "ff46fba12e36c70ba5812e7f064c1f8267c85173af4fa7e5eae8ef867c6debfd",
+    "artifacts/cpu-current/fireants-shared64-t1-backend.py": "32962f66a40d3b59ff505a01b224cf9d769892445cfa5ce507121faa21b62c39",
+    "artifacts/cpu-current/fireants-shared64-t8-backend.py": "32962f66a40d3b59ff505a01b224cf9d769892445cfa5ce507121faa21b62c39",
+    "artifacts/cpu-current/voxreg-ncc32-t1-ncc.py": "ff46fba12e36c70ba5812e7f064c1f8267c85173af4fa7e5eae8ef867c6debfd",
+    "artifacts/cpu-current/voxreg-ncc32-t8-ncc.py": "ff46fba12e36c70ba5812e7f064c1f8267c85173af4fa7e5eae8ef867c6debfd",
+    "artifacts/cpu-current/voxreg-split-bounds-t1-sampler.py": "d1728fb5bb6d2cf7bd11361d5b111c15b39b6007403824b37cdb9e8b7a17d28a",
+    "artifacts/cpu-current/voxreg-split-bounds-t8-sampler.py": "d1728fb5bb6d2cf7bd11361d5b111c15b39b6007403824b37cdb9e8b7a17d28a"
+  },
+  "limits": [
+    "Shared loss does not match geometry/state precision, masks or optimizer policies between engines.",
+    "Float32 variants previously failed CPU/CUDA agreement gates and remain unqualified.",
+    "No hardware counters or bandwidth-saturation proof; no biological accuracy claim."
+  ]
+}

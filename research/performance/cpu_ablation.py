@@ -33,6 +33,8 @@ VARIANTS = [
     "voxreg-affine32-ncc32",
     "fireants",
     "fireants-ncc64",
+    "fireants-shared32",
+    "fireants-shared64",
 ]
 
 
@@ -225,6 +227,40 @@ def main():
                     ),
                 ],
                 vars(benchmark),
+                args.output / f"{name}-backend.py",
+            )
+
+        if args.variant in ("fireants-shared32", "fireants-shared64"):
+            ncc = sampling.global_ncc
+            if args.variant.endswith("32"):
+                ncc = clone_function(
+                    ncc,
+                    [
+                        (
+                            "moved.to(torch.float64), fixed.to(torch.float64)",
+                            "moved.to(torch.float32), fixed.to(torch.float32)",
+                        )
+                    ],
+                    vars(sampling),
+                    args.output / f"{name}-ncc.py",
+                )
+            fireants_run = clone_function(
+                benchmark.run_fireants,
+                [
+                    (
+                        """            weights = (moved[:, 1] >= 1 - 1e-5).to(moved.dtype)
+            n = weights.sum(dim=(1, 2), keepdim=True).clamp_min(2)
+            x, y = moved[:, 0], target[:, 0]
+            x = (x - (x * weights).sum(dim=(1, 2), keepdim=True) / n) * weights
+            y = (y - (y * weights).sum(dim=(1, 2), keepdim=True) / n) * weights
+            covariance = (x * y).sum(dim=(1, 2))
+            variance = x.square().sum(dim=(1, 2)) * y.square().sum(dim=(1, 2))
+            return -(covariance.square() / variance.clamp_min(1e-12)).sum()""",
+                        """            # Every fixed batch member is the same reference image.
+            return shared_ncc(moved[:, 0], target[0, 0], moved[:, 1] >= 1 - 1e-5)[0].sum()""",
+                    )
+                ],
+                dict(vars(benchmark), shared_ncc=ncc),
                 args.output / f"{name}-backend.py",
             )
 
