@@ -3,9 +3,11 @@
 from io import StringIO
 
 import confusius._utils.progress as cf_progress
+import numpy as np
 import pytest
 import torch
 import xarray as xr
+from confusius import create_voxeldata
 from numpy.testing import assert_array_equal
 from rich.console import Console
 
@@ -165,3 +167,41 @@ def test_rich_display_is_closed_on_registration_error(
     assert len(rich_bars) == 1
     assert not rich_bars[0].live.is_started
     assert not rich_bars[0].finished
+
+
+@pytest.mark.parametrize("shape", [(1, 8, 9), (4, 5, 6)])
+@pytest.mark.parametrize("mode", ["default", "auto", True, False, None])
+def test_spatial_pair_progress_is_auto_quiet(shape, mode, rich_bars):
+    values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape) + 1
+    data = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
+    options = {"intensity_scaling": "none", "max_iterations": 2}
+    quiet = register_rigid(data, data, progress=False, **options)
+    kwargs = {} if mode == "default" else {"progress": mode}
+    result = register_rigid(data, data, **kwargs, **options)
+    for name in ["registered", "valid", "transforms", "diagnostics"]:
+        xr.testing.assert_equal(getattr(result, name), getattr(quiet, name))
+    assert len(rich_bars) == (1 if mode is True else 0)
+    if mode is True:
+        assert rich_bars[0].tasks[0].completed == 1
+
+
+@pytest.mark.parametrize("mode", ["default", "auto"])
+def test_single_frame_recording_is_auto_quiet(recording_factory, mode, rich_bars):
+    data, _, _ = recording_factory()
+    kwargs = {} if mode == "default" else {"progress": mode}
+    register_rigid(data.isel(time=slice(0, 1)), max_iterations=2, **kwargs)
+    assert not rich_bars
+
+
+def test_spatial_pair_callback_is_honored(recording_factory, rich_bars):
+    data, _, _ = recording_factory()
+    fixed = data.isel(time=0, drop=True)
+    updates = []
+    register_rigid(
+        fixed,
+        fixed,
+        max_iterations=2,
+        progress=lambda done, total: updates.append((done, total)),
+    )
+    assert updates == [(1, 1)]
+    assert not rich_bars

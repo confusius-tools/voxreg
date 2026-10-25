@@ -104,7 +104,8 @@ estimating their known geometry as motion.
 
 ### Explicit initial transforms
 
-`initial_transform` follows **ITK's optimized `InitialTransform` model with
+A matrix passed as `initialization=matrix` is an alias for
+`initial_transform=matrix`; supply only one. Both follow **ITK's optimized `InitialTransform` model with
 `InPlaceOff`**, not its separate frozen `MovingInitialTransform`. It supplies the
 starting full rigid pose; voxreg copies it, starts fresh Adam state, refines it and
 returns the **full transform**, not an increment to compose afterward. Omission
@@ -129,6 +130,28 @@ labeled arrays must use `world_out/world_in` (and optional leading `time`), with
 any supplied axis/time labels in the exact input order. No implicit reindexing or
 inversion occurs. Supplied convention/unit metadata must agree with world z/y/x
 fixed-to-moving pulls in mm.
+
+For a pose adjusted manually in napari:
+
+```python
+registered = voxreg.register_rigid(
+    pwd, template,
+    intensity_scaling="none",
+    initialization=np.linalg.inv(affine),
+).registered
+```
+
+The inverse is correct **if** `affine` maps moving (`pwd`) physical world
+coordinates into fixed (`template`) physical world coordinates. Voxreg needs the
+opposite, fixed-to-moving pull. The matrix must use **world z/y/x in mm**; a napari
+matrix in layer-data/pixel coordinates or x/y/z order needs conversion first.
+Do not invert a matrix that is already a fixed-to-moving pull.
+
+A homogeneous 4×4 matrix is often called an affine even when it contains only a
+rotation and translation. This API currently fits **rigid transforms only**;
+general affine fitting (scale/shear), translation-only fitting and slice-to-volume
+registration are not added by accepting a matrix initializer. ITK Euler transforms
+are members of the rigid family, although voxreg uses rotation-vector parameters.
 
 Seeds must be finite proper rigid homogeneous matrices. Scale, shear and
 reflection are rejected beyond a 1e-6 rotation-roundoff tolerance. Accepted
@@ -300,8 +323,10 @@ Python kernel after updating to discard the old exports/index implementation.
 
 ### CPU and CUDA progress
 
-**Rich progress is enabled by default** on both CPU and CUDA, reusing
-ConfUSIus's progress-bar style: percentage, frame counts, elapsed time and ETA.
+**Progress defaults to `"auto"`** on both CPU and CUDA: spatial-only pairs and
+single-frame recordings are quiet; multiple moving frames show ConfUSIus's Rich
+progress-bar style with percentage, frame counts, elapsed time and ETA.
+Use `progress=True` to force a bar, including for a single pair.
 No callback is needed:
 
 ```python

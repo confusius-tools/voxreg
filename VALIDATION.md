@@ -5,9 +5,24 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented pair/series controls, not general
 registration accuracy or performance.
 
-## Automatic geometry/moments initialization
+## Initialization/progress ergonomics
 
-The current suite passes **288 tests**, including 26 automatic-centering tests.
+The current suite passes **308 tests**. Matrix-valued `initialization` is tested
+against `initial_transform` for NumPy arrays, nested lists, labeled matrices and
+batched matrices. The napari moving-to-fixed example is inverted into the existing
+physical fixed-to-moving pull convention. Scale/shear rejection and mutual
+exclusion are preserved; no new transform family or frozen affine chain is added.
+
+Progress defaults to `"auto"`: spatial pairs and single-frame recordings are quiet;
+multiple-frame recordings retain the Rich frame bar. Explicit True/False/None and
+callbacks retain their semantics. Slice/volume pair checks verify unchanged numeric
+results and explicit opt-in rendering; callbacks still receive (1, 1) for a pair.
+The existing CPU/CUDA progress synchronization and numerical checks pass. Ruff,
+format, lock, build and isolated wheel smoke checks pass.
+
+## Automatic geometry/moments initialization (aae4918)
+
+At this boundary, the suite passed **288 tests**, including 26 automatic-centering tests.
 All changes are in voxreg; ConfUSIus was used only as an API/reference comparison.
 Both `center_geometry` and `center_moments` match installed ITK 5.4.7 centering on
 physical centers, translation direction and fixed rotation pivot. Geometry uses
@@ -267,7 +282,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 288 passed, including automatic centering, initial transforms, 3D and CUDA.
+# 308 passed, including matrix initialization, auto progress, centering, 3D and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples

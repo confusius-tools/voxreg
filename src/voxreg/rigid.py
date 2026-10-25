@@ -186,7 +186,10 @@ def register_rigid(
     fixed: xr.DataArray | None = None,
     *,
     initial_transform: npt.ArrayLike | xr.DataArray | None = None,
-    initialization: Literal["center_geometry", "center_moments"] | None = None,
+    initialization: Literal["center_geometry", "center_moments"]
+    | npt.ArrayLike
+    | xr.DataArray
+    | None = None,
     intensity_scaling: Literal["none", "db"] = "db",
     interpolation: Literal["linear", "nearest"] = "linear",
     batch_size: int = 32,
@@ -195,7 +198,7 @@ def register_rigid(
     convergence_window_size: int = 50,
     convergence_minimum_value: float = 1e-6,
     device: Literal["cpu", "cuda"] = "cpu",
-    progress: bool | Callable[[int, int], None] | None = True,
+    progress: Literal["auto"] | bool | Callable[[int, int], None] | None = "auto",
 ) -> RegistrationResult:
     """Register a volume or independent frames onto a fixed physical VoxelData grid.
 
@@ -220,13 +223,16 @@ def register_rigid(
         pre-transform. Float32 rotation roundoff within 1e-6 is normalized.
         For an implicit first-frame reference its initial transform must be identity;
         use explicit fixed to optimize every frame from a shared nonidentity pose.
-    initialization : {"center_geometry", "center_moments"}, optional
-        Automatic translation seed, mutually exclusive with initial_transform.
-        Geometry aligns physical grid centers. Moments aligns original-intensity
-        centers of gravity and uses the fixed centroid as the rotation center,
-        including physical lever-arm scaling, following ITK. Moments requires
-        nonnegative original values with positive mass in every image. No
-        rotation is estimated; the implicit reference stays exactly identity.
+    initialization : {"center_geometry", "center_moments"} or array-like, optional
+        Named centering mode or rigid matrix seed, mutually exclusive with
+        initial_transform. Matrices alias initial_transform with the same shape,
+        world-coordinate, label and rigidity requirements; scale/shear are not
+        supported. Geometry aligns physical grid centers. Moments aligns
+        original-intensity centers of gravity and uses the fixed centroid as the
+        rotation center, including physical lever-arm scaling, following ITK.
+        Moments requires nonnegative original values with positive mass in every
+        image. Named modes estimate no rotation; the implicit reference stays
+        exactly identity.
     intensity_scaling : {"none", "db"}, default: "db"
         Fitting preprocessing only; original intensities are resampled for output.
         dB requires nonnegative power; normalized zeros are floored at 1e-12.
@@ -252,9 +258,12 @@ def register_rigid(
         nonnegative threshold. This is not a raw NCC difference or parameter step.
     device : {"cpu", "cuda"}, default: "cpu"
         Explicit Torch device; unavailable CUDA is an error, not a fallback.
-    progress : bool or callable, default: True
-        True displays ConfUSIus's Rich progress bar with frame counts, elapsed time
-        and ETA. False or None disables reporting. A callable overrides the bar and
+    progress : {"auto"} or bool or callable, default: "auto"
+        Auto shows the frame bar only for multiple moving frames, remaining quiet
+        for a spatial pair or a single-frame recording. True explicitly displays
+        ConfUSIus's Rich progress bar with frame counts, elapsed time and ETA even
+        for a single pair.
+        False or None disables reporting. A callable overrides the bar and
         receives ``(completed_frames, total_frames)`` after each batch's results
         reach the CPU, on either device. Counts include reference and failed frames,
         not optimizer updates. No preparation/final-assembly events are emitted.
@@ -374,19 +383,27 @@ def register_rigid(
         progress is not None
         and not isinstance(progress, bool)
         and not callable(progress)
+        and not (isinstance(progress, str) and progress == "auto")
     ):
         raise TypeError(
-            "progress must be True, False, None, or a callable accepting (completed, total)."
+            "progress must be True, False, None, 'auto', or a callable accepting (completed, total)."
         )
-    if initialization is not None and (
-        not isinstance(initialization, str)
-        or initialization not in ("center_geometry", "center_moments")
-    ):
-        raise ValueError(
-            "initialization must be None, center_geometry or center_moments."
-        )
+    if isinstance(progress, str):
+        progress = moving.sizes["time"] > 1
     if initialization is not None and initial_transform is not None:
         raise ValueError("Use initialization or initial_transform, not both.")
+    if initialization is not None:
+        if isinstance(initialization, str):
+            if initialization not in ("center_geometry", "center_moments"):
+                raise ValueError(
+                    "initialization must be None, center_geometry, center_moments or a rigid matrix."
+                )
+        else:
+            if np.ndim(initialization) not in (2, 3):
+                raise ValueError(
+                    "initialization must be a rigid (4, 4) or (N, 4, 4) matrix, or a named mode."
+                )
+            initial_transform, initialization = initialization, None
     center = None
     if initialization is not None:
         fixed_position = _center_positions(fixed, initialization, "fixed")[0]

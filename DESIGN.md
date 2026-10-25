@@ -77,6 +77,12 @@ non-coplanar planes, or change the 90% overlap policy.
 
 ## Initial-transform model
 
+A matrix-valued `initialization` aliases `initial_transform`, using the same
+validation and optimizer path; it is not a frozen affine pre-transform. Named
+initialization modes remain centering-only. Supplying both arguments is an error.
+Scale/shear require a future affine model, not silent projection into rigid state.
+Euler is a rigid parameterization rather than a separate transform family.
+
 `initial_transform` is a full fixed-world-to-moving-world rigid pull matrix, one
 shared `(4, 4)` matrix or a positional `(N, 4, 4)` batch. It initializes the
 **optimized transform**, like ITK `SetInitialTransform` with `InPlaceOff`.

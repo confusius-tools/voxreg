@@ -437,3 +437,47 @@ def test_itk_initial_transform_inplaceoff_oracle():
     parameters[3] += 1
     native.SetParameters(parameters)
     np.testing.assert_array_equal(np.asarray(initial.GetParameters()), untouched)
+
+
+@pytest.mark.parametrize("representation", ["array", "list", "labeled", "batch"])
+def test_initialization_matrix_alias_matches_initial_transform(representation):
+    fixed, moving, truth = posed_pair()
+    # Napari display pose: moving -> fixed. Registration needs the inverse pull.
+    affine = np.linalg.inv(truth)
+    seed = np.linalg.inv(affine)
+    if representation == "list":
+        seed = seed.tolist()
+    elif representation == "labeled":
+        seed = xr.DataArray(
+            seed,
+            dims=("world_out", "world_in"),
+            coords={d: ["z", "y", "x", "1"] for d in ("world_out", "world_in")},
+        )
+    elif representation == "batch":
+        seed = seed[None]
+    untouched = np.array(seed, copy=True)
+    options = {"intensity_scaling": "none", "max_iterations": 3, "progress": False}
+    expected = register_rigid(moving, fixed, initial_transform=seed, **options)
+    actual = register_rigid(moving, fixed, initialization=seed, **options)
+    for name in ["registered", "valid", "transforms", "diagnostics"]:
+        xr.testing.assert_equal(getattr(actual, name), getattr(expected, name))
+    np.testing.assert_array_equal(seed, untouched)
+
+
+@pytest.mark.parametrize("kind", ["scale", "shear"])
+def test_initialization_matrix_does_not_discard_nonrigid_affine(kind):
+    fixed, moving, _ = posed_pair()
+    seed = np.eye(4)
+    seed[0, 0 if kind == "scale" else 1] += 0.2
+    with pytest.raises(ValueError, match="proper rigid"):
+        register_rigid(
+            moving, fixed, initialization=seed, intensity_scaling="none", progress=False
+        )
+
+
+def test_initialization_matrix_and_initial_transform_are_exclusive():
+    fixed, moving, truth = posed_pair()
+    with pytest.raises(ValueError, match="not both"):
+        register_rigid(
+            moving, fixed, initialization=truth, initial_transform=truth, progress=False
+        )
