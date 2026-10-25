@@ -1,4 +1,4 @@
-"""Independent per-frame rigid optimization on a shared physical voxel plane."""
+"""Independent rigid optimization with fixed-domain physical-space sampling."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,7 +12,14 @@ from confusius._utils.progress import progress_bar
 
 from voxreg.convergence import WindowConvergence
 from voxreg.geometry import VOXEL_DIMS, _validate_registration_geometry
-from voxreg.sampling import Plane, global_ncc, make_plane, sample_rigid, world_matrices
+from voxreg.sampling import (
+    Plane,
+    SpatialGrid,
+    global_ncc,
+    make_grid,
+    sample_rigid,
+    world_matrices,
+)
 
 
 @dataclass(frozen=True)
@@ -27,9 +34,9 @@ class RegistrationResult:
     valid : xarray.DataArray
         Boolean VoxelData mask of valid moving-image sample centers.
     transforms : xarray.DataArray
-        Homogeneous world z/y/x pull matrices, indexed by time.
+        Homogeneous world z/y/x pull matrices, indexed by time for recordings.
     diagnostics : xarray.Dataset
-        Per-frame objective, iteration count, status and intrinsic motion.
+        Objective, update count, status and centered physical motion parameters.
     """
 
     registered: xr.DataArray
@@ -46,7 +53,7 @@ def _all_frames_stopped(status: torch.Tensor) -> bool:
 def _optimize(
     images: torch.Tensor,
     fixed: torch.Tensor,
-    plane: Plane,
+    plane: Plane | SpatialGrid,
     reference: torch.Tensor,
     max_iterations: int,
     learning_rate: float,
@@ -61,8 +68,8 @@ def _optimize(
         Batched fitting images.
     fixed : torch.Tensor
         Shared fixed fitting image.
-    plane : Plane
-        Resident sampling geometry.
+    plane : Plane or SpatialGrid
+        Resident fixed/moving sampling geometry.
     reference : torch.Tensor
         Boolean mask of frames that must stay exactly identity.
     max_iterations : int
@@ -77,14 +84,17 @@ def _optimize(
     Returns
     -------
     parameters : torch.Tensor
-        Best valid angle/mm parameters per frame.
+        Best valid radian/mm parameters per frame.
     steps : torch.Tensor
         Number of optimizer updates per frame.
     status : torch.Tensor
         1 converged, 2 insufficient overlap, 3 invalid metric, 4 reference, 5 limit.
     """
     b = len(images)
-    u = plane.parameter_scale.new_zeros((b, 3), requires_grad=True)
+    u = plane.parameter_scale.new_zeros(
+        (b, len(plane.parameter_scale)), requires_grad=True
+    )
+    spatial_axes = tuple(range(1, images.ndim))
     best = torch.zeros_like(u)
     best_loss = u.new_full((b,), torch.inf)
     moment, variance = torch.zeros_like(u), torch.zeros_like(u)
@@ -94,13 +104,13 @@ def _optimize(
         if convergence_window_size <= max_iterations
         else None
     )
-    constant = images.amax(dim=(1, 2)) == images.amin(dim=(1, 2))
+    constant = images.amax(dim=spatial_axes) == images.amin(dim=spatial_axes)
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
     check_interval = 10 if images.is_cuda else 1
     for iteration in range(max_iterations):
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         loss, meaningful = global_ncc(moved, fixed, valid)
-        overlap = valid.float().mean(dim=(1, 2)) >= 0.9
+        overlap = valid.float().mean(dim=spatial_axes) >= 0.9
         good = overlap & meaningful & torch.isfinite(loss)
         active = status == 0
         with torch.no_grad():
@@ -147,7 +157,7 @@ def _optimize(
     with torch.no_grad():
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         loss, meaningful = global_ncc(moved, fixed, valid)
-        overlap = valid.float().mean(dim=(1, 2)) >= 0.9
+        overlap = valid.float().mean(dim=spatial_axes) >= 0.9
         good = overlap & meaningful & torch.isfinite(loss)
         eligible = (status == 0) | (status == 1)
         improved = eligible & good & (loss < best_loss)
@@ -172,16 +182,19 @@ def register_rigid(
     device: Literal["cpu", "cuda"] = "cpu",
     progress: bool | Callable[[int, int], None] | None = True,
 ) -> RegistrationResult:
-    """Register independent single-slice frames to a shared fixed VoxelData grid.
+    """Register a volume or independent frames onto a fixed physical VoxelData grid.
 
     Parameters
     ----------
     moving : xarray.DataArray
-        Finite real NumPy-backed VoxelData, (time, k=1, j, i). Integer values must
-        lie within [-2**53, 2**53] for exact conversion to floating-point samples.
+        Finite real NumPy-backed VoxelData, (k, j, i) or (time, k, j, i).
+        Slice pairs use k=1; volume pairs require all spatial axes >= 2.
+        Integer values must lie within [-2**53, 2**53] for exact float conversion.
     fixed : xarray.DataArray, optional
-        Spatial-only VoxelData on exactly the moving grid. Uses the first frame
-        when not provided; that reference frame is then copied exactly.
+        Spatial-only VoxelData with independent shape, spacing, origin and
+        orientation. Required for spatial-only moving input. For recordings,
+        omission uses the first frame and preserves that reference exactly.
+        Slice pairs must be coplanar; no plane alignment is inferred.
     intensity_scaling : {"none", "db"}, default: "db"
         Fitting preprocessing only; original intensities are resampled for output.
         dB requires nonnegative power; normalized zeros are floored at 1e-12.
@@ -213,8 +226,10 @@ def register_rigid(
     Returns
     -------
     result : RegistrationResult
-        Registered original intensities and validity as VoxelData, world pull
-        matrices, and per-frame diagnostics. Invalid frames retain their best
+        Registered intensities and validity on the fixed grid, world pull
+        matrices, and diagnostics. Spatial-only input returns spatial-only output,
+        one (4, 4) matrix and scalar diagnostics, without a synthetic time label.
+        Invalid frames retain their best
         valid transform, or identity if no valid metric was observed.
 
     Raises
@@ -226,6 +241,15 @@ def register_rigid(
 
     Notes
     -----
+    Optimization starts at identity in physical world space, not identity voxel
+    coordinates. Sampling composes inverse(A_moving) @ T @ A_fixed. Volumes use
+    a centered axis-angle rotation vector (right-handed XYZ, stored z/y/x) and
+    world z/y/x translation. Slices optimize only fixed-plane rotation and i/j
+    translation. No initial transform or slice-to-volume fitting is supported.
+    Less than 90% valid fixed-grid support flags insufficient overlap. Physical
+    scaling uses minimum fixed spacing and RMS lever arms, not ITK's estimator.
+    The default convergence threshold was calibrated on slices, not general 3D.
+
     Convergence follows ITK v4's accumulated-absolute-energy normalization and
     first-order B-spline window gradient, checked before the next Adam update.
     Each frame has independent metric history, Adam moments, clock and stopping
@@ -242,6 +266,11 @@ def register_rigid(
     """
     start = perf_counter()
     _validate_registration_geometry(moving)
+    spatial_input = moving.dims == VOXEL_DIMS
+    if spatial_input:
+        if fixed is None:
+            raise ValueError("fixed is required for spatial-only input without time.")
+        moving = moving.expand_dims(time=[0])
     if moving.dims != ("time", *VOXEL_DIMS):
         raise ValueError("moving must have dimensions (time, k, j, i).")
     implicit_fixed = fixed is None
@@ -250,10 +279,7 @@ def register_rigid(
     _validate_registration_geometry(fixed)
     if fixed.dims != VOXEL_DIMS:
         raise ValueError("fixed must have dimensions (k, j, i), without time.")
-    if not moving.xindexes["z"].equals(fixed.xindexes["z"]):
-        raise ValueError(
-            "fixed and moving must have identical native coordinates and physical geometry."
-        )
+    same_grid = moving.xindexes["z"].equals(fixed.xindexes["z"])
     for name, data in (("moving", moving), ("fixed", fixed)):
         integer = np.issubdtype(data.dtype, np.integer)
         if not integer and not (
@@ -311,8 +337,11 @@ def register_rigid(
             "progress must be True, False, None, or a callable accepting (completed, total)."
         )
     # Double physical geometry/state keeps gradient reductions stable across chunk sizes.
-    plane = make_plane(fixed, device=device, dtype=torch.float64)
-    raw = moving.values[:, 0]
+    plane = make_grid(fixed, moving, device=device, dtype=torch.float64)
+    planar = isinstance(plane, Plane) or plane.planar
+    raw = moving.values[:, 0] if planar else moving.values
+    spatial_axes = tuple(range(1, raw.ndim))
+    reference_shape = (slice(None),) + (None,) * len(spatial_axes)
     integer_output = np.issubdtype(raw.dtype, np.integer)
     resampling_dtype = (
         np.float64 if integer_output or raw.dtype.itemsize > 4 else np.float32
@@ -327,7 +356,9 @@ def register_rigid(
         else np.float32
     )
     fit_raw = raw.astype(preprocessing_dtype)
-    target_raw = fixed.values[0].astype(preprocessing_dtype)
+    target_raw = (fixed.values[0] if planar else fixed.values).astype(
+        preprocessing_dtype
+    )
     moving_scale = float(np.abs(fit_raw).max())
     scale = max(moving_scale, float(np.abs(target_raw).max()))
     if moving_scale == 0:
@@ -342,8 +373,13 @@ def register_rigid(
     if preprocessing_dtype == np.float64:
         # NCC is affine-intensity invariant; keep low-contrast detail before float32 conversion.
         for values in (fit, target):
-            values -= values[..., :1, :1]
-            amplitude = np.abs(values).max(axis=(-2, -1), keepdims=True)
+            corner = (slice(None),) * (values.ndim - len(spatial_axes)) + (
+                slice(0, 1),
+            ) * len(spatial_axes)
+            values -= values[corner]
+            amplitude = np.abs(values).max(
+                axis=tuple(range(-len(spatial_axes), 0)), keepdims=True
+            )
             values /= np.where(amplitude > 0, amplitude, 1)
     fit, target = fit.astype(np.float32), target.astype(np.float32)
     if np.ptp(target) == 0:
@@ -400,13 +436,16 @@ def register_rigid(
                 sampled, valid = sample_rigid(
                     original, physical, plane, interpolation=interpolation
                 )
-                fills = original.amin(dim=(1, 2))[:, None, None]
+                fills = original.amin(dim=spatial_axes)[reference_shape]
                 sampled = torch.where(valid, sampled, fills)
-                sampled = torch.where(reference[:, None, None], original, sampled)
-                valid = valid | reference[:, None, None]
+                if implicit_fixed:
+                    sampled = torch.where(reference[reference_shape], original, sampled)
+                    valid = valid | reference[reference_shape]
                 fitted, fit_valid = sample_rigid(images, physical, plane)
                 loss, meaningful = global_ncc(fitted, target_tensor, fit_valid)
-                nonconstant = images.amax(dim=(1, 2)) > images.amin(dim=(1, 2))
+                nonconstant = images.amax(dim=spatial_axes) > images.amin(
+                    dim=spatial_axes
+                )
                 loss = torch.where(meaningful & nonconstant, loss, torch.nan)
                 values = sampled.cpu().numpy()
                 if integer_output:
@@ -418,7 +457,7 @@ def register_rigid(
                 clocks.append(steps.cpu().numpy())
                 statuses.append(status.cpu().numpy())
                 objectives.append(loss.cpu().numpy())
-                overlaps.append(valid.float().mean(dim=(1, 2)).cpu().numpy())
+                overlaps.append(valid.float().mean(dim=spatial_axes).cpu().numpy())
             timings["resample_download"] += perf_counter() - start
             if progress is True:
                 advance(last - first)
@@ -435,12 +474,8 @@ def register_rigid(
             "max_iterations",
         ]
     )
-    diagnostics = xr.Dataset(
+    motion = (
         {
-            "objective": ("time", np.concatenate(objectives)),
-            "valid_fraction": ("time", np.concatenate(overlaps)),
-            "n_iterations": ("time", np.concatenate(clocks)),
-            "status": ("time", labels[np.concatenate(statuses)]),
             "angle": (
                 "time",
                 params[:, 0],
@@ -462,6 +497,33 @@ def register_rigid(
                     "meaning": "center displacement along orthogonalized intrinsic j",
                 },
             ),
+        }
+        if planar
+        else {
+            name: (
+                "time",
+                params[:, column],
+                {"units": "rad" if column < 3 else "mm", "basis": "world z/y/x"},
+            )
+            for column, name in enumerate(
+                (
+                    "rotation_z",
+                    "rotation_y",
+                    "rotation_x",
+                    "translation_z",
+                    "translation_y",
+                    "translation_x",
+                )
+            )
+        }
+    )
+    diagnostics = xr.Dataset(
+        {
+            "objective": ("time", np.concatenate(objectives)),
+            "valid_fraction": ("time", np.concatenate(overlaps)),
+            "n_iterations": ("time", np.concatenate(clocks)),
+            "status": ("time", labels[np.concatenate(statuses)]),
+            **motion,
         },
         coords={"time": moving.time},
         attrs={"timings_seconds": timings},
@@ -473,11 +535,31 @@ def register_rigid(
         coords={"time": moving.time, "world_out": axes, "world_in": axes},
         attrs={"convention": "fixed-world-to-moving-world pull", "spatial_units": "mm"},
     )
-    valid_data = moving.copy(data=np.concatenate(masks)[:, None])
+    template = moving
+    if not same_grid:
+        template = fixed.drop_vars("time", errors="ignore").expand_dims(
+            time=moving.time
+        )
+        template = template.assign_coords(
+            {
+                name: coord
+                for name, coord in moving.coords.items()
+                if coord.dims == ("time",)
+            }
+        )
+        template.attrs = moving.attrs.copy()
+        template.name = moving.name
+    values, validity = np.concatenate(outputs), np.concatenate(masks)
+    if planar:
+        values, validity = values[:, None], validity[:, None]
+    registered = template.copy(data=values)
+    valid_data = template.copy(data=validity)
     valid_data.attrs = {"description": "Valid moving-image sample centers"}
-    return RegistrationResult(
-        moving.copy(data=np.concatenate(outputs)[:, None]),
-        valid_data,
-        transforms,
-        diagnostics,
-    )
+    if spatial_input:
+        return RegistrationResult(
+            registered.isel(time=0, drop=True),
+            valid_data.isel(time=0, drop=True),
+            transforms.isel(time=0, drop=True),
+            diagnostics.isel(time=0, drop=True),
+        )
+    return RegistrationResult(registered, valid_data, transforms, diagnostics)

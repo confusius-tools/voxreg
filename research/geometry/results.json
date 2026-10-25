@@ -1,0 +1,126 @@
+{
+  "parent_commit": "ed9cb21464761a6df657fbe40778706528ce0cf5",
+  "kind": "numerical qualification only; no timing/memory measurements",
+  "source_sha256": {
+    "src/voxreg/rigid.py": "6709896da888ac3bf2b4235ad396e443bcd438d3db425ac337c12ffcd14ca6d5",
+    "src/voxreg/sampling.py": "fa8b6830dd4a70f243b05ffb86a811f2eb8ef14f9228de997ebd2127ee1fd59b",
+    "src/voxreg/geometry.py": "8c0446838a18f26f82ad0a5240e1adbfd612be8dc9a9de9a49178f1125bf0bd4",
+    "tests/test_grids.py": "f94344db7b70a0590c830fe53ed58c31069dd08ca05a2905f8f1bd47f7d634fa"
+  },
+  "case": {
+    "generator": "tests/test_grids.py::volume_phantom",
+    "fixed_shape": [
+      17,
+      19,
+      21
+    ],
+    "moving_shape": [
+      29,
+      31,
+      33
+    ],
+    "fixed_minimum_spacing_mm": 0.4000000000000001,
+    "truth_pull_matrix_zyx": [
+      [
+        0.9998375098174711,
+        0.009848800772748988,
+        0.015098181524181327,
+        0.11
+      ],
+      [
+        -0.010148782648187003,
+        0.9997500151038017,
+        0.019922587952076486,
+        -0.08000000000000002
+      ],
+      [
+        -0.01489819360722265,
+        -0.020072578889795495,
+        0.9996875188797522,
+        0.08999999999999998
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "intensity_scaling": "none",
+    "max_iterations": 180,
+    "convergence_window_size": 50,
+    "convergence_minimum_value": 1e-06,
+    "identity_scipy_ncc_squared": 0.9770549347934063,
+    "truth_scipy_ncc_squared": 0.9954011099923423,
+    "common_support_fraction": 0.9960194604157453
+  },
+  "devices": {
+    "cpu": {
+      "rms_truth_error_min_spacing_pixels": 0.010372504790094791,
+      "max_truth_error_min_spacing_pixels": 0.021529094892254144,
+      "scipy_ncc_squared": 0.9954045148541636,
+      "status": "converged",
+      "n_updates": 81,
+      "valid_fraction": 0.9967566132545471,
+      "dtype": "float32"
+    },
+    "cuda": {
+      "rms_truth_error_min_spacing_pixels": 0.010372627350794833,
+      "max_truth_error_min_spacing_pixels": 0.02152918439584596,
+      "scipy_ncc_squared": 0.9954045148872755,
+      "status": "converged",
+      "n_updates": 81,
+      "valid_fraction": 0.9967565536499023,
+      "dtype": "float32"
+    }
+  },
+  "legacy_regression": {
+    "cpu": {
+      "input": "artifacts/notebook/input.npz",
+      "input_sha256": "c69840a2b8e1fd044d4dea435fa9a23593e6a8784f3932be163b69118fbd028b",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "batch_size": 32,
+      "all_arrays_bitwise_equal": {
+        "registered": true,
+        "valid": true,
+        "transforms": true,
+        "objective": true,
+        "valid_fraction": true,
+        "n_iterations": true,
+        "status": true,
+        "angle": true,
+        "translation_i": true,
+        "translation_j": true
+      }
+    },
+    "cuda": {
+      "input": "artifacts/notebook/input.npz",
+      "input_sha256": "c69840a2b8e1fd044d4dea435fa9a23593e6a8784f3932be163b69118fbd028b",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "batch_size": 120,
+      "all_arrays_bitwise_equal": {
+        "registered": true,
+        "valid": true,
+        "transforms": true,
+        "objective": true,
+        "valid_fraction": true,
+        "n_iterations": true,
+        "status": true,
+        "angle": true,
+        "translation_i": true,
+        "translation_j": true
+      }
+    }
+  },
+  "cpu_cuda_max_pointwise_min_spacing_pixels": 1.0618105006747836e-06
+}

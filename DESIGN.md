@@ -10,6 +10,36 @@ threshold calibration on four real windows and bounded whole-batch termination.
 Broader data qualification remains pending; see [research/convergence/CALIBRATION.md](research/convergence/CALIBRATION.md).
 See [VALIDATION.md](VALIDATION.md).
 
+## Independent-grid / 3D extension (current)
+
+`register_rigid` now accepts spatial-only fixed/moving volume pairs, or batches
+`(time, k, j, i)`, with independent shapes, spacings, origins and orientations.
+The shared engine evaluates the metric on fixed-grid points and resamples original
+moving intensities onto that grid using `inverse(G_moving) @ T @ G_fixed`.
+Spatial-only input requires fixed and returns no synthetic time dimension.
+
+Volumes with every axis >= 2 fit a centered world z/y/x rotation vector and world
+z/y/x translation. Rotation vectors follow right-handed XYZ handedness, stored in
+z/y/x order, and are not Euler angles. Per-axis rotation scales use RMS physical
+lever arms; translation scales use minimum fixed spacing. This remains distinct
+from ITK's physical-shift estimator.
+
+Coplanar k=1 pairs retain fixed-plane 3-DOF constraints, now with independent
+in-plane grids. The identical-grid slice sampling kernel retains its qualified
+arithmetic; preprocessing, NCC, optimizer, convergence, failure guards and dtype
+handling are shared. Non-coplanar slices, other singleton configurations and
+slice-to-volume registration are explicit errors, not unconstrained 6-DOF fits.
+
+Initialization remains identity world motion and the 90% fixed-domain overlap
+policy is unchanged. Initial transforms, geometric center/plane alignment, masks,
+pyramids and other metrics are deferred. Initial 3D synthetic qualification and
+bitwise slice regression evidence are in [research/geometry/README.md](research/geometry/README.md).
+There is no 3D backend time/memory comparison yet.
+
+**The numbered sections below preserve the original slice milestone.** Its full-3D
+and identical-grid exclusions are superseded by this extension; its historical
+performance evidence is not evidence for 3D throughput.
+
 ## 1. Deliverable and stop condition
 
 Build a standalone PyTorch proof of concept that corrects **in-plane rigid motion

@@ -153,8 +153,10 @@ def test_invalid_intensities(recording_factory, bad, match):
 
 def test_invalid_geometry_constants_and_dtypes(recording_factory):
     data, _, _ = recording_factory()
-    with pytest.raises(ValueError, match="identical"):
-        register_rigid(data, fixed=data.isel(time=0, j=slice(1, None), drop=True))
+    fixed = data.isel(time=0, j=slice(1, None), drop=True)
+    cropped = register_rigid(data, fixed=fixed, max_iterations=2, progress=False)
+    assert cropped.registered.shape[1:] == fixed.shape
+    assert cropped.registered.xindexes["z"].equals(fixed.xindexes["z"])
     with pytest.raises(ValueError, match="constant"):
         register_rigid(data.copy(data=np.ones_like(data.values)))
     with pytest.raises(ValueError, match="all-zero"):
@@ -169,7 +171,7 @@ def test_invalid_geometry_constants_and_dtypes(recording_factory):
     with pytest.raises(ValueError, match="time"):
         register_rigid(data.isel(time=0, drop=True))
     volume = create_voxeldata(
-        np.ones((2, 2, 4, 5), dtype=np.float32),
+        np.ones((2, 2, 1, 5), dtype=np.float32),
         dims=("time", "k", "j", "i"),
         dt=1,
         voxel_to_world=np.eye(4),

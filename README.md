@@ -3,10 +3,14 @@
 A proof of concept for **batched physical-space rigid registration** using
 PyTorch and ConfUSIus's xarray-based VoxelData implementation.
 
-The initial engine corrects in-plane rotation and translation in single-slice
-recordings with dimensions `(time, k=1, j, i)`. CPU and CUDA are supported. This
-is an eager single-slice engine with validated throughput on the documented
-recording, not a general-purpose registration replacement.
+The engine registers **single 3D volume pairs or batched frames**, with independent
+fixed/moving shapes, spacings, origins and orientations. Coplanar single-slice
+pairs retain constrained in-plane rigid motion. CPU and CUDA share one optimizer,
+metric, convergence policy and dtype-preserving resampling path.
+
+This remains a rigid-registration proof of concept, not a complete ConfUSIus
+replacement. Throughput comparisons cover the documented slice recordings;
+3D currently has synthetic numerical qualification, not a backend benchmark.
 
 See [DESIGN.md](DESIGN.md) for conventions and scope, and
 [VALIDATION.md](VALIDATION.md) for the measured quality checks and remaining gates.
@@ -64,12 +68,44 @@ matrices = result.transforms  # (time, world_out, world_in), float64.
 print(result.diagnostics)
 ```
 
-Registration defaults to the first frame, which is preserved exactly, including
-its original dtype. An explicit spatial-only `fixed=` image on the same
-grid is also accepted. Defaults are 100 iterations, learning rate 0.1 in scaled
+For recordings, registration defaults to the first frame, preserved exactly,
+including its original dtype. An explicit spatial-only `fixed=` image may have
+independent geometry. Output always uses the **fixed spatial grid** and the moving
+intensity dtype, units and time labels. Defaults are 100 iterations, learning rate 0.1 in scaled
 physical parameters, and dB fitting intensities. Use `intensity_scaling="none"`
 for already-prepared fitting intensities or signed integer images. dB mode
 requires nonnegative power.
+
+### Single 3D volume registration
+
+```python
+# moving_volume and fixed_volume: VoxelData with dimensions (k, j, i).
+# Their shapes, spacings, orientations and origins need not match.
+result = voxreg.register_rigid(
+    moving_volume, fixed_volume, intensity_scaling="none", device="cuda"
+)
+registered = result.registered  # (k, j, i), on fixed_volume's grid.
+matrix = result.transforms     # (world_out, world_in), no synthetic time axis.
+print(result.diagnostics)       # Scalar objective, status and motion parameters.
+```
+
+All three axes must contain at least two samples for 6-DOF volume fitting.
+Recordings `(time, k, j, i)` use the same volume engine in batches. Choose a small
+`batch_size` for 3D series: the default 32 was sized for slices, and 3D peak memory
+is not yet benchmarked. Spatial-only input requires an explicit fixed image. Coplanar `k=1` slice pairs instead fit
+three identifiable in-plane parameters; tilted-plane/slice-to-volume registration
+is rejected, not silently approximated.
+
+The metric is evaluated on fixed-grid points, sampling moving array positions as
+`inverse(A_moving) @ T @ A_fixed`, where each `A` includes native crop/stride
+coordinates. Thus **identity world motion can resample unequal grids** without
+estimating their known geometry as motion.
+
+Initialization is currently identity in world space. There is no initial-transform
+argument or automatic center/plane alignment. The existing 90% fixed-domain overlap
+guard remains; different field of view is supported, but substantial partial overlap
+is not yet a general registration policy. Small-motion synthetic 3D recovery is
+checked, not large-angle capture range. See [geometry qualification](research/geometry/README.md).
 
 ### Convergence
 
@@ -92,7 +128,8 @@ threshold permits earlier stopping; it needs quality validation for your data.
 Use `convergence_minimum_value=1e-8` for ITK gradient descent's literal threshold
 default. Set `convergence_window_size=max_iterations + 1` for a fixed-budget control.
 The calibrated threshold passed unchanged numerical gates and comparisons with
-100/400-update controls across four real windows; it is not a universal guarantee.
+100/400-update controls across four real slice windows; it is not a universal
+or general-3D calibration guarantee.
 
 History stays on the selected device. Once a full window exists, whole-batch
 completion is checked every iteration on CPU and every ten iterations on CUDA.
@@ -131,9 +168,13 @@ float32-only NCC failed the existing CPU/CUDA agreement gates; see
 
 **Transform direction:** `moving_world = matrix @ fixed_world`, using homogeneous
 **z/y/x** vectors. These are physical pull mappings, not normalized Torch grids.
-Matrix inversion gives inverse rigid transforms. Reported `translation_i/j` are
-physical displacements of the rotation center along an orthonormal plane basis;
-they are not the homogeneous matrix's translation column.
+Matrix inversion gives inverse rigid transforms. Slice `translation_i/j` describe
+center displacement along an orthonormal fixed-plane basis. Volume
+`rotation_z/y/x` are components of a rotation vector (radians, right-handed XYZ
+convention, stored z/y/x), **not Euler angles**; `translation_z/y/x` describe center
+displacement in world mm. These translations are not the homogeneous matrix's
+translation column. Parameter scaling uses minimum fixed spacing and RMS physical
+lever arms, not ITK's physical-shift estimator.
 
 Spatial cropping/striding and oblique/anisotropic geometry are handled through
 native coordinates and a lazy `VoxelToWorldIndex`. Use
@@ -155,8 +196,9 @@ result = voxreg.register_rigid(pwd, device="cuda", batch_size=120)
 
 Inputs and registered/valid outputs use the same geometry class, including
 ConfUSIus's world-coordinate lookup. Voxreg still enforces its registration subset:
-NumPy-backed arrays, integer native voxel indices, uniform spatial steps, mm,
-identical grids and a single slice. It does not modify source values or geometry.
+NumPy-backed arrays, integer native voxel indices, uniform spatial steps and mm.
+Slice pairs must be coplanar; full volumes require all spatial axes >= 2. It does
+not modify source values or geometry.
 Start with `pwd.isel(time=slice(0, 120))` before processing a long recording.
 The default device is CPU; select CUDA explicitly when available.
 
@@ -292,9 +334,11 @@ are unchanged; only dense coordinate evaluation was reorganized.
 
 ## Current limits
 
-- Single-slice rigid only; no full 3D, affine, deformable or multi-pose registration.
-- Identical fixed/moving grids, uniform native coordinates, mm units and finite
-  NumPy-backed real input with supported dtype/range; no masks, Dask or multiresolution.
+- Rigid only: 6-DOF volumes or constrained coplanar slices. No affine, deformable,
+  multi-pose, slice-to-volume or non-coplanar slice registration.
+- Independent fixed/moving grids, but uniform native coordinates, mm and finite
+  NumPy-backed real input with supported dtype/range remain required. No masks,
+  Dask, multiresolution or initial-transform argument.
 - A frame losing more than 10% overlap is flagged and retains its best valid
   transform. Constant/invalid fitting metrics are diagnosed separately.
 - Output fill is each original frame's minimum. Use `result.valid` to exclude
@@ -310,4 +354,5 @@ are unchanged; only dense coordinate evaluation was reorganized.
 - The lazy index builds on xarray's experimental coordinate-transform index API.
 
 No compiled engine, affine/deformable extension or compatibility layer is included.
-Performance claims are limited to the documented single-recording comparisons.
+Performance claims remain limited to the documented slice-recording comparisons;
+no 3D ITK/FireANTs time or memory comparison has been run.

@@ -5,6 +5,36 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented recording only; this is not a
 general-purpose registration library.
 
+## Independent fixed/moving grids and initial 3D rigid support
+
+The current suite passes **211 tests**, including 31 new grid/volume tests on
+CPU/CUDA. Ruff, formatting and lock checks pass; source/wheel builds and a
+wheel-import smoke test exercising unequal-grid 3D registration pass.
+Unequal-grid identity and rigid pulls agree with independent SciPy
+interpolation on anisotropic, oblique, sheared, cropped/strided/reversed grids.
+Tests also cover physical rotation-vector handedness, float64 gradients at zero
+rotation, large origins, elongated-grid scaling, dtype/rounding, native output
+geometry, source time/auxiliary coordinates, reference identity and failure fill.
+
+On one analytically generated 3D pair with independent physical grids, RMS truth
+error is 0.010373 minimum-spacing pixels on both devices (<0.25 gate). Maximum
+CPU/CUDA pointwise disagreement is below 1.07e-6 pixels (<0.001 unchanged gate).
+Independent SciPy NCC² on common support improves from 0.977054935 at identity
+to 0.995404515. Both devices converge after 81 updates of a 180-update budget.
+This is small-motion synthetic recovery, not biological validation or a broad
+3D convergence calibration.
+
+Fresh-process parent/current checks on the float32 120-frame rat75 input are
+bitwise identical for registered intensities, masks, transforms, objectives,
+update counts, statuses and motion diagnostics on CPU32/CUDA120. No old timing
+report is reused as a 3D result. See [geometry evidence](research/geometry/README.md)
+and its source-hashed [results](research/geometry/results.json).
+
+Initial transforms, center/plane initialization and a general partial-overlap
+policy remain absent. Non-coplanar slice pairs and slice-to-volume fitting are
+rejected. Real 3D datasets and ITK/FireANTs single-pair time/memory comparisons
+remain unqualified.
+
 ## Temporary ConfUSIus VoxelData integration
 
 The duplicated voxel-to-world classes have been removed. ConfUSIus is now a
@@ -20,7 +50,7 @@ unchanged. This is a geometry/integration check, not a full-recording quality ga
 
 `uv sync` now includes ConfUSIus's larger dependency tree; the tested environment
 uses ConfUSIus 0.8.0 and xarray 2026.9.0. Numerical synthetic, dtype and registration
-gates are unchanged; **180 tests pass**. Batch progress tests cover CPU/CUDA,
+gates were unchanged; **180 tests passed at that boundary**. Batch progress tests cover CPU/CUDA,
 partial/oversized batches, failed/reference frames, default Rich rendering, silent
 modes, callback overrides, errors and display cleanup. Outputs/diagnostics remain
 identical and CUDA synchronization counts match quiet calls. Timing/profiling
@@ -126,7 +156,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 180 passed, including calibrated convergence, terminal checks, dtype/interpolation and CUDA.
+# 211 passed, including independent-grid 3D, slice regressions, dtype and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples
@@ -137,7 +167,7 @@ Coverage of the behavior, not just shapes:
 - Native-coordinate offsets, reverse/strided crops, oblique world affines and
   preservation of lazy geometry through slicing and time reduction.
 - Rejection of missing/stale indexes, invalid affines/units/coordinates, invalid
-  shapes/options/timing, nonfinite data, constants and incompatible grids.
+  shapes/options/timing, nonfinite data, constants and unsupported plane pairings.
 - Bilinear sampling against independent SciPy interpolation and homogeneous
   mapping/inverse/rotation-center checks.
 - CPU float64 gradient checks and independent masked NCC calculations.

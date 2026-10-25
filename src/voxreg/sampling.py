@@ -1,4 +1,4 @@
-"""Differentiable physical-space sampling in a single voxel plane."""
+"""Differentiable physical-space sampling on independent fixed and moving grids."""
 
 from dataclasses import dataclass
 
@@ -110,6 +110,161 @@ def make_plane(
     )
 
 
+@dataclass(frozen=True)
+class SpatialGrid:
+    """Independent grids, centered physical transforms and fixed-domain sampling."""
+
+    world_to_normalized: torch.Tensor
+    normalized_to_world: torch.Tensor
+    base: torch.Tensor
+    offset: torch.Tensor
+    coordinates: tuple[torch.Tensor, ...]
+    lower: torch.Tensor
+    upper: torch.Tensor
+    resident_basis: torch.Tensor
+    basis: npt.NDArray[np.float64]
+    center: npt.NDArray[np.float64]
+    parameter_scale: torch.Tensor
+    planar: bool
+
+
+def make_grid(
+    fixed: xr.DataArray,
+    moving: xr.DataArray,
+    *,
+    device: str = "cpu",
+    dtype: torch.dtype = torch.float64,
+) -> Plane | SpatialGrid:
+    """Build fixed-domain sampling geometry without conflating voxel spacing with motion.
+
+    Slice pairs must be coplanar. Volume pairs require at least two samples on
+    each axis. Initialization/slice-to-volume registration are not inferred.
+    """
+    fs = np.array([fixed.sizes[d] for d in ("k", "j", "i")])
+    ms = np.array([moving.sizes[d] for d in ("k", "j", "i")])
+    planar = fs[0] == ms[0] == 1
+    if (planar and min(*fs[1:], *ms[1:]) < 2) or (not planar and min(*fs, *ms) < 2):
+        raise ValueError("Use coplanar k=1 slices or 3D volumes with all axes >= 2.")
+    if planar and fixed.xindexes["z"].equals(moving.xindexes["z"]):
+        # Retain the qualified same-grid 2D arithmetic and kernel exactly.
+        return make_plane(fixed, device=device, dtype=dtype)
+    af, am = position_to_world(fixed), position_to_world(moving)
+    lf, lm = af[:3, :3], am[:3, :3]
+    hf, hm = (fs - 1) / 2, (ms - 1) / 2
+    origin_difference = af[:3, 3] - am[:3, 3]
+    if planar:
+        native = np.linalg.solve(lm, lf)
+        offset = np.linalg.solve(lm, origin_difference)
+        if abs(offset[0]) + np.abs(native[0] * (fs - 1)).sum() > 1e-5:
+            raise ValueError(
+                "Slice planes must be coplanar; plane initialization is not supported yet."
+            )
+        plane = make_plane(fixed, device=device, dtype=dtype)
+        basis, scales = plane.basis, plane.parameter_scale
+    else:
+        basis = np.eye(3)
+        axis_variance = lf**2 @ ((fs.astype(float) ** 2 - 1) / 12)
+        # Sum off-axis variances directly, avoiding cancellation for elongated grids.
+        radii = np.sqrt(axis_variance[[1, 2, 0]] + axis_variance[[2, 0, 1]])
+        ell = np.linalg.norm(lf, axis=0).min()
+        scales = torch.tensor(np.r_[ell / radii, [ell] * 3], device=device, dtype=dtype)
+    half = np.where(hm > 0, hm, 1)
+    world_to_normalized = np.linalg.inv(lm) / half[:, None]
+    normalized_to_world = lf * hf
+    center_offset = origin_difference + lf @ hf
+    normalized_center = np.where(hm > 0, 1, 0)
+    dimensions = 2 if planar else 3
+    coordinates = []
+    for axis, size in enumerate(fs):
+        shape = [1] * (dimensions + 1)
+        if not planar or axis > 0:
+            shape[axis + (0 if planar else 1)] = int(size)
+        coordinate = torch.arange(int(size), device=device, dtype=dtype)
+        coordinate = coordinate / (hf[axis] if hf[axis] > 0 else 1) - (
+            1 if size > 1 else 0
+        )
+        coordinates.append(coordinate.reshape(shape))
+    options = {"device": device, "dtype": dtype}
+    tolerance = 1e-5 / half
+    return SpatialGrid(
+        world_to_normalized=torch.tensor(world_to_normalized, **options),
+        normalized_to_world=torch.tensor(normalized_to_world, **options),
+        base=torch.tensor(world_to_normalized @ normalized_to_world, **options),
+        offset=torch.tensor(
+            world_to_normalized @ center_offset - normalized_center, **options
+        ),
+        coordinates=tuple(coordinates),
+        lower=torch.tensor(-normalized_center - tolerance, **options),
+        upper=torch.tensor(normalized_center + tolerance, **options),
+        resident_basis=torch.tensor(basis, **options),
+        basis=basis,
+        center=af[:3, 3] + lf @ hf,
+        parameter_scale=scales,
+        planar=bool(planar),
+    )
+
+
+def rotation_vectors(vectors: torch.Tensor) -> torch.Tensor:
+    """Right-handed XYZ axis-angle rotations, with vector/matrix axes stored z/y/x."""
+    x, y, z = vectors.flip(-1).unbind(-1)
+    zero = torch.zeros_like(x)
+    skew = torch.stack((zero, -z, y, z, zero, -x, -y, x, zero), -1).reshape(-1, 3, 3)
+    angle = torch.linalg.vector_norm(vectors, dim=-1)
+    a = torch.sinc(angle / torch.pi)[:, None, None]
+    b = (0.5 * torch.sinc(angle / (2 * torch.pi)).square())[:, None, None]
+    identity = torch.eye(3, dtype=vectors.dtype, device=vectors.device)
+    return (identity + a * skew + b * (skew @ skew)).flip((-2, -1))
+
+
+def _physical_transform(
+    parameters: torch.Tensor, grid: SpatialGrid
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if grid.planar:
+        basis = grid.resident_basis
+        identity = torch.eye(2, device=parameters.device, dtype=parameters.dtype)
+        rotation = torch.eye(3, device=parameters.device, dtype=parameters.dtype) + (
+            basis @ (rotation_matrices(parameters[:, 0]) - identity) @ basis.T
+        )
+        translation = parameters[:, 1:] @ basis.T
+    else:
+        rotation, translation = rotation_vectors(parameters[:, :3]), parameters[:, 3:]
+    return rotation, translation
+
+
+def _sample_grid(
+    images: torch.Tensor,
+    parameters: torch.Tensor,
+    grid: SpatialGrid,
+    interpolation: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    rotation, translation = _physical_transform(parameters, grid)
+    identity = torch.eye(3, device=parameters.device, dtype=parameters.dtype)
+    linear = (
+        grid.base
+        + grid.world_to_normalized @ (rotation - identity) @ grid.normalized_to_world
+    )
+    offset = grid.offset + translation @ grid.world_to_normalized.T
+    dimensions = images.ndim - 1
+    expand = (slice(None),) + (None,) * dimensions
+    components = []
+    for axis in range(3):
+        value = offset[:, axis][expand]
+        for column, coordinates in enumerate(grid.coordinates):
+            value = value + linear[:, axis, column][expand] * coordinates
+        components.append(value)
+    mapped = torch.stack(components, dim=-1)
+    valid = ((mapped >= grid.lower) & (mapped <= grid.upper)).all(dim=-1)
+    sampler_grid = mapped[..., [2, 1] if grid.planar else [2, 1, 0]]
+    sampled = F.grid_sample(
+        images[:, None],
+        sampler_grid.to(images.dtype),
+        mode={"linear": "bilinear", "nearest": "nearest"}[interpolation],
+        padding_mode="border",
+        align_corners=True,
+    )[:, 0]
+    return sampled, valid
+
+
 def rotation_matrices(angles: torch.Tensor) -> torch.Tensor:
     """Build differentiable 2D rotations.
 
@@ -130,31 +285,34 @@ def rotation_matrices(angles: torch.Tensor) -> torch.Tensor:
 def sample_rigid(
     images: torch.Tensor,
     parameters: torch.Tensor,
-    plane: Plane,
+    plane: Plane | SpatialGrid,
     *,
     interpolation: str = "linear",
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Pull-sample images under centered physical in-plane rigid transforms.
+    """Pull-sample on the fixed domain under centered physical rigid transforms.
 
     Parameters
     ----------
-    images : (B, H, W) torch.Tensor
-        Moving image intensities on the plane grid.
-    parameters : (B, 3) torch.Tensor
-        Physical angle, i-direction translation, j-direction translation.
-    plane : Plane
-        Shared plane geometry, on the same device as images and dtype as parameters.
+    images : (B, H, W) or (B, D, H, W) torch.Tensor
+        Moving image intensities.
+    parameters : (B, 3) or (B, 6) torch.Tensor
+        Slices: angle and intrinsic i/j translations. Volumes: world z/y/x
+        rotation vector (right-handed XYZ convention), then z/y/x translation.
+    plane : Plane or SpatialGrid
+        Fixed/moving geometry, on the image device and parameter dtype.
         The final normalized interpolation grid uses the image dtype.
     interpolation : {"linear", "nearest"}, default: "linear"
         Sampling rule; registration fitting always uses linear.
 
     Returns
     -------
-    sampled : (B, H, W) torch.Tensor
-        Interpolated images with border extension pending explicit fill.
-    valid : (B, H, W) torch.Tensor
+    sampled : torch.Tensor
+        Fixed-domain images with border extension pending explicit fill.
+    valid : torch.Tensor
         Pixel-center support mask, excluding out-of-field samples.
     """
+    if isinstance(plane, SpatialGrid):
+        return _sample_grid(images, parameters, plane, interpolation)
     rotation = rotation_matrices(parameters[:, 0])
     # Compose tiny matrices first; dense, skinny GEMMs are slow on CPU and CUDA.
     delta = (
@@ -195,11 +353,11 @@ def global_ncc(
 
     Parameters
     ----------
-    moved : (B, H, W) torch.Tensor
+    moved : (B, ...) torch.Tensor
         Sampled moving intensities.
-    fixed : (H, W) torch.Tensor
+    fixed : (...) torch.Tensor
         Fixed image intensities.
-    valid : (B, H, W) torch.Tensor
+    valid : (B, ...) torch.Tensor
         Valid moving sample centers.
 
     Returns
@@ -209,7 +367,7 @@ def global_ncc(
     meaningful : (B,) torch.Tensor
         Whether support and both centered variances are nonzero.
     """
-    axes = (1, 2)
+    axes = tuple(range(1, moved.ndim))
     # Near unit NCC, float32 loss quantization can select different best iterates.
     moved, fixed = moved.to(torch.float64), fixed.to(torch.float64)
     weights = valid.to(moved.dtype)
@@ -220,7 +378,7 @@ def global_ncc(
     vy = y.square().sum(dim=axes)
     denominator = vx * vy
     meaningful = (
-        (count[:, 0, 0] > 1)
+        (count.reshape(len(moved)) > 1)
         & (vx > 0)
         & (vy > 0)
         & torch.isfinite(denominator)
@@ -233,15 +391,18 @@ def global_ncc(
     return torch.where(meaningful, loss, torch.zeros_like(loss)), meaningful
 
 
-def world_matrices(parameters: npt.ArrayLike, plane: Plane) -> npt.NDArray[np.float64]:
-    """Embed physical in-plane transforms in homogeneous world z/y/x coordinates.
+def world_matrices(
+    parameters: npt.ArrayLike, plane: Plane | SpatialGrid
+) -> npt.NDArray[np.float64]:
+    """Embed centered rigid transforms in homogeneous world z/y/x coordinates.
 
     Parameters
     ----------
-    parameters : (B, 3) array-like
-        Angles in radians and translations in physical mm.
-    plane : Plane
-        World plane basis and rotation center.
+    parameters : (B, 3) or (B, 6) array-like
+        Slice angle/i/j translations or volume rotation-vector/translations.
+        Rotation uses radians; center translations use physical mm.
+    plane : Plane or SpatialGrid
+        World basis and fixed-domain rotation center.
 
     Returns
     -------
@@ -249,6 +410,14 @@ def world_matrices(parameters: npt.ArrayLike, plane: Plane) -> npt.NDArray[np.fl
         Fixed-world-to-moving-world pull matrices.
     """
     values = np.asarray(parameters, dtype=np.float64)
+    if isinstance(plane, SpatialGrid) and not plane.planar:
+        rotation = rotation_vectors(torch.from_numpy(values[:, :3])).numpy()
+        matrices = np.broadcast_to(np.eye(4), (len(values), 4, 4)).copy()
+        matrices[:, :3, :3] = rotation
+        matrices[:, :3, 3] = values[:, 3:] - np.einsum(
+            "bij,j->bi", rotation - np.eye(3), plane.center
+        )
+        return matrices
     angles = values[:, 0]
     c, s = np.cos(angles), np.sin(angles)
     rotations = np.stack((c, -s, s, c), axis=-1).reshape(-1, 2, 2)
