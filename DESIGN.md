@@ -34,7 +34,9 @@ Initialization remains identity world motion and the 90% fixed-domain overlap
 policy is unchanged. Initial transforms, geometric center/plane alignment, masks,
 pyramids and other metrics are deferred. Initial 3D synthetic qualification and
 bitwise slice regression evidence are in [research/geometry/README.md](research/geometry/README.md).
-There is no 3D backend time/memory comparison yet.
+The subsequent [shared pair/series benchmark](research/registration/README.md)
+provides bounded ITK/FireANTs 3D time/memory comparisons, with independent physical
+truth controls and separate native-convergence qualification.
 
 **The numbered sections below preserve the original slice milestone.** Its full-3D
 and identical-grid exclusions are superseded by this extension; its historical

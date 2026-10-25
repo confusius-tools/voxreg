@@ -1,12 +1,23 @@
 # ITK, FireANTs and voxreg: time and memory
 
-> **Dependency boundary:** the measured results below predate the temporary
-> ConfUSIus VoxelData integration. Registration math is unchanged, but the new
-> dependency/import stack has not been retimed. See [VALIDATION.md](VALIDATION.md).
+## Current shared pair/series protocol
 
-## Latest measured: dtype-preserving output and simpler eager NCC
+The new [standardized 3D and motion-correction report](research/registration/README.md)
+uses one runner, timing boundary, input/precision manifest, independent quality
+scoring and result schema for both workloads. It includes separate fixed-budget
+and backend-native convergence comparisons, fresh-process memory passes and
+verified AC/performance endpoint snapshots. Native FireANTs early stopping fails
+the truth screen on two 3D controls; short times alone are not quality equivalence.
 
-Current source retains image dtype and adds final-output linear/nearest sampling.
+> **Historical boundary below:** the tables below predate the temporary ConfUSIus
+> VoxelData integration and retain their original settings/dependency boundary.
+> The new report retimes the current stack separately. Do not combine old and new
+> medians: fixed-image caching, ITK stopping/return-best settings, common-support
+> scoring and power-state provenance differ. See [VALIDATION.md](VALIDATION.md).
+
+## Historical: dtype-preserving output and simpler eager NCC
+
+Source at this historical boundary retains image dtype and adds final-output linear/nearest sampling.
 The fitting precision policy remains unchanged: float32 images/interpolation and
 float64 geometry/state/NCC. Full float32 fitting and metric-only float32 failed
 existing CPU/CUDA agreement gates; no public precision/compiler switch is added.

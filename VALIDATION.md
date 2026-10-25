@@ -5,9 +5,38 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented recording only; this is not a
 general-purpose registration library.
 
-## Independent fixed/moving grids and initial 3D rigid support
+## Standardized pair/series benchmark
 
-The current suite passes **211 tests**, including 31 new grid/volume tests on
+The current suite passes **229 tests**, including 18 new benchmark-protocol tests.
+The existing runner now measures 3D pairs and motion correction with shared timing,
+memory, provenance and independent SciPy quality boundaries. Five fixed-budget
+3D controls (64³/128³ same/independent grids and a real-template known-pose control)
+pass the unchanged 0.25 minimum-spacing pixel RMS truth screen for ITK, voxreg and
+FireANTs. The worst fixed-budget RMS error is 0.077451 pixels (rounded upward).
+
+Backend-native convergence is not equivalent: FireANTs stops at 19 updates on the
+64³ independent and template controls, with approximately 0.483/0.540 pixel RMS
+error, failing that screen. This is recorded rather than changing tolerances or
+claiming equal-quality early-stop speedups. The real-template control contains
+real intensity structure with synthetic known pose, not natural session motion.
+
+After the operator reported plugging in the laptop, the entire same suite was
+rerun using the same frozen input bytes. All 196 before/after worker snapshots
+verify AC online and the performance platform profile. Earlier power-uncontrolled
+runs are retained separately, not mixed into the new report. Clocks and thermals
+remain uncontrolled. The final timed output and separate memory-pass output are
+bitwise identical for all 49 configurations, including images, masks, transforms,
+updates and statuses. Existing solver tests/precision gates are unchanged.
+
+Ruff/format/lock/build and wheel smoke checks pass. See the
+[shared report](research/registration/README.md) and source-hashed
+[results](research/registration/results.json). Natural 3D session pairs,
+process-parallel ITK under the new boundary and controlled thermal statistics
+remain outside this qualification.
+
+## Independent fixed/moving grids and initial 3D rigid support (cc0b4de)
+
+At this geometry boundary, the suite passed **211 tests**, including 31 new grid/volume tests on
 CPU/CUDA. Ruff, formatting and lock checks pass; source/wheel builds and a
 wheel-import smoke test exercising unequal-grid 3D registration pass.
 Unequal-grid identity and rigid pulls agree with independent SciPy
@@ -32,8 +61,9 @@ and its source-hashed [results](research/geometry/results.json).
 
 Initial transforms, center/plane initialization and a general partial-overlap
 policy remain absent. Non-coplanar slice pairs and slice-to-volume fitting are
-rejected. Real 3D datasets and ITK/FireANTs single-pair time/memory comparisons
-remain unqualified.
+rejected. At that boundary, real 3D datasets and ITK/FireANTs single-pair time/memory
+comparisons remained unqualified; the later benchmark section above supersedes
+the performance omission only for its declared controls.
 
 ## Temporary ConfUSIus VoxelData integration
 
@@ -156,7 +186,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 211 passed, including independent-grid 3D, slice regressions, dtype and CUDA.
+# 229 passed, including shared benchmark protocol, 3D, slice regressions and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples

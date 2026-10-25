@@ -1,9 +1,10 @@
 """Compare time, host RAM and CUDA memory in isolated processes (Linux only).
 
 Inputs are a frozen NPZ containing values, time, k/j/i and voxel_to_world. ITK and
-FireANTs are used directly: no ConfUSIus import. This benchmark deliberately accepts only the
-axis-aligned single-slice geometry of the notebook recording. Timings and sampled
-memory are separate passes; no two benchmark configurations run concurrently.
+FireANTs are used directly, not through ConfUSIus registration. Without --workload,
+the historical axis-aligned slice protocol is retained. --workload pair or series
+selects the shared standardized protocol in benchmark_workloads.py, including 3D
+and independent geometry. Timing and sampled memory use separate sequential processes.
 """
 
 import argparse
@@ -312,8 +313,10 @@ def gpu_memory(pids: set[int]) -> int:
 
 def worker(args) -> None:
     """Execute one backend in a clean interpreter and save labeled outputs."""
-    import numpy as np
+    if getattr(args, "workload", None):
+        from benchmark_workloads import standard_worker
 
+        return standard_worker(args, measure)
     setup = perf_counter()
     raw, affine, position_affine, coords = load_input(args.input)
     fireants = args.case.startswith("fireants-")
@@ -385,9 +388,39 @@ def worker(args) -> None:
                 )
 
     metadata["setup_seconds"] = perf_counter() - setup
+    measure(args, run, metadata, pool)
+
+
+def power_state():
+    """Read optional Linux power/profile endpoints; never change machine settings."""
+    root = Path("/sys/class/power_supply")
+    paths = [Path("/sys/firmware/acpi/platform_profile")]
+    for field in ("type", "online", "status"):
+        paths.extend(sorted(root.glob(f"*/{field}")))
+    snapshot = {}
+    for path in paths:
+        try:
+            snapshot[str(path)] = path.read_text().strip()
+        except OSError:
+            snapshot[str(path)] = None
+    return snapshot
+
+
+def measure(args, run, metadata, pool=None):
+    """Shared timing/memory boundary for legacy and standardized workloads."""
+    import numpy as np
+
+    cuda = "cuda" in args.case.split("-")
+    fireants = args.case.startswith("fireants-")
+    if cuda:
+        import torch
+    if getattr(args, "workload", None):
+        metadata["power_before_measurements"] = power_state()
     metadata["loaded_baseline_rss_mib"] = rss_kib(os.getpid()) / 1024
     start = perf_counter()
     result = run()
+    if cuda:
+        torch.cuda.synchronize()
     metadata["cold_call_seconds"] = perf_counter() - start
     del result
     if fireants:
@@ -406,26 +439,42 @@ def worker(args) -> None:
     result = None
     for _ in range(args.repeats if args.phase == "time" else 1):
         result = None
+        if cuda:
+            torch.cuda.synchronize()
         start = perf_counter()
         result = run()
         if cuda:
             torch.cuda.synchronize()
         elapsed.append(perf_counter() - start)
-    output, matrices, steps = result
+    arrays = (
+        result
+        if isinstance(result, dict)
+        else dict(
+            zip(("registered", "transforms", "n_iterations"), result, strict=True)
+        )
+    )
     metadata["warm_seconds"] = elapsed
+    if getattr(args, "workload", None):
+        metadata["n_iterations"] = arrays["n_iterations"].tolist()
+        metadata["status"] = arrays["status"].tolist()
+        if (
+            not np.isfinite(arrays["transforms"]).all()
+            or not np.isfinite(arrays["registered"]).all()
+        ):
+            raise ValueError("Backend returned nonfinite transforms or intensities.")
     if cuda:
         metadata["cuda_peak_allocated_mib"] = torch.cuda.max_memory_allocated() / 2**20
         metadata["cuda_peak_reserved_mib"] = torch.cuda.max_memory_reserved() / 2**20
+    if getattr(args, "workload", None):
+        metadata["power_after_measurements"] = power_state()
     args.output.with_suffix(".measure_done").touch()
     np.savez_compressed(
         args.output.with_suffix(".npz"),
-        registered=output,
-        transforms=matrices,
-        n_iterations=steps,
+        **arrays,
     )
     if pool is not None:
         pool.shutdown()
-    args.output.write_text(json.dumps(metadata, indent=2) + "\n")
+    args.output.write_text(json.dumps(metadata, indent=2, allow_nan=False) + "\n")
 
 
 def score(input_path: Path, files: dict[str, Path]) -> dict:
@@ -481,37 +530,75 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("artifacts/benchmark"))
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument(
+        "--workload",
+        choices=["pair", "series"],
+        help="Use the standardized pair/series protocol; omission preserves the historical slice protocol.",
+    )
+    parser.add_argument("--policy", choices=["fixed", "convergence"], default="fixed")
+    parser.add_argument("--max-iterations", type=int, default=100)
+    parser.add_argument("--intensity-scaling", choices=["none", "db"], default="none")
+    parser.add_argument(
         "--cases",
         nargs="+",
-        default=[
-            "itk-1",
-            "itk-1-t8",
-            "itk-8",
-            "cpu-1",
-            "cpu-32",
-            "cpu-32-t8",
-            "cpu-120",
-            "cuda-1",
-            "cuda-32",
-            "cuda-120",
-            "fireants-cpu-32",
-            "fireants-cpu-32-t8",
-            "fireants-cuda-32",
-            "fireants-cuda-120",
-        ],
+        default=None,
     )
+    legacy_cases = [
+        "itk-1",
+        "itk-1-t8",
+        "itk-8",
+        "cpu-1",
+        "cpu-32",
+        "cpu-32-t8",
+        "cpu-120",
+        "cuda-1",
+        "cuda-32",
+        "cuda-120",
+        "fireants-cpu-32",
+        "fireants-cpu-32-t8",
+        "fireants-cuda-32",
+        "fireants-cuda-120",
+    ]
     parser.add_argument("--case", help=argparse.SUPPRESS)
     parser.add_argument(
         "--phase", choices=["time", "memory"], default="time", help=argparse.SUPPRESS
     )
     args = parser.parse_args()
-    if args.repeats < 1:
-        parser.error("repeats must be positive")
+    if args.repeats < 1 or args.max_iterations < 1:
+        parser.error("repeats and max-iterations must be positive")
+    default_batch = 32 if args.workload == "series" else 1
+    args.cases = args.cases or (
+        [
+            "itk-1-t8",
+            f"cpu-{default_batch}-t8",
+            f"cuda-{default_batch}",
+            f"fireants-cpu-{default_batch}-t8",
+            f"fireants-cuda-{default_batch}",
+        ]
+        if args.workload
+        else legacy_cases
+    )
+    if args.workload:
+        import re
+
+        # shortcut: standardized ITK is single-process; add pooling before claiming best series throughput.
+        pattern = r"(?:itk-1(?:-t8)?|(?:fireants-)?(?:cpu|cuda)-[1-9][0-9]*(?:-t8)?)"
+        if any(
+            re.fullmatch(pattern, case) is None for case in [args.case] if case
+        ) or any(re.fullmatch(pattern, case) is None for case in args.cases):
+            parser.error(
+                "Unsupported standardized case; ITK uses one process with 1 or 8 internal threads."
+            )
+        if len(set(args.cases)) != len(args.cases):
+            parser.error("Cases must be unique.")
     if args.case:
         worker(args)
         return
     if not Path("/proc/self/smaps_rollup").exists():
         parser.error("Memory measurements currently require Linux /proc.")
+    if args.workload and args.output.exists() and any(args.output.iterdir()):
+        parser.error(
+            "Standardized output directory must be empty; historical results will not be overwritten."
+        )
     args.output.mkdir(parents=True, exist_ok=True)
     summary = {
         "python": sys.version,
@@ -526,6 +613,68 @@ def main() -> None:
         ],
         "results": {},
     }
+    if args.workload:
+        import platform
+
+        from benchmark_workloads import fingerprint, fit_images, load_dataset
+
+        data = load_dataset(args.input, args.workload)
+        fit_images(data, args.intensity_scaling)
+        summary["power_before_suite"] = power_state()
+        summary["system"] = {
+            "platform": platform.platform(),
+            "cpu_count": os.cpu_count(),
+            "cpu_model": next(
+                (
+                    line.split(":", 1)[1].strip()
+                    for line in Path("/proc/cpuinfo").read_text().splitlines()
+                    if line.startswith("model name")
+                ),
+                "unknown",
+            ),
+            "ram_bytes": os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES"),
+            "load_average_at_start": os.getloadavg(),
+            "clocks": "unfixed",
+        }
+        summary.update(
+            schema_version=2,
+            protocol="standardized-v1",
+            workload=args.workload,
+            policy=args.policy,
+            max_iterations=args.max_iterations,
+            intensity_scaling=args.intensity_scaling,
+            input_sha256=fingerprint(args.input),
+            provenance=data["provenance"],
+            fixed_affine_zyx=data["af"].tolist(),
+            moving_affine_zyx=data["am"].tolist(),
+            truth_pull_matrices_zyx=data["truth"].tolist()
+            if data["truth"] is not None
+            else None,
+            scored_phase="time",
+            source_sha256={
+                str(path.relative_to(Path(__file__).resolve().parents[1])): fingerprint(
+                    path
+                )
+                for path in [
+                    Path(__file__).resolve(),
+                    Path(__file__).with_name("benchmark_workloads.py").resolve(),
+                    *sorted(
+                        (Path(__file__).resolve().parents[1] / "src/voxreg").glob(
+                            "*.py"
+                        )
+                    ),
+                ]
+            },
+        )
+        summary["notes"] = [
+            "Pair and series share resident-host warm calls: preprocessing, fitting, original float32 resampling and host return; no loading, scoring, compression or progress in the timed region. No fixed fitting image is cached across standardized calls. Series reference is copied exactly and excluded from aggregate quality.",
+            "Both policies use identity world initialization, global squared NCC and one resolution. Fixed means the same maximum update budget, not equal optimizers/evaluations/quality; guards can stop voxreg early. Convergence uses explicitly recorded backend rules; FireANTs native batch-loss slope is not ITK's monitor.",
+            "Common float32 source/fitting arrays; ITK double images/metric/interpolation, voxreg mixed geometry/state/NCC64 and interpolation32, FireANTs native32. These are not precision-matched backends. ITK uses physical-shift scales/GD .1, voxreg RMS lever arms/Adam .1, FireANTs quaternion/Adam .01. Returned transforms are fixed-world-to-moving-world z/y/x pulls.",
+            "Separate sequential fresh interpreters for timing and sampled memory. Memory process-tree peaks include setup/cold/warm; CUDA allocator peaks reset after cold warmup. GPU process VRAM includes context; sampling may miss transients. Interpreter/import/startup and file compression are outside warm timings; setup/cold times recorded separately.",
+            "Independent SciPy float64 interpolation/scoring on joint pixel-center support, including identity. Truth errors cover the entire fixed grid in minimum-spacing pixels. Backend internal scores are not compared as common quality. Timing-phase outputs supply quality; memory-phase outputs and diagnostics are retained separately.",
+            "No enforced machine idleness or fixed clocks. No initialization search, pyramids, masks, or process-parallel ITK in the standardized protocol. Historical mode retains its former cached fixed image and stopping settings.",
+        ]
+        del data
     environment = dict(
         os.environ, OMP_NUM_THREADS="1", MKL_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1"
     )
@@ -549,6 +698,19 @@ def main() -> None:
                 "--repeats",
                 str(args.repeats),
             ]
+            if args.workload:
+                command.extend(
+                    [
+                        "--workload",
+                        args.workload,
+                        "--policy",
+                        args.policy,
+                        "--max-iterations",
+                        str(args.max_iterations),
+                        "--intensity-scaling",
+                        args.intensity_scaling,
+                    ]
+                )
             path.with_suffix(".measure_done").unlink(missing_ok=True)
             with path.with_suffix(".log").open("w") as log:
                 process = subprocess.Popen(
@@ -577,18 +739,32 @@ def main() -> None:
                     tree_peak_pss_mib=peaks[1] / 1024,
                     sampled_gpu_process_peak_mib=peaks[2],
                 )
-                path.write_text(json.dumps(record[phase], indent=2) + "\n")
-            outputs[case] = path.with_suffix(".npz")
+                path.write_text(
+                    json.dumps(record[phase], indent=2, allow_nan=False) + "\n"
+                )
+            if not args.workload or phase == "time":
+                outputs[case] = path.with_suffix(".npz")
         summary["results"][case] = record
-        (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    summary["quality"] = score(args.input, outputs)
-    (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        (args.output / "summary.json").write_text(
+            json.dumps(summary, indent=2, allow_nan=False) + "\n"
+        )
+    if args.workload:
+        from benchmark_workloads import score_standard
+
+        summary["quality"] = score_standard(
+            args.input, outputs, args.workload, args.intensity_scaling
+        )
+    else:
+        summary["quality"] = score(args.input, outputs)
+    (args.output / "summary.json").write_text(
+        json.dumps(summary, indent=2, allow_nan=False) + "\n"
+    )
     for case, record in summary["results"].items():
         import statistics
 
         t, m = record["time"], record["memory"]
         print(
-            f"{case:14} {statistics.median(t['warm_seconds']):8.3f} s | RSS {m['tree_peak_rss_mib']:7.0f} MiB | PSS {m['tree_peak_pss_mib']:7.0f} MiB | CUDA alloc {m.get('cuda_peak_allocated_mib', 0):6.1f} MiB | GPU process {m['sampled_gpu_process_peak_mib']:5} MiB | NCC² {summary['quality'][case]['median_ncc2']:.6f}"
+            f"{case:14} {statistics.median(t['warm_seconds']):8.3f} s | RSS {m['tree_peak_rss_mib']:7.0f} MiB | PSS {m['tree_peak_pss_mib']:7.0f} MiB | CUDA alloc {m.get('cuda_peak_allocated_mib', 0):6.1f} MiB | GPU process {m['sampled_gpu_process_peak_mib']:5} MiB | NCC² {summary['quality'][case]['median_ncc2']}"
         )
 
 

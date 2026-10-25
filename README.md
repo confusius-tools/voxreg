@@ -9,8 +9,9 @@ pairs retain constrained in-plane rigid motion. CPU and CUDA share one optimizer
 metric, convergence policy and dtype-preserving resampling path.
 
 This remains a rigid-registration proof of concept, not a complete ConfUSIus
-replacement. Throughput comparisons cover the documented slice recordings;
-3D currently has synthetic numerical qualification, not a backend benchmark.
+replacement. A [shared benchmark protocol](research/registration/README.md) now
+covers 3D pairs and motion correction against ITK/FireANTs, including 64³/128³
+phantoms and a real-template known-pose control—not a natural 3D session pair.
 
 See [DESIGN.md](DESIGN.md) for conventions and scope, and
 [VALIDATION.md](VALIDATION.md) for the measured quality checks and remaining gates.
@@ -91,8 +92,8 @@ print(result.diagnostics)       # Scalar objective, status and motion parameters
 
 All three axes must contain at least two samples for 6-DOF volume fitting.
 Recordings `(time, k, j, i)` use the same volume engine in batches. Choose a small
-`batch_size` for 3D series: the default 32 was sized for slices, and 3D peak memory
-is not yet benchmarked. Spatial-only input requires an explicit fixed image. Coplanar `k=1` slice pairs instead fit
+`batch_size` for 3D series: the default 32 was sized for slices. Single-pair
+3D memory is benchmarked at the documented sizes; large 3D batches are not. Spatial-only input requires an explicit fixed image. Coplanar `k=1` slice pairs instead fit
 three identifiable in-plane parameters; tilted-plane/slice-to-volume registration
 is rejected, not silently approximated.
 
@@ -320,7 +321,7 @@ Process-parallel ITK includes scheduling and result-transfer overhead. Startup
 costs and loaded-input/warm memory baselines are recorded separately.
 
 See [BENCHMARK.md](BENCHMARK.md) for measured timings, memory, quality and caveats.
-The latest float32-input benchmark takes **0.219 s on full-batch CUDA** and
+The historical float32-input benchmark takes **0.219 s on full-batch CUDA** and
 **2.128 s on eight-thread CPU**. Fresh FireANTs controls take 0.355 s and 0.963 s
 respectively: CUDA is competitive, while CPU remains slower than native float32
 FireANTs. These are not precision-
@@ -331,6 +332,43 @@ See the report for memory, quality, source hashes and the pinned FireANTs archiv
 [PERFORMANCE.md](PERFORMANCE.md) preserves the profiler investigation that led to
 this rewrite. Float64 physical geometry/state/NCC and independent frame policies
 are unchanged; only dense coordinate evaluation was reorganized.
+
+### Consistent 3D-pair and series comparisons
+
+Use the same runner with an explicit standardized workload. Historical commands
+without `--workload` retain their older configuration; historical results are not
+overwritten or mixed with the new measurements.
+
+```bash
+# Prepare independent 3D grids and analytic known motion (outside timing).
+uv run python examples/prepare_registration_benchmark.py \
+    --size 128 --independent-grids --output artifacts/registration-inputs/pair128.npz
+
+# Native ITK / voxreg / FireANTs, CPU and CUDA; one cold + three warm calls,
+# with separate fresh-process memory passes. Output directory must be new/empty.
+uv run python examples/benchmark_registration.py \
+    --workload pair --policy fixed \
+    --input artifacts/registration-inputs/pair128.npz \
+    --output artifacts/registration-results/pair128-fixed
+
+# Same protocol, existing motion-correction input and explicit batches.
+uv run python examples/benchmark_registration.py \
+    --workload series --policy convergence --intensity-scaling db \
+    --input artifacts/notebook/input.npz \
+    --cases itk-1-t8 cpu-32-t8 cuda-120 fireants-cpu-32-t8 fireants-cuda-120 \
+    --output artifacts/registration-results/series-convergence
+```
+
+`fixed` compares a common update budget, not identical optimizers. `convergence`
+uses explicitly recorded backend stopping rules; native FireANTs stops too early
+on two 3D controls and fails their unchanged RMS truth screen. Its shorter times
+are not equal-quality speedups. Independent SciPy quality uses common support;
+known physical truth error, versions, precision, source/input hashes, update
+counts, statuses and power-state snapshots are recorded in the shared schema.
+
+See [the AC-powered results and reproduction guide](research/registration/README.md)
+for latency, memory, timing ranges and limitations. Earlier uncontrolled-power
+runs are kept separately, not mixed into the AC tables.
 
 ## Current limits
 
@@ -354,5 +392,6 @@ are unchanged; only dense coordinate evaluation was reorganized.
 - The lazy index builds on xarray's experimental coordinate-transform index API.
 
 No compiled engine, affine/deformable extension or compatibility layer is included.
-Performance claims remain limited to the documented slice-recording comparisons;
-no 3D ITK/FireANTs time or memory comparison has been run.
+Performance claims are limited to the documented pair/series controls and their
+measurement boundaries. Natural independent-session 3D registration, broad capture
+range and general 3D-series memory scaling remain unqualified.

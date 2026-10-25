@@ -2,7 +2,10 @@
 
 This extends the slice engine at `ed9cb21`; it is **numerical qualification, not
 an ITK/FireANTs 3D performance comparison**. Exact settings, source hashes and
-measurements are in [results.json](results.json).
+measurements are in [results.json](results.json). This records the `cc0b4de`
+geometry boundary. The subsequent [shared pair/series benchmark](../registration/README.md)
+adds bounded 3D time/memory evidence; the remaining-gate statements below describe
+this earlier qualification, not the later benchmark.
 
 ## Geometry and API
 
