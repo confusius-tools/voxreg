@@ -2,12 +2,49 @@
 
 Status: **numerical and real-data quality checks pass; isolated ITK/FireANTs
 performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.md).
-Throughput measurements cover the documented recording only; this is not a
-general-purpose registration library.
+Throughput measurements cover the documented pair/series controls, not general
+registration accuracy or performance.
 
-## Standardized pair/series benchmark
+## Explicit initial transforms
 
-The current suite passes **229 tests**, including 18 new benchmark-protocol tests.
+The current suite passes **262 tests**, including 33 new initialization tests.
+`initial_transform` follows ITK's optimizable InitialTransform / InPlaceOff model,
+not its frozen MovingInitialTransform chain. A real ITK 5.4.7 zero-update v4
+registration is the direction/copy oracle. Initialization takes a full world
+z/y/x rigid pull matrix; it is copied and the full refined transform is returned.
+No ITK runtime dependency or extra final interpolation is introduced.
+
+Checks cover shared/per-frame seeds, labeled axis/time/units/convention validation,
+nonrigid/malformed inputs, immutable caller arrays, slice-plane restrictions,
+reference identity, fresh optimizer state, and failure fallback to the supplied
+pose rather than identity. Matrix-to-parameter round trips include zero, tiny
+angles, all principal axes and an arbitrary axis at/near pi, including billion-mm
+common world origins under the unchanged pointwise gate. Float32 rotational
+roundoff normalization preserves the mapped fixed center. Original float64 seeded
+resampling agrees with an independent SciPy pull.
+
+An oblique anisotropic independent-grid phantom with a known approximately
+18-degree rotation and center displacement `[20, -12, 8]` mm has no initial overlap
+under identity. A perturbed supplied pose enables CPU/CUDA refinement to below the
+unchanged **0.25 minimum-spacing pixel RMS truth screen**. Three-dimensional
+per-frame batching and CPU/CUDA comparison retain the unchanged **0.001-pixel
+maximum pointwise gate**, with identical update counts. This is seeded local
+recovery, not a new uninitialized capture-range or general 3D convergence claim.
+
+On the frozen real 120-frame input, fresh CPU32-thread8/CUDA120 processes under
+both fixed100 and default convergence policies produce **bitwise-identical every
+stored output field** to the `e263aa0` AC measurements with initial_transform
+omitted. Explicit identity versus omission is also bitwise checked on CPU/CUDA.
+Raw checks are under ignored `artifacts/initial-transforms/`. The older benchmark
+matrices are not retimed or rewritten as seeded-registration measurements.
+
+Ruff/format/lock/build and wheel-import checks pass. Still unsupported: automatic
+initialization/search, fixed/moving pre-transform chains, non-coplanar slice
+alignment and a general partial-overlap policy.
+
+## Standardized pair/series benchmark (e263aa0)
+
+At this benchmark boundary, the suite passed **229 tests**, including 18 new benchmark-protocol tests.
 The existing runner now measures 3D pairs and motion correction with shared timing,
 memory, provenance and independent SciPy quality boundaries. Five fixed-budget
 3D controls (64³/128³ same/independent grids and a real-template known-pose control)
@@ -60,10 +97,11 @@ report is reused as a 3D result. See [geometry evidence](research/geometry/READM
 and its source-hashed [results](research/geometry/results.json).
 
 Initial transforms, center/plane initialization and a general partial-overlap
-policy remain absent. Non-coplanar slice pairs and slice-to-volume fitting are
-rejected. At that boundary, real 3D datasets and ITK/FireANTs single-pair time/memory
-comparisons remained unqualified; the later benchmark section above supersedes
-the performance omission only for its declared controls.
+policy were absent at this boundary. Explicit initial transforms are added by the
+later section above; automatic center/plane initialization and general partial
+overlap remain unsupported. Non-coplanar slices and slice-to-volume fitting are
+still rejected. The later benchmark section supersedes the performance omission
+only for its declared controls.
 
 ## Temporary ConfUSIus VoxelData integration
 
@@ -186,7 +224,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 229 passed, including shared benchmark protocol, 3D, slice regressions and CUDA.
+# 262 passed, including initial transforms, shared benchmarks, 3D and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples

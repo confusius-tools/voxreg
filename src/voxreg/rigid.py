@@ -6,6 +6,7 @@ from time import perf_counter
 from typing import Literal
 
 import numpy as np
+import numpy.typing as npt
 import torch
 import xarray as xr
 from confusius._utils.progress import progress_bar
@@ -15,6 +16,7 @@ from voxreg.geometry import VOXEL_DIMS, _validate_registration_geometry
 from voxreg.sampling import (
     Plane,
     SpatialGrid,
+    _initial_parameters,
     global_ncc,
     make_grid,
     sample_rigid,
@@ -59,6 +61,8 @@ def _optimize(
     learning_rate: float,
     convergence_window_size: int = 50,
     convergence_minimum_value: float = 1e-6,
+    *,
+    initial_parameters: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run masked batched Adam with bounded whole-batch stopping checks.
 
@@ -80,6 +84,8 @@ def _optimize(
         ITK energy-profile window; larger than the iteration budget disables it.
     convergence_minimum_value : float
         Stop when the normalized improvement trend is at or below this threshold.
+    initial_parameters : torch.Tensor, optional
+        Starting physical parameters; Adam state starts fresh, not from a previous fit.
 
     Returns
     -------
@@ -91,11 +97,13 @@ def _optimize(
         1 converged, 2 insufficient overlap, 3 invalid metric, 4 reference, 5 limit.
     """
     b = len(images)
-    u = plane.parameter_scale.new_zeros(
-        (b, len(plane.parameter_scale)), requires_grad=True
-    )
+    u = (
+        plane.parameter_scale.new_zeros((b, len(plane.parameter_scale)))
+        if initial_parameters is None
+        else initial_parameters / plane.parameter_scale
+    ).requires_grad_(True)
     spatial_axes = tuple(range(1, images.ndim))
-    best = torch.zeros_like(u)
+    best = u.detach().clone()
     best_loss = u.new_full((b,), torch.inf)
     moment, variance = torch.zeros_like(u), torch.zeros_like(u)
     steps = torch.zeros(b, dtype=torch.int64, device=images.device)
@@ -172,6 +180,7 @@ def register_rigid(
     moving: xr.DataArray,
     fixed: xr.DataArray | None = None,
     *,
+    initial_transform: npt.ArrayLike | xr.DataArray | None = None,
     intensity_scaling: Literal["none", "db"] = "db",
     interpolation: Literal["linear", "nearest"] = "linear",
     batch_size: int = 32,
@@ -195,6 +204,16 @@ def register_rigid(
         orientation. Required for spatial-only moving input. For recordings,
         omission uses the first frame and preserves that reference exactly.
         Slice pairs must be coplanar; no plane alignment is inferred.
+    initial_transform : array-like or xarray.DataArray, optional
+        Proper rigid fixed-world-to-moving-world pull matrix in world z/y/x,
+        with translations in mm. Shape (4, 4) broadcasts to all frames;
+        (N, 4, 4) follows moving frame order. Labeled arrays must use
+        (time, world_out, world_in) or (world_out, world_in); supplied axis/time
+        labels must match. Copied, never modified, like ITK InitialTransform
+        with InPlaceOff: initializes the optimized transform, not a frozen
+        pre-transform. Float32 rotation roundoff within 1e-6 is normalized.
+        For an implicit first-frame reference its initial transform must be identity;
+        use explicit fixed to optimize every frame from a shared nonidentity pose.
     intensity_scaling : {"none", "db"}, default: "db"
         Fitting preprocessing only; original intensities are resampled for output.
         dB requires nonnegative power; normalized zeros are floored at 1e-12.
@@ -230,7 +249,8 @@ def register_rigid(
         matrices, and diagnostics. Spatial-only input returns spatial-only output,
         one (4, 4) matrix and scalar diagnostics, without a synthetic time label.
         Invalid frames retain their best
-        valid transform, or identity if no valid metric was observed.
+        valid transform, or the initial transform if no valid metric was observed.
+        Motion diagnostics describe the full transform, not an increment.
 
     Raises
     ------
@@ -241,11 +261,13 @@ def register_rigid(
 
     Notes
     -----
-    Optimization starts at identity in physical world space, not identity voxel
-    coordinates. Sampling composes inverse(A_moving) @ T @ A_fixed. Volumes use
+    Optimization starts at initial_transform (identity when omitted) in physical
+    world space, not voxel coordinates. Sampling composes
+    inverse(A_moving) @ T @ A_fixed, without pre-resampling the input. Volumes use
     a centered axis-angle rotation vector (right-handed XYZ, stored z/y/x) and
     world z/y/x translation. Slices optimize only fixed-plane rotation and i/j
-    translation. No initial transform or slice-to-volume fitting is supported.
+    translation; slice seeds must preserve the fixed plane. Separate ITK-style
+    fixed/moving pre-transforms and slice-to-volume fitting are not supported.
     Less than 90% valid fixed-grid support flags insufficient overlap. Physical
     scaling uses minimum fixed spacing and RMS lever arms, not ITK's estimator.
     The default convergence threshold was calibrated on slices, not general 3D.
@@ -338,6 +360,47 @@ def register_rigid(
         )
     # Double physical geometry/state keeps gradient reductions stable across chunk sizes.
     plane = make_grid(fixed, moving, device=device, dtype=torch.float64)
+    initial = None
+    if initial_transform is not None:
+        if isinstance(initial_transform, xr.DataArray):
+            if initial_transform.dims not in (
+                ("world_out", "world_in"),
+                ("time", "world_out", "world_in"),
+            ):
+                raise ValueError(
+                    "initial_transform has unsupported labeled dimensions."
+                )
+            for axis in ("world_out", "world_in"):
+                if axis in initial_transform.coords and not np.array_equal(
+                    initial_transform[axis], ["z", "y", "x", "1"]
+                ):
+                    raise ValueError("initial_transform world axes must be z/y/x/1.")
+            if (
+                "time" in initial_transform.dims
+                and "time" in initial_transform.coords
+                and not initial_transform.get_index("time").equals(
+                    moving.get_index("time")
+                )
+            ):
+                raise ValueError(
+                    "initial_transform time labels must match moving in order."
+                )
+            for key, expected in (
+                ("spatial_units", "mm"),
+                ("convention", "fixed-world-to-moving-world pull"),
+            ):
+                if (
+                    key in initial_transform.attrs
+                    and initial_transform.attrs[key] != expected
+                ):
+                    raise ValueError(f"initial_transform {key} must be {expected!r}.")
+        initial = _initial_parameters(initial_transform, plane, moving.sizes["time"])
+        if implicit_fixed:
+            if not np.allclose(initial[0], 0, rtol=0, atol=1e-12):
+                raise ValueError(
+                    "The implicit reference initial_transform must be identity; supply explicit fixed otherwise."
+                )
+            initial[0] = 0
     planar = isinstance(plane, Plane) or plane.planar
     raw = moving.values[:, 0] if planar else moving.values
     spatial_axes = tuple(range(1, raw.ndim))
@@ -410,6 +473,11 @@ def register_rigid(
             reference = torch.zeros(last - first, dtype=torch.bool, device=device)
             if implicit_fixed and first == 0:
                 reference[0] = True
+            initial_tensor = (
+                torch.tensor(initial[first:last], device=device)
+                if initial is not None
+                else None
+            )
             if device == "cuda":
                 torch.cuda.synchronize()
             timings["upload"] += perf_counter() - start
@@ -423,6 +491,7 @@ def register_rigid(
                 learning_rate,
                 convergence_window_size=convergence_window_size,
                 convergence_minimum_value=convergence_minimum_value,
+                initial_parameters=initial_tensor,
             )
             if device == "cuda":
                 torch.cuda.synchronize()

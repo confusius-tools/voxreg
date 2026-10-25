@@ -3,7 +3,9 @@
 **Protocol:** `standardized-v1`, implemented by the existing
 `examples/benchmark_registration.py` runner with workload helpers in
 `examples/benchmark_workloads.py`. No registration is delegated to ConfUSIus.
-The numerical engine is unchanged from `cc0b4de`.
+At this frozen benchmark boundary (`e263aa0`), the numerical engine was unchanged
+from `cc0b4de`. Later initial-transform support is qualified separately in
+[VALIDATION.md](../../VALIDATION.md); these remain identity-start measurements.
 
 [results.json](results.json) contains all warm samples, setup/cold times, memory
 measurements, versions, source/input hashes, update counts, statuses, per-frame
@@ -332,7 +334,7 @@ not a claim of memory safety for large volumes.
 
 ## Verification and remaining gates
 
-The full suite passes **229 tests**, including 18 new protocol tests: native 3D
+At this benchmark boundary the full suite passed **229 tests**, including 18 new protocol tests: native 3D
 physical recovery against analytic truth, output interpolation against SciPy,
 series reference/batching, native convergence modes, joint support, exact affine
 truth-error statistics, malformed inputs, no-overwrite CLI behavior and optional

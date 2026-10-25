@@ -391,6 +391,94 @@ def global_ncc(
     return torch.where(meaningful, loss, torch.zeros_like(loss)), meaningful
 
 
+def _initial_parameters(
+    transforms: npt.ArrayLike, plane: Plane | SpatialGrid, count: int
+) -> npt.NDArray[np.float64]:
+    """Validate world pull seeds and recover the optimized centered parameters."""
+    values = np.asarray(transforms)
+    if values.dtype.kind not in "iuf":
+        raise TypeError("initial_transform must contain real numeric matrices.")
+    values = np.array(values, dtype=np.float64, copy=True)
+    if values.shape == (4, 4):
+        values = np.broadcast_to(values, (count, 4, 4))
+    if values.shape != (count, 4, 4) or not np.isfinite(values).all():
+        raise ValueError(
+            "initial_transform must be finite with shape (4, 4) or (N, 4, 4), "
+            "where N is the number of moving frames."
+        )
+    if not np.allclose(values[:, 3], [0, 0, 0, 1], rtol=0, atol=1e-12):
+        raise ValueError(
+            "initial_transform must have homogeneous last row [0, 0, 0, 1]."
+        )
+    rotations = values[:, :3, :3]
+    if not np.allclose(
+        rotations.transpose(0, 2, 1) @ rotations, np.eye(3), rtol=0, atol=1e-6
+    ) or not np.allclose(np.linalg.det(rotations), 1, rtol=0, atol=1e-6):
+        raise ValueError(
+            "initial_transform must be proper rigid: no scale, shear or reflection."
+        )
+    translations = (
+        np.einsum("bij,j->bi", rotations - np.eye(3), plane.center) + values[:, :3, 3]
+    )
+    # Remove only accepted float32 roundoff, preserving the mapped fixed center.
+    left, _, right = np.linalg.svd(rotations)
+    rotations = left @ right
+    planar = isinstance(plane, Plane) or plane.planar
+    if planar:
+        basis = plane.basis
+        intrinsic = basis.T @ rotations @ basis
+        embedded = np.eye(3) + basis @ (intrinsic - np.eye(2)) @ basis.T
+        in_plane = translations @ basis
+        ell = float(plane.parameter_scale[1].cpu())
+        tolerance = 1e-5 * ell + 32 * np.finfo(float).eps * max(
+            1, np.abs(plane.center).max()
+        )
+        if not np.allclose(rotations, embedded, rtol=0, atol=1e-6) or not np.allclose(
+            translations, in_plane @ basis.T, rtol=0, atol=tolerance
+        ):
+            raise ValueError(
+                "Slice initial_transform must preserve the fixed plane; out-of-plane motion is unsupported."
+            )
+        angles = np.arctan2(
+            intrinsic[:, 1, 0] - intrinsic[:, 0, 1],
+            intrinsic[:, 0, 0] + intrinsic[:, 1, 1],
+        )
+        return np.column_stack((angles, in_plane))
+    vectors = []
+    for rotation in rotations[:, ::-1, ::-1]:
+        # Largest quaternion component avoids the axis-angle singularity at pi.
+        q = np.empty(4)
+        trace = np.trace(rotation)
+        if trace > 0:
+            scale = 2 * np.sqrt(1 + trace)
+            q[:3] = (
+                np.array(
+                    [
+                        rotation[2, 1] - rotation[1, 2],
+                        rotation[0, 2] - rotation[2, 0],
+                        rotation[1, 0] - rotation[0, 1],
+                    ]
+                )
+                / scale
+            )
+            q[3] = scale / 4
+        else:
+            i = int(np.argmax(np.diag(rotation)))
+            j, k = (i + 1) % 3, (i + 2) % 3
+            scale = 2 * np.sqrt(1 + rotation[i, i] - rotation[j, j] - rotation[k, k])
+            q[i] = scale / 4
+            q[j] = (rotation[j, i] + rotation[i, j]) / scale
+            q[k] = (rotation[k, i] + rotation[i, k]) / scale
+            q[3] = (rotation[k, j] - rotation[j, k]) / scale
+        if q[3] < 0:
+            q = -q
+        length = np.linalg.norm(q[:3])
+        vectors.append(
+            q[:3][::-1] * (2 * np.arctan2(length, q[3]) / length if length else 2)
+        )
+    return np.column_stack((vectors, translations))
+
+
 def world_matrices(
     parameters: npt.ArrayLike, plane: Plane | SpatialGrid
 ) -> npt.NDArray[np.float64]:

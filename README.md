@@ -102,11 +102,51 @@ The metric is evaluated on fixed-grid points, sampling moving array positions as
 coordinates. Thus **identity world motion can resample unequal grids** without
 estimating their known geometry as motion.
 
-Initialization is currently identity in world space. There is no initial-transform
-argument or automatic center/plane alignment. The existing 90% fixed-domain overlap
-guard remains; different field of view is supported, but substantial partial overlap
-is not yet a general registration policy. Small-motion synthetic 3D recovery is
-checked, not large-angle capture range. See [geometry qualification](research/geometry/README.md).
+### Explicit initial transforms
+
+`initial_transform` follows **ITK's optimized `InitialTransform` model with
+`InPlaceOff`**, not its separate frozen `MovingInitialTransform`. It supplies the
+starting full rigid pose; voxreg copies it, starts fresh Adam state, refines it and
+returns the **full transform**, not an increment to compose afterward. Omission
+still starts at identity in physical world space. Original images are not
+pre-resampled.
+
+```python
+import numpy as np
+
+initial = np.eye(4)
+initial[:3, 3] = [5.0, -2.0, 1.0]  # World z/y/x offset in mm, fixed → moving.
+result = voxreg.register_rigid(
+    moving_volume, fixed_volume,
+    initial_transform=initial, intensity_scaling="none",
+)
+# initial is unchanged; result.transforms contains the complete refined pose.
+```
+
+A shared `(4, 4)` matrix broadcasts across a recording; `(N, 4, 4)` supplies one
+matrix per frame in moving order. `result.transforms` can be reused directly:
+labeled arrays must use `world_out/world_in` (and optional leading `time`), with
+any supplied axis/time labels in the exact input order. No implicit reindexing or
+inversion occurs. Supplied convention/unit metadata must agree with world z/y/x
+fixed-to-moving pulls in mm.
+
+Seeds must be finite proper rigid homogeneous matrices. Scale, shear and
+reflection are rejected beyond a 1e-6 rotation-roundoff tolerance. Accepted
+float32 rotation roundoff is normalized while preserving the mapped fixed center.
+Voxreg keeps its fixed-grid rotation center and rotation-vector/Adam policy;
+following ITK's initialization model does not mean identical optimizer trajectories.
+For slices the seed must preserve the existing fixed plane. With an omitted
+`fixed`, the first frame's seed must be identity (up to float64 roundoff), since
+that reference is preserved exactly. Supply explicit `fixed` to fit every frame
+from a shared nonidentity pose.
+
+On failure the best valid full transform is retained, or the initial pose if no
+valid metric was observed. Motion diagnostics describe that full transform.
+There is no automatic center/plane initialization, initialization search or separate
+fixed/moving pre-transform chain. The 90% fixed-domain overlap guard remains;
+an initial pose must already provide enough overlap. Large displacements are
+recoverable from a suitable seed, but broad uninitialized capture range and
+substantial partial overlap remain unqualified. See [VALIDATION.md](VALIDATION.md).
 
 ### Convergence
 
@@ -376,7 +416,7 @@ runs are kept separately, not mixed into the AC tables.
   multi-pose, slice-to-volume or non-coplanar slice registration.
 - Independent fixed/moving grids, but uniform native coordinates, mm and finite
   NumPy-backed real input with supported dtype/range remain required. No masks,
-  Dask, multiresolution or initial-transform argument.
+  Dask or multiresolution fitting.
 - A frame losing more than 10% overlap is flagged and retains its best valid
   transform. Constant/invalid fitting metrics are diagnosed separately.
 - Output fill is each original frame's minimum. Use `result.valid` to exclude

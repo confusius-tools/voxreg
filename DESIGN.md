@@ -30,13 +30,67 @@ arithmetic; preprocessing, NCC, optimizer, convergence, failure guards and dtype
 handling are shared. Non-coplanar slices, other singleton configurations and
 slice-to-volume registration are explicit errors, not unconstrained 6-DOF fits.
 
-Initialization remains identity world motion and the 90% fixed-domain overlap
-policy is unchanged. Initial transforms, geometric center/plane alignment, masks,
-pyramids and other metrics are deferred. Initial 3D synthetic qualification and
+Initialization defaults to identity world motion; explicit rigid seeds now use
+the optimized ITK InitialTransform model described below. The 90% fixed-domain
+overlap policy is unchanged. Automatic geometric center/plane alignment, masks,
+pyramids and other metrics remain deferred. Initial 3D synthetic qualification and
 bitwise slice regression evidence are in [research/geometry/README.md](research/geometry/README.md).
 The subsequent [shared pair/series benchmark](research/registration/README.md)
 provides bounded ITK/FireANTs 3D time/memory comparisons, with independent physical
 truth controls and separate native-convergence qualification.
+
+## Initial-transform model
+
+`initial_transform` is a full fixed-world-to-moving-world rigid pull matrix, one
+shared `(4, 4)` matrix or a positional `(N, 4, 4)` batch. It initializes the
+**optimized transform**, like ITK `SetInitialTransform` with `InPlaceOff`.
+It is neither a frozen `MovingInitialTransform` nor a residual transform chain.
+There are no additional public transform objects or ITK runtime dependencies.
+
+The matrix `T = [R, b; 0, 1]` is converted once to the existing centered parameters:
+`d = b + (R - I) @ fixed_center`, plus a stable quaternion-derived rotation vector
+for volumes, or fixed-plane angle/i/j displacement for coplanar slices. Rotation
+extraction is stable at zero and pi. A matrix does not carry an ITK rotation center;
+voxreg retains the fixed-grid center and existing physical scales. Fresh Adam
+moments and clocks start at these parameters. Every metric/final sample uses the
+full transform directly, so the input is never pre-resampled or interpolated twice.
+
+Input validation checks shape, real/finite values, homogeneous row, orthogonality,
+positive unit determinant, and slice-plane preservation. Float32 rotational
+roundoff within 1e-6 is normalized to SO(3), preserving the mapped fixed center.
+Labeled matrices require canonical dimensions and matching supplied world/time
+labels, units and pull convention. User storage is never mutated. The implicit
+reference must start at identity within 1e-12 centered-parameter roundoff and is
+forced to exactly zero parameters. A shared nonidentity start requires explicit
+fixed. Failure retains the best valid pose, or the supplied start if no metric
+was valid; returned diagnostics always describe the full transform.
+
+### Importing a rigid ITK transform
+
+For a rigid ITK transform already expressed in the **same physical world frame**
+as the VoxelData:
+
+```python
+matrix_xyz = np.eye(4)
+matrix_xyz[:3, :3] = np.asarray(itk_transform.GetMatrix())
+matrix_xyz[:3, 3] = np.asarray(itk_transform.GetOffset())  # Not GetTranslation().
+order = [2, 1, 0, 3]
+initial_zyx = matrix_xyz[np.ix_(order, order)]
+result = voxreg.register_rigid(moving, fixed, initial_transform=initial_zyx)
+```
+
+`GetOffset` incorporates a nonzero ITK center, whereas `GetTranslation` does not.
+Axis permutation is **not** an LPS/RAS coordinate-frame conversion: reconcile
+world frames separately if independent readers use different conventions. No
+inverse is applied for ITK's usual registration pull transform. Composite chains
+are not imported by this snippet.
+
+The ITK model is checked against installed ITK 5.4.7: a zero-update v4 registration
+with `SetInitialTransform`/`InPlaceOff` maps fixed physical points identically to
+voxreg's seed, and mutating the cloned ITK output leaves its initial object intact.
+The corresponding API contract is documented by ITK's
+[ImageRegistrationMethodv4](https://docs.itk.org/projects/doxygen/en/stable/classitk_1_1ImageRegistrationMethodv4.html).
+This is initialization compatibility, not equality with ITK's Euler/GD optimizer.
 
 **The numbered sections below preserve the original slice milestone.** Its full-3D
 and identical-grid exclusions are superseded by this extension; its historical
