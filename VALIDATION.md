@@ -5,6 +5,42 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented pair/series controls, not general
 registration accuracy or performance.
 
+## Real ConfUSIus example 01: same-subject session pair
+
+The [real-example report](research/confusius-examples/README.md) checks the cached
+rat75 slice32 angiographies from 20220523/24, with the example's dB/qform
+preprocessing, against public ConfUSIus 0.8.0. This is a new natural **2D pair**,
+not natural 3D validation. No product or ConfUSIus code was changed.
+
+**Default full-image alignment is not comparable to the reference on this pair.**
+On a single common full-grid support mask (84.1588%), voxreg/default NCC² is
+0.54936 rigid / 0.64196 affine versus ConfUSIus 0.79941 / 0.84479. Raising the cap
+to 400 alone does not solve it: the unchanged 90% overlap guard stops rigid at
+101 updates and affine at 184; reference-like poses retain only about 87–88%
+original fixed-grid support. At 100 updates affine has a large transient
+principal contraction (~0.874), not a trustworthy anatomical scale estimate.
+
+A separately labeled, predeclared central fixed crop (16 pixels per edge, moving
+unchanged) plus fixed400 reaches NCC² 0.83738 rigid / 0.86356 affine, versus
+ConfUSIus's same-crop 0.81476 / 0.84523. Scores still use the original full grid and
+the same joint mask, not crop-only scoring. Vessel overlays/difference images show
+substantial improvement, but the crop is a caller-side diagnostic, **not a fix to
+the original default example**. Both voxreg fits remain at the iteration limit.
+Biological truth is unavailable; mapping disagreement with ConfUSIus is not a truth
+error, and higher NCC alone does not establish correct tissue correspondence.
+
+All 12 CPU/CUDA comparisons pass the unchanged 0.001-pixel maximum pointwise gate
+(worst 2.23e-7 px), with matching counts/statuses. All 36 float64 backend outputs
+match independent SciPy64 interpolation on interior support to <=6.74e-13 dB.
+The report retains matrices, scores, support, model scales, complete settings,
+file/source hashes and visual artifacts. Script self-checks pass; the production
+sources are unchanged from the 352-test linear-engine qualification below.
+
+Example 02 retains its earlier bounded 120-frame evidence, not a new full-recording
+run. Example 03 remains unsupported slice-to-volume; the B-spline part of example01
+was not attempted. The next general-registration gate is capture/fitting-domain/
+partial-overlap policy, before claiming drop-in example parity or adding models.
+
 ## Translation/rigid/affine shared engine
 
 The current suite passes **352 tests**, including 44 new linear-model checks.
@@ -404,7 +440,10 @@ The FD calculation was also checked against the frozen reference: it evaluates
 `norm(T[t+1] @ p - T[t] @ p)` on fixed-grid points, associates the statistic with
 time t, and ends with zero. It is not a sum of Euler-angle derivatives.
 
-## Open gates and limits
+## Historical open gates at the original slice milestone
+
+This list records the original milestone, not current support. Current model,
+convergence and real-example gates are described above.
 
 1. **Convergence calibration:** all 119 non-reference frames reached the configured
    100-step limit. None failed the overlap/metric guards, and quality matches the
@@ -430,4 +469,5 @@ time t, and ends with zero. It is not a sum of Euler-angle derivatives.
    differing-grid, affine or deformable validation has been attempted. These
    inputs are deliberately unsupported rather than silently approximated.
 
-Do not extend the transform model before resolving the remaining rigid gates.
+The original milestone deferred model extension pending rigid qualification.
+Current model support and its remaining qualification limits are described above.

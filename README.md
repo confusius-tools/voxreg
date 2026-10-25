@@ -532,6 +532,14 @@ runs are kept separately, not mixed into the AC tables.
 
 ## Current limits
 
+**Real-example capture warning:** the default full-image fit does not yet match
+ConfUSIus's same-subject session example. Its 100-update budget under-captures the
+motion, and simply raising the cap then hits the 90% overlap guard. A labeled
+central-crop/fixed400 diagnostic improves alignment, but is not a default-workflow
+fix. See the [real-example report](research/confusius-examples/README.md) for retained
+failures, common-support scores and overlays. This is distinct from the passing
+synthetic precision/truth checks.
+
 - Translation, rigid and affine: volumes or constrained coplanar slices only.
   No deformable, multi-pose, slice-to-volume or non-coplanar slice registration.
 - Independent fixed/moving grids, but uniform native coordinates, mm and finite
