@@ -37,6 +37,8 @@ class Plane:
         Physical world z/y/x rotation center.
     parameter_scale : torch.Tensor
         Radian/mm conversion for scaled optimizer parameters.
+    rotation_offset : torch.Tensor, optional
+        Intrinsic displacement from the rotation pivot to the geometric grid center.
     """
 
     inverse_lattice: torch.Tensor
@@ -49,10 +51,15 @@ class Plane:
     basis: npt.NDArray[np.float64]
     center: npt.NDArray[np.float64]
     parameter_scale: torch.Tensor
+    rotation_offset: torch.Tensor | None = None
 
 
 def make_plane(
-    data: xr.DataArray, *, device: str = "cpu", dtype: torch.dtype = torch.float32
+    data: xr.DataArray,
+    *,
+    device: str = "cpu",
+    dtype: torch.dtype = torch.float32,
+    center: npt.NDArray[np.float64] | None = None,
 ) -> Plane:
     """Build intrinsic-plane geometry without large-world-origin cancellation.
 
@@ -64,6 +71,8 @@ def make_plane(
         Torch device.
     dtype : torch.dtype, default: torch.float32
         Numerical sampling precision.
+    center : numpy.ndarray, optional
+        Physical world z/y/x in-plane pivot. Defaults to the geometric grid center.
 
     Returns
     -------
@@ -90,6 +99,11 @@ def make_plane(
     center_pixel = np.array([(w - 1) / 2, (h - 1) / 2])
     j, i = np.indices((h, w), dtype=float)
     points = (np.stack((i, j), axis=-1) - center_pixel) @ lattice.T
+    geometric_center = affine[:3, 3] + pixels @ center_pixel
+    rotation_offset = None
+    if center is not None:
+        rotation_offset = basis.T @ (geometric_center - center)
+        points = points + rotation_offset
     radius = np.sqrt(np.mean(np.sum(points**2, axis=-1)))
     ell = np.linalg.norm(pixels, axis=0).min()
     options = {"device": device, "dtype": dtype}
@@ -105,8 +119,13 @@ def make_plane(
         support_tolerance=2e-5 / bounds,
         identity=torch.eye(2, **options),
         basis=basis,
-        center=affine[:3, 3] + pixels @ center_pixel,
+        center=geometric_center if center is None else center,
         parameter_scale=torch.tensor([ell / radius, ell, ell], **options),
+        rotation_offset=(
+            torch.tensor(rotation_offset, **options)
+            if rotation_offset is not None
+            else None
+        ),
     )
 
 
@@ -126,6 +145,7 @@ class SpatialGrid:
     center: npt.NDArray[np.float64]
     parameter_scale: torch.Tensor
     planar: bool
+    rotation_offset: torch.Tensor | None = None
 
 
 def make_grid(
@@ -134,11 +154,14 @@ def make_grid(
     *,
     device: str = "cpu",
     dtype: torch.dtype = torch.float64,
+    center: npt.NDArray[np.float64] | None = None,
 ) -> Plane | SpatialGrid:
     """Build fixed-domain sampling geometry without conflating voxel spacing with motion.
 
     Slice pairs must be coplanar. Volume pairs require at least two samples on
-    each axis. Initialization/slice-to-volume registration are not inferred.
+    each axis. Optional center sets the physical world z/y/x pivot and lever-arm
+    scales without changing the sampled fixed domain. Plane alignment and
+    slice-to-volume registration are not inferred.
     """
     fs = np.array([fixed.sizes[d] for d in ("k", "j", "i")])
     ms = np.array([moving.sizes[d] for d in ("k", "j", "i")])
@@ -147,10 +170,11 @@ def make_grid(
         raise ValueError("Use coplanar k=1 slices or 3D volumes with all axes >= 2.")
     if planar and fixed.xindexes["z"].equals(moving.xindexes["z"]):
         # Retain the qualified same-grid 2D arithmetic and kernel exactly.
-        return make_plane(fixed, device=device, dtype=dtype)
+        return make_plane(fixed, device=device, dtype=dtype, center=center)
     af, am = position_to_world(fixed), position_to_world(moving)
     lf, lm = af[:3, :3], am[:3, :3]
     hf, hm = (fs - 1) / 2, (ms - 1) / 2
+    geometric_center = af[:3, 3] + lf @ hf
     origin_difference = af[:3, 3] - am[:3, 3]
     if planar:
         native = np.linalg.solve(lm, lf)
@@ -159,11 +183,13 @@ def make_grid(
             raise ValueError(
                 "Slice planes must be coplanar; plane initialization is not supported yet."
             )
-        plane = make_plane(fixed, device=device, dtype=dtype)
+        plane = make_plane(fixed, device=device, dtype=dtype, center=center)
         basis, scales = plane.basis, plane.parameter_scale
     else:
         basis = np.eye(3)
         axis_variance = lf**2 @ ((fs.astype(float) ** 2 - 1) / 12)
+        if center is not None:
+            axis_variance += (geometric_center - center) ** 2
         # Sum off-axis variances directly, avoiding cancellation for elongated grids.
         radii = np.sqrt(axis_variance[[1, 2, 0]] + axis_variance[[2, 0, 1]])
         ell = np.linalg.norm(lf, axis=0).min()
@@ -198,9 +224,14 @@ def make_grid(
         upper=torch.tensor(normalized_center + tolerance, **options),
         resident_basis=torch.tensor(basis, **options),
         basis=basis,
-        center=af[:3, 3] + lf @ hf,
+        center=geometric_center if center is None else center,
         parameter_scale=scales,
         planar=bool(planar),
+        rotation_offset=(
+            torch.tensor(geometric_center - center, **options)
+            if center is not None
+            else None
+        ),
     )
 
 
@@ -244,6 +275,12 @@ def _sample_grid(
         + grid.world_to_normalized @ (rotation - identity) @ grid.normalized_to_world
     )
     offset = grid.offset + translation @ grid.world_to_normalized.T
+    if grid.rotation_offset is not None:
+        offset = (
+            offset
+            + ((rotation - identity) @ grid.rotation_offset)
+            @ grid.world_to_normalized.T
+        )
     dimensions = images.ndim - 1
     expand = (slice(None),) + (None,) * dimensions
     components = []
@@ -320,7 +357,12 @@ def sample_rigid(
         @ (rotation - plane.identity)
         @ plane.normalized_to_plane
     )
-    translation = parameters[:, 1:] @ plane.plane_to_normalized.T
+    physical_translation = parameters[:, 1:]
+    if plane.rotation_offset is not None:
+        physical_translation = (
+            physical_translation + (rotation - plane.identity) @ plane.rotation_offset
+        )
+    translation = physical_translation @ plane.plane_to_normalized.T
     nx, ny = plane.normalized_i, plane.normalized_j
     # Displacement from identity avoids cancellation at zero motion.
     gx = nx + (

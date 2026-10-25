@@ -88,6 +88,35 @@ def _validate_registration_geometry(data: xr.DataArray) -> None:
         )
 
 
+def _center_positions(
+    data: xr.DataArray, mode: str, name: str
+) -> npt.NDArray[np.float64]:
+    """Return geometric or original-intensity centroids in array-position k/j/i."""
+    midpoint = (np.array([data.sizes[d] for d in VOXEL_DIMS]) - 1) / 2
+    images = data.values if "time" in data.dims else data.values[None]
+    if mode == "center_geometry":
+        return np.broadcast_to(midpoint, (len(images), 3))
+    centers = []
+    for frame, image in enumerate(images):
+        values = np.asarray(image, dtype=np.float64)
+        peak = values.max()
+        if values.min() < 0 or peak <= 0:
+            raise ValueError(
+                f"{name} frame {frame}: center_moments requires original nonnegative "
+                "intensities with positive mass. Pass unscaled data and use "
+                "intensity_scaling for fitting, or choose center_geometry."
+            )
+        # Positive rescaling preserves moments and bounds the float64 mass sum.
+        weights = values / peak
+        mass = weights.sum()
+        offsets = []
+        for axis, size in enumerate(image.shape):
+            marginal = weights.sum(axis=tuple(d for d in range(3) if d != axis))
+            offsets.append(np.dot(marginal, np.arange(size) - midpoint[axis]) / mass)
+        centers.append(midpoint + offsets)
+    return np.asarray(centers)
+
+
 def position_to_world(data: xr.DataArray) -> npt.NDArray[np.float64]:
     """Return the physical affine mapping zero-based array positions to world.
 

@@ -133,8 +133,9 @@ fixed-to-moving pulls in mm.
 Seeds must be finite proper rigid homogeneous matrices. Scale, shear and
 reflection are rejected beyond a 1e-6 rotation-roundoff tolerance. Accepted
 float32 rotation roundoff is normalized while preserving the mapped fixed center.
-Voxreg keeps its fixed-grid rotation center and rotation-vector/Adam policy;
-following ITK's initialization model does not mean identical optimizer trajectories.
+Explicit matrix seeds keep the fixed geometric rotation center and the existing
+rotation-vector/Adam policy; following ITK's initialization model does not mean
+identical optimizer trajectories.
 For slices the seed must preserve the existing fixed plane. With an omitted
 `fixed`, the first frame's seed must be identity (up to float64 roundoff), since
 that reference is preserved exactly. Supply explicit `fixed` to fit every frame
@@ -142,11 +143,53 @@ from a shared nonidentity pose.
 
 On failure the best valid full transform is retained, or the initial pose if no
 valid metric was observed. Motion diagnostics describe that full transform.
-There is no automatic center/plane initialization, initialization search or separate
-fixed/moving pre-transform chain. The 90% fixed-domain overlap guard remains;
-an initial pose must already provide enough overlap. Large displacements are
-recoverable from a suitable seed, but broad uninitialized capture range and
-substantial partial overlap remain unqualified. See [VALIDATION.md](VALIDATION.md).
+The 90% fixed-domain overlap guard remains: the seed must provide enough overlap.
+Large displacements are recoverable from a suitable seed, but broad uninitialized
+capture range and substantial partial overlap remain unqualified.
+
+### Automatic centering
+
+```python
+result = voxreg.register_rigid(
+    moving_volume, fixed_volume,
+    initialization="center_moments",  # Or "center_geometry".
+    intensity_scaling="db",          # Scale fitting images, not the input data.
+)
+```
+
+- **`center_geometry`** aligns physical grid centers, independently of intensities.
+  The rotation pivot is the fixed geometric center.
+- **`center_moments`** aligns intensity-weighted physical centroids of the original
+  images. Following ITK, its rotation pivot is the **fixed intensity centroid**;
+  physical lever-arm scales are recomputed around that pivot.
+
+Both modes produce translation-only seeds (`moving_center - fixed_center` for pull
+sampling), then use the same rigid optimizer and single final resampling path.
+For recordings, moving moments are computed separately per frame; the fixed
+centroid/pivot is shared. The implicit reference stays exactly identity.
+`initialization` and `initial_transform` are mutually exclusive. Omitting both
+retains identity initialization. Inspect `result.diagnostics.attrs` for
+`initialization` and `rotation_center_zyx_mm` when automatic centering is selected.
+
+**Warning—pass original linear intensities, not manually scaled images.** Use
+`intensity_scaling="db"` for dB fitting instead of calling a logarithm/dB transform
+before registration. Moments are computed **before** fitting scaling or NCC
+conditioning, and outputs retain the original intensities. Nonlinear preprocessing
+(including logarithms, square roots and power transforms) changes centroid weights;
+max-referenced dB can make dark background dominate the centroid instead of bright
+signal. Arbitrary intensity offsets also change moments. Voxreg cannot recover the
+original weights or reliably identify every pre-scaled input.
+
+Moments requires finite nonnegative original values with positive mass in **every**
+image. Signed/already-dB input should use `center_geometry` or an explicit matrix
+(with `intensity_scaling="none"`), not automatic shifting, absolute-value weights
+or silent inverse scaling. The current fitting options remain `"none"` and `"db"`.
+Bright artifacts, background, different crops and incomplete anatomy can still bias
+linear-intensity moments; neither centering mode is an anatomical alignment guarantee.
+
+Automatic modes do not estimate rotation, infer non-coplanar slice alignment, or
+search for an initial pose. Separate fixed/moving pre-transform chains and pyramids
+remain unsupported. See [VALIDATION.md](VALIDATION.md).
 
 ### Convergence
 

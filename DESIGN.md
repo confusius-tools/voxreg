@@ -32,12 +32,48 @@ slice-to-volume registration are explicit errors, not unconstrained 6-DOF fits.
 
 Initialization defaults to identity world motion; explicit rigid seeds now use
 the optimized ITK InitialTransform model described below. The 90% fixed-domain
-overlap policy is unchanged. Automatic geometric center/plane alignment, masks,
+overlap policy is unchanged. Automatic geometry/moments centering is described below. Plane alignment, masks,
 pyramids and other metrics remain deferred. Initial 3D synthetic qualification and
 bitwise slice regression evidence are in [research/geometry/README.md](research/geometry/README.md).
 The subsequent [shared pair/series benchmark](research/registration/README.md)
 provides bounded ITK/FireANTs 3D time/memory comparisons, with independent physical
 truth controls and separate native-convergence qualification.
+
+## Automatic centering
+
+`initialization=None` preserves identity by default. `center_geometry` and
+`center_moments` are mutually exclusive with an explicit `initial_transform`.
+Both compute `moving_center - fixed_center` in physical world z/y/x as a
+translation-only seed, then enter the existing validated transform/optimizer path.
+Geometry uses array-position midpoints mapped through crop/stride-aware affines.
+Moments uses original linear intensities, never dB fitting buffers or NCC-conditioned
+values. Nonnegative finite values and positive mass are required per image; signed
+input is rejected rather than shifted or assigned absolute-value weights.
+
+Moment accumulation uses float64, per-image peak normalization (which leaves the
+centroid unchanged and prevents overflowing the mass sum), and centered marginal
+index moments without dense world-coordinate grids. Each moving frame is treated
+independently. Origin differences are formed before local centroid offsets to
+avoid common-large-origin cancellation. The implicit reference stays exactly
+identity; centering does not introduce temporal coupling or extra interpolation.
+
+Following ITK CenteredTransformInitializer, the fixed geometric center or fixed
+intensity centroid is also the rotation pivot. The existing physical scales use
+unweighted fixed-grid RMS lever arms **about that pivot**, not the moments
+covariance. Off-axis variances include the squared geometric-center/pivot offset.
+A resident small rotation-offset vector adjusts the centered sampler when the
+pivot differs from the geometric center; image grids and sampling domains are not
+changed. The qualified identity/default kernels retain their original arithmetic
+when no pivot override is requested. Returned matrices and motion diagnostics still
+describe the full transform; automatic-mode diagnostics record the world pivot.
+
+Unlike NCC, moments is not invariant to additive offsets or nonlinear scaling.
+Users should pass unscaled images and request dB fitting via `intensity_scaling`,
+not pre-apply dB/log/sqrt/power transforms. Pre-scaled nonnegative inputs cannot be
+reliably detected, so this is also a documented caller responsibility. Geometry
+centering or an explicit matrix remains available for signed images. The API does
+not infer the original units, invert display transforms, estimate rotation, align
+non-coplanar planes, or change the 90% overlap policy.
 
 ## Initial-transform model
 

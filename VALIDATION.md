@@ -5,9 +5,51 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented pair/series controls, not general
 registration accuracy or performance.
 
-## Explicit initial transforms
+## Automatic geometry/moments initialization
 
-The current suite passes **262 tests**, including 33 new initialization tests.
+The current suite passes **288 tests**, including 26 automatic-centering tests.
+All changes are in voxreg; ConfUSIus was used only as an API/reference comparison.
+Both `center_geometry` and `center_moments` match installed ITK 5.4.7 centering on
+physical centers, translation direction and fixed rotation pivot. Geometry uses
+grid centers; moments uses the original nonnegative intensities, before dB scaling
+or NCC conditioning. Negative/zero-mass input is rejected for moments with advice
+to pass unscaled data and use `intensity_scaling`, or select geometry/explicit seeds.
+Other manual nonlinear transforms cannot be reliably detected and are documented
+as unsuitable for preserving original-intensity moments.
+
+CPU/CUDA checks cover a 20/-12/8 mm offset with no identity overlap, fitting in
+linear and dB modes, per-frame initialization and implicit reference identity.
+Finite-difference gradients and original-float64 SciPy pulls verify off-geometric
+pivots on same-grid oblique/strided slices, unequal-grid slices and volumes.
+Physical scales are compared against dense unweighted fixed-grid RMS lever arms
+about the intensity centroid. Output retains original intensity units/dtypes,
+and fitting-only scaling never mutates the raw caller arrays.
+
+On a rotated independent/cropped 3D control, the fixed160-update precision control
+retains the unchanged **0.25-pixel RMS truth** and **0.001-pixel maximum pointwise
+CPU/CUDA agreement** gates. The observed maximum CPU/CUDA difference is approximately
+0.000061 minimum-spacing pixels.
+
+**Default 3D convergence remains uncalibrated.** On that same small control,
+window50/minimum1e-6 stops both devices at 70 updates: truth RMS is approximately
+0.00381 CPU / 0.00455 CUDA pixels, but their maximum pointwise difference is
+**0.00248 pixels**, exceeding the 0.001-pixel precision screen. Fixed160 improves
+truth RMS to approximately 0.000032 / 0.000029 pixels and passes agreement;
+fixed400 reduces the maximum difference below 0.00000046 pixels. The default
+threshold and error gates were not retuned or relaxed. This result bounds the
+qualification: fixed-budget numerical behavior passes, not universal cross-device
+agreement under default early stopping. Raw observations are retained in
+`artifacts/auto-initialization/precision-probe.json` for later 3D calibration.
+
+The existing real-series fixed/convergence controls are checked against the frozen
+AC outputs with automatic initialization omitted; no historical benchmark result
+is rewritten as an automatic-centering measurement. Ruff, format, lock, source/wheel
+builds and isolated wheel smoke checks pass. No masks, pyramids, rotation search,
+non-coplanar plane alignment or general partial-overlap policy were added.
+
+## Explicit initial transforms (2242bc5)
+
+At this boundary, the suite passed **262 tests**, including 33 new initialization tests.
 `initial_transform` follows ITK's optimizable InitialTransform / InPlaceOff model,
 not its frozen MovingInitialTransform chain. A real ITK 5.4.7 zero-update v4
 registration is the direction/copy oracle. Initialization takes a full world
@@ -38,9 +80,10 @@ omitted. Explicit identity versus omission is also bitwise checked on CPU/CUDA.
 Raw checks are under ignored `artifacts/initial-transforms/`. The older benchmark
 matrices are not retimed or rewritten as seeded-registration measurements.
 
-Ruff/format/lock/build and wheel-import checks pass. Still unsupported: automatic
-initialization/search, fixed/moving pre-transform chains, non-coplanar slice
-alignment and a general partial-overlap policy.
+Ruff/format/lock/build and wheel-import checks pass. At this boundary automatic initialization was unsupported; geometry/moments modes
+are added by the section above. Initialization search, fixed/moving pre-transform
+chains, non-coplanar slice alignment and a general partial-overlap policy remain
+unsupported.
 
 ## Standardized pair/series benchmark (e263aa0)
 
@@ -224,7 +267,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 262 passed, including initial transforms, shared benchmarks, 3D and CUDA.
+# 288 passed, including automatic centering, initial transforms, 3D and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples

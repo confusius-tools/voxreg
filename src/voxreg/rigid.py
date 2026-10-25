@@ -12,7 +12,12 @@ import xarray as xr
 from confusius._utils.progress import progress_bar
 
 from voxreg.convergence import WindowConvergence
-from voxreg.geometry import VOXEL_DIMS, _validate_registration_geometry
+from voxreg.geometry import (
+    VOXEL_DIMS,
+    _center_positions,
+    _validate_registration_geometry,
+    position_to_world,
+)
 from voxreg.sampling import (
     Plane,
     SpatialGrid,
@@ -181,6 +186,7 @@ def register_rigid(
     fixed: xr.DataArray | None = None,
     *,
     initial_transform: npt.ArrayLike | xr.DataArray | None = None,
+    initialization: Literal["center_geometry", "center_moments"] | None = None,
     intensity_scaling: Literal["none", "db"] = "db",
     interpolation: Literal["linear", "nearest"] = "linear",
     batch_size: int = 32,
@@ -214,9 +220,21 @@ def register_rigid(
         pre-transform. Float32 rotation roundoff within 1e-6 is normalized.
         For an implicit first-frame reference its initial transform must be identity;
         use explicit fixed to optimize every frame from a shared nonidentity pose.
+    initialization : {"center_geometry", "center_moments"}, optional
+        Automatic translation seed, mutually exclusive with initial_transform.
+        Geometry aligns physical grid centers. Moments aligns original-intensity
+        centers of gravity and uses the fixed centroid as the rotation center,
+        including physical lever-arm scaling, following ITK. Moments requires
+        nonnegative original values with positive mass in every image. No
+        rotation is estimated; the implicit reference stays exactly identity.
     intensity_scaling : {"none", "db"}, default: "db"
         Fitting preprocessing only; original intensities are resampled for output.
         dB requires nonnegative power; normalized zeros are floored at 1e-12.
+        Pass original linear intensities; for dB fitting use this option instead
+        of scaling the inputs yourself. Logarithms, square roots and other nonlinear
+        preprocessing change center_moments weights. Already-transformed data needs
+        center_geometry or an explicit seed instead. Only fitting is scaled;
+        initialization and original-intensity output remain unscaled.
     interpolation : {"linear", "nearest"}, default: "linear"
         Final original-image resampling only; fitting always uses linear sampling.
         Nearest is suitable for labels, not automatically for integer intensities.
@@ -261,12 +279,14 @@ def register_rigid(
 
     Notes
     -----
-    Optimization starts at initial_transform (identity when omitted) in physical
+    Optimization starts at initial_transform or the selected automatic seed
+    (identity when neither is provided) in physical
     world space, not voxel coordinates. Sampling composes
     inverse(A_moving) @ T @ A_fixed, without pre-resampling the input. Volumes use
     a centered axis-angle rotation vector (right-handed XYZ, stored z/y/x) and
     world z/y/x translation. Slices optimize only fixed-plane rotation and i/j
-    translation; slice seeds must preserve the fixed plane. Separate ITK-style
+    translation; slice seeds must preserve the fixed plane. Automatic modes
+    also require coplanar slices and do not infer plane alignment. Separate ITK-style
     fixed/moving pre-transforms and slice-to-volume fitting are not supported.
     Less than 90% valid fixed-grid support flags insufficient overlap. Physical
     scaling uses minimum fixed spacing and RMS lever arms, not ITK's estimator.
@@ -358,8 +378,32 @@ def register_rigid(
         raise TypeError(
             "progress must be True, False, None, or a callable accepting (completed, total)."
         )
+    if initialization is not None and (
+        not isinstance(initialization, str)
+        or initialization not in ("center_geometry", "center_moments")
+    ):
+        raise ValueError(
+            "initialization must be None, center_geometry or center_moments."
+        )
+    if initialization is not None and initial_transform is not None:
+        raise ValueError("Use initialization or initial_transform, not both.")
+    center = None
+    if initialization is not None:
+        fixed_position = _center_positions(fixed, initialization, "fixed")[0]
+        moving_positions = _center_positions(moving, initialization, "moving")
+        af, am = position_to_world(fixed), position_to_world(moving)
+        fixed_offset = af[:3, :3] @ fixed_position
+        initial_transform = np.broadcast_to(
+            np.eye(4), (moving.sizes["time"], 4, 4)
+        ).copy()
+        # Subtract origins before local offsets to avoid common-large-origin cancellation.
+        initial_transform[:, :3, 3] = (
+            am[:3, 3] - af[:3, 3] + moving_positions @ am[:3, :3].T - fixed_offset
+        )
+        if initialization == "center_moments":
+            center = af[:3, 3] + fixed_offset
     # Double physical geometry/state keeps gradient reductions stable across chunk sizes.
-    plane = make_grid(fixed, moving, device=device, dtype=torch.float64)
+    plane = make_grid(fixed, moving, device=device, dtype=torch.float64, center=center)
     initial = None
     if initial_transform is not None:
         if isinstance(initial_transform, xr.DataArray):
@@ -595,7 +639,17 @@ def register_rigid(
             **motion,
         },
         coords={"time": moving.time},
-        attrs={"timings_seconds": timings},
+        attrs={
+            "timings_seconds": timings,
+            **(
+                {
+                    "initialization": initialization,
+                    "rotation_center_zyx_mm": plane.center.tolist(),
+                }
+                if initialization is not None
+                else {}
+            ),
+        },
     )
     axes = ["z", "y", "x", "1"]
     transforms = xr.DataArray(
