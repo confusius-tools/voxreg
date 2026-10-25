@@ -20,7 +20,7 @@ unchanged. This is a geometry/integration check, not a full-recording quality ga
 
 `uv sync` now includes ConfUSIus's larger dependency tree; the tested environment
 uses ConfUSIus 0.8.0 and xarray 2026.9.0. Numerical synthetic, dtype and registration
-gates are unchanged; **167 tests pass**. Batch progress tests cover CPU/CUDA,
+gates are unchanged; **180 tests pass**. Batch progress tests cover CPU/CUDA,
 partial/oversized batches, failed/reference frames, default Rich rendering, silent
 modes, callback overrides, errors and display cleanup. Outputs/diagnostics remain
 identical and CUDA synchronization counts match quiet calls. Timing/profiling
@@ -45,7 +45,25 @@ on CPU (batch32) and CUDA (batch120); outputs pass ConfUSIus validation. This is
 behavior-preservation proof, not a new performance benchmark or full-recording
 comparison. Local logs are under `artifacts/api-cleanup/`.
 
-## ITK-style convergence
+## Calibrated convergence and terminal checks
+
+Current defaults are window 50 / minimum 1e-6. Four 120-frame windows (three rat75
+windows, including native float64, and ALD001) were compared against fixed 100/400
+controls on CPU/CUDA. Worst full-grid RMS mapping disagreement with either control
+was below 0.007 minimum-spacing pixels; worst NCC² loss was below 7e-6. Median updates
+fell to 78–79, with 475/476 moving frames converged. These are regression comparisons,
+not biological truth. The prior 167-test suite passed with the candidate threshold
+injected; the final expanded suite passes 180 without changing numerical gates.
+
+Whole-batch termination is separately proven identical to continuing the frozen
+loop on all four windows/devices and on mixed-failure synthetic cases. CPU polls
+once per eligible iteration; CUDA polls one batch-wide scalar every ten iterations
+after the first full window (at most five reads at default settings). The polls
+synchronize CUDA and can add overhead when no batch finishes early. Fixed-budget
+controls introduce no polls. See [CALIBRATION.md](research/convergence/CALIBRATION.md)
+for fresh-process timings, limitations, input/source hashes and reproducible CLIs.
+
+## Initial ITK-style convergence (historical, c46c07c)
 
 The PyTorch monitor is checked on CPU/CUDA against stored C++ ITK reference
 values for windows 2/10/20/50, including constant, zero, improving, worsening,
@@ -56,7 +74,7 @@ existing synthetic recovery and CPU/CUDA mapping tolerances are unchanged.
 The existing freeze-stress test now explicitly uses 1e-6 to exercise convergence
 within its 400-update budget; it does not change a transform-error tolerance.
 
-Defaults follow ITK gradient descent (50/1e-8). On the existing 120-frame real
+Initial defaults followed ITK gradient descent (50/1e-8). On the existing 120-frame real
 window, transforms and registered output bytes are identical to the previous
 policy on each device. CPU/CUDA median/minimum common-support NCC differ by
 less than 4e-12. Only six moving frames
@@ -108,7 +126,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 167 passed, including the API cleanup, ITK-style convergence, dtype/interpolation and CUDA.
+# 180 passed, including calibrated convergence, terminal checks, dtype/interpolation and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples

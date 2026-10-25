@@ -35,6 +35,58 @@ def test_research_help_needs_no_inputs(script, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.parametrize("script", ["calibrate", "benchmark"])
+def test_convergence_research_help_needs_no_inputs(script, tmp_path):
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPTS.parent / "convergence" / f"{script}.py"),
+            "--help",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "usage:" in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "script,output_name",
+    [
+        ("calibrate", "input.npz"),
+        ("benchmark", "input.npz"),
+        ("benchmark", "input.json"),
+        ("benchmark", "other.npz"),
+    ],
+)
+def test_convergence_research_outputs_cannot_destroy_inputs(
+    script, output_name, tmp_path
+):
+    source = tmp_path / "input.npz"
+    source.write_bytes(b"must not be overwritten or loaded before path validation")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPTS.parent / "convergence" / f"{script}.py"),
+            str(source),
+            "--output",
+            str(tmp_path / output_name),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "overwrite" in result.stderr
+    assert (
+        source.read_bytes()
+        == b"must not be overwritten or loaded before path validation"
+    )
+    assert list(tmp_path.iterdir()) == [source]
+
+
 @pytest.mark.parametrize("sampler", ["production", "elementwise64"])
 def test_batch_check_generates_its_own_comparison(recording_factory, tmp_path, sampler):
     data, _, _ = recording_factory()

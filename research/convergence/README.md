@@ -63,9 +63,15 @@ for window, cases in fixture["expected"].items():
         np.testing.assert_allclose(actual, expected, atol=2e-15, rtol=1e-12)
 ```
 
-## Integration and defaults
+## Initial integration and defaults (historical, c46c07c)
 
-Defaults follow ITK gradient descent's **window 50 / minimum 1e-8**, rather than
+**Current policy:** the formula below is unchanged, but NCC calibration now uses
+50/1e-6 and bounded whole-batch completion checks. See
+[CALIBRATION.md](CALIBRATION.md) for the new evidence and synchronization cost.
+The remaining sections record the initial 50/1e-8 implementation, not current
+performance or stopping defaults.
+
+Initial defaults followed ITK gradient descent's **window 50 / minimum 1e-8**, rather than
 blindly copying the historical comparison's explicitly configured 10 / 1e-6.
 Histories, normalization, Adam clocks/moments and stopping decisions are independent
 per frame. The existing overlap/metric/gradient guards take precedence. Best-valid

@@ -5,8 +5,9 @@ real-notebook quality comparison. Isolated ITK/FireANTs time/memory comparisons 
 available in [BENCHMARK.md](BENCHMARK.md). [PERFORMANCE.md](PERFORMANCE.md) identifies
 the dense-grid bottleneck that motivated the production scalar-affine sampler.
 Fresh production time/memory comparisons validate the sampler rewrite. The
-ITK-style PyTorch convergence monitor is now reference-tested; broader real-data
-threshold calibration remains pending. See [research/convergence/README.md](research/convergence/README.md).
+ITK-style PyTorch convergence monitor is reference-tested, with initial NCC
+threshold calibration on four real windows and bounded whole-batch termination.
+Broader data qualification remains pending; see [research/convergence/CALIBRATION.md](research/convergence/CALIBRATION.md).
 See [VALIDATION.md](VALIDATION.md).
 
 ## 1. Deliverable and stop condition

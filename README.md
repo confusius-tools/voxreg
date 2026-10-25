@@ -75,13 +75,13 @@ requires nonnegative power.
 
 Each frame uses the ITK v4 window convergence calculation, implemented in PyTorch:
 a normalized energy profile fitted with ITK's first-order B-spline construction.
-Defaults match ITK gradient descent's **50-value window and 1e-8 threshold**:
+Defaults use a **50-value window and NCC-calibrated 1e-6 threshold**:
 
 ```python
 result = register_rigid(
     pwd,
     convergence_window_size=50,
-    convergence_minimum_value=1e-8,
+    convergence_minimum_value=1e-6,
 )
 ```
 
@@ -89,13 +89,20 @@ The monitor checks before the next Adam update; stopped frames retain independen
 optimizer state and their best-valid transforms. This matches the convergence
 calculation, not ITK's optimizer or necessarily its final transforms. A larger
 threshold permits earlier stopping; it needs quality validation for your data.
-Set `convergence_window_size=max_iterations + 1` for a fixed-budget control.
+Use `convergence_minimum_value=1e-8` for ITK gradient descent's literal threshold
+default. Set `convergence_window_size=max_iterations + 1` for a fixed-budget control.
+The calibrated threshold passed unchanged numerical gates and comparisons with
+100/400-update controls across four real windows; it is not a universal guarantee.
 
-History stays on the selected device, without host reads inside the iteration
-loop. Frozen frames remain in fixed-shape batches until the budget ends, so fewer
-updates **do not yet imply less wall time**. Reference comparisons, measured
-cost and the overly aggressive 10-value trial are documented in
-[research/convergence/README.md](research/convergence/README.md).
+History stays on the selected device. Once a full window exists, whole-batch
+completion is checked every iteration on CPU and every ten iterations on CUDA.
+Each CUDA check reads one batch-wide boolean and synchronizes that stream—at most
+five checks with the default 100-update budget. Individual stopping decisions do
+not depend on batch companions. Frozen frames remain resident until all frames
+finish; CUDA may execute up to nine extra frozen iterations between checks.
+Speedups depend on the slowest frame, and polling can cost time when no batch
+finishes early. See [calibration and timing evidence](research/convergence/CALIBRATION.md)
+and the [ITK reference calculation](research/convergence/README.md).
 
 ### Image dtype and final interpolation
 
@@ -294,8 +301,8 @@ are unchanged; only dense coordinate evaluation was reorganized.
   padding from downstream analyses.
 - Per-frame status distinguishes convergence, iteration limit, invalid metric,
   insufficient overlap and the fixed reference. An iteration limit is **not** a
-  convergence claim. With the conservative ITK defaults, 113 of 119 moving frames
-  in the checked real window still reach the 100-step limit.
+  convergence claim. With the calibrated defaults, one of 476 moving frames across
+  four checked windows still reaches the 100-step limit; other data may need more.
 - Fitting interpolation is float32; physical geometry, optimizer state, NCC
   statistics and world matrices are float64 for stability. Final interpolation
   preserves original image precision as described above. Cross-device transforms

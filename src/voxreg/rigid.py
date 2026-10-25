@@ -38,6 +38,11 @@ class RegistrationResult:
     diagnostics: xr.Dataset
 
 
+def _all_frames_stopped(status: torch.Tensor) -> bool:
+    """Read one batch-wide scalar; on CUDA this synchronizes the device stream."""
+    return not (status == 0).any().item()
+
+
 def _optimize(
     images: torch.Tensor,
     fixed: torch.Tensor,
@@ -46,9 +51,9 @@ def _optimize(
     max_iterations: int,
     learning_rate: float,
     convergence_window_size: int = 50,
-    convergence_minimum_value: float = 1e-8,
+    convergence_minimum_value: float = 1e-6,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Run masked batched Adam without host reads in the iteration loop.
+    """Run masked batched Adam with bounded whole-batch stopping checks.
 
     Parameters
     ----------
@@ -91,7 +96,8 @@ def _optimize(
     )
     constant = images.amax(dim=(1, 2)) == images.amin(dim=(1, 2))
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
-    for _ in range(max_iterations):
+    check_interval = 10 if images.is_cuda else 1
+    for iteration in range(max_iterations):
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         loss, meaningful = global_ncc(moved, fixed, valid)
         overlap = valid.float().mean(dim=(1, 2)) >= 0.9
@@ -130,6 +136,14 @@ def _optimize(
             )
             candidate = u - torch.where(active[:, None], delta, 0)
         u = candidate.detach().requires_grad_(True)
+        if (
+            monitor is not None
+            and iteration + 1 >= convergence_window_size
+            and (iteration + 1 - convergence_window_size) % check_interval == 0
+            and iteration + 1 < max_iterations
+            and _all_frames_stopped(status)
+        ):
+            break
     with torch.no_grad():
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         loss, meaningful = global_ncc(moved, fixed, valid)
@@ -154,7 +168,7 @@ def register_rigid(
     max_iterations: int = 100,
     learning_rate: float = 0.1,
     convergence_window_size: int = 50,
-    convergence_minimum_value: float = 1e-8,
+    convergence_minimum_value: float = 1e-6,
     device: Literal["cpu", "cuda"] = "cpu",
     progress: bool | Callable[[int, int], None] | None = True,
 ) -> RegistrationResult:
@@ -183,7 +197,7 @@ def register_rigid(
     convergence_window_size : int, default: 50
         ITK-style metric-history window, at least two values. A window larger
         than max_iterations disables convergence checks for a fixed-budget run.
-    convergence_minimum_value : float, default: 1e-8
+    convergence_minimum_value : float, default: 1e-6
         Stop when ITK's normalized B-spline improvement trend is at or below this
         nonnegative threshold. This is not a raw NCC difference or parameter step.
     device : {"cpu", "cuda"}, default: "cpu"
@@ -215,8 +229,11 @@ def register_rigid(
     Convergence follows ITK v4's accumulated-absolute-energy normalization and
     first-order B-spline window gradient, checked before the next Adam update.
     Each frame has independent metric history, Adam moments, clock and stopping
-    state. Frozen frames remain in fixed-shape device batches until the iteration
-    budget ends; convergence does not introduce host reads inside the loop. Physical geometry, optimizer state and NCC statistics
+    state. After a full history window, whole-batch completion is checked each
+    iteration on CPU and every ten iterations on CUDA, using one batch-wide scalar
+    read (a CUDA stream synchronization). These checks do not alter per-frame
+    decisions; frozen frames remain resident until the entire batch finishes.
+    Physical geometry, optimizer state and NCC statistics
     use float64 to stabilize chunk-size comparisons; fitting images use float32.
     Original float64 and integer images are resampled in float64, other images in
     float32, then restored to their original dtype. Integer results use nearest-even

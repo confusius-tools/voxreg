@@ -1,11 +1,13 @@
 """ITK oracle compatibility and independent device-resident stopping state."""
 
+import importlib.util
 import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
+import xarray as xr
 
 from voxreg import register_rigid
 from voxreg.convergence import WindowConvergence
@@ -107,3 +109,94 @@ def test_rejects_invalid_convergence_options(recording_factory, options):
     data, _, _ = recording_factory()
     with pytest.raises(ValueError, match="convergence_"):
         register_rigid(data, **options)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("failed_frame", [False, True])
+def test_terminal_check_preserves_frozen_full_budget_results(
+    recording_factory, monkeypatch, device, failed_frame
+):
+    from voxreg import rigid
+
+    data, _, _ = recording_factory(oblique=True, strided=True)
+    if failed_frame:
+        data.values[1] = 0
+    sample = rigid.sample_rigid
+    calls = []
+
+    def counted_sample(*args, **kwargs):
+        calls.append(None)
+        return sample(*args, **kwargs)
+
+    monkeypatch.setattr(rigid, "sample_rigid", counted_sample)
+    options = {"device": device, "max_iterations": 400, "progress": False}
+    stopped = register_rigid(data, **options)
+    stopped_calls = len(calls)
+    calls.clear()
+    monkeypatch.setattr(rigid, "_all_frames_stopped", lambda status: False)
+    full_budget = register_rigid(data, **options)
+    assert stopped_calls < len(calls)
+    for field in ["registered", "valid", "transforms", "diagnostics"]:
+        xr.testing.assert_equal(getattr(stopped, field), getattr(full_budget, field))
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_polling_is_batch_wide_bounded_and_absent_in_fixed_budget_controls(
+    recording_factory, monkeypatch, device
+):
+    from voxreg import rigid
+
+    evaluations, polls = [], []
+
+    def metric(moved, fixed, valid):
+        evaluations.append(None)
+        return moved.double().sum(dim=(1, 2)) * 0 - 0.9, torch.ones(
+            len(moved), dtype=torch.bool, device=moved.device
+        )
+
+    def not_finished(status):
+        assert status.shape == (3,)
+        polls.append(len(evaluations))
+        return False
+
+    monkeypatch.setattr(rigid, "global_ncc", metric)
+    monkeypatch.setattr(rigid, "_all_frames_stopped", not_finished)
+    data, _, _ = recording_factory()
+    options = {"device": device, "max_iterations": 40, "progress": False}
+    register_rigid(
+        data, **options, convergence_window_size=4, convergence_minimum_value=1
+    )
+    assert polls == list(range(4, 40, 10 if device == "cuda" else 1))
+    polls.clear()
+    register_rigid(data, **options, convergence_window_size=41)
+    assert polls == []
+
+
+def test_calibration_report_uses_identical_controls_and_common_support(
+    recording_factory, monkeypatch
+):
+    spec = importlib.util.spec_from_file_location(
+        "calibrate", Path(__file__).parents[1] / "research/convergence/calibrate.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(
+        module,
+        "POLICIES",
+        {
+            "fixed100": (3, 4, 1e-6),
+            "fixed400": (3, 4, 1e-6),
+        },
+    )
+    data, _, _ = recording_factory(oblique=True, strided=True)
+    report = module.compare(data, device="cpu", batch_size=3)
+    assert 0.9 < report["common_fraction_median"] <= 1
+    for record in report["policies"].values():
+        assert len(record["ncc2"]) == 2
+        assert np.isfinite(record["ncc2"]).all()
+        assert record["vs_control"]["fixed100"]["max_rms_pixels"] == 0
+        assert record["vs_control"]["fixed100"]["worst_ncc2_drop"] == 0
+    with monkeypatch.context() as patches:
+        patches.setattr(module.np, "corrcoef", lambda *args: np.full((2, 2), np.nan))
+        with pytest.raises(ValueError, match="Nonfinite.*scores"):
+            module.compare(data, device="cpu", batch_size=3)
