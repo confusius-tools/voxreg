@@ -3,10 +3,11 @@
 import numpy as np
 import pytest
 import torch
+from confusius import create_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 from scipy.ndimage import map_coordinates
 
-from voxreg import create_voxeldata, position_to_world
+from voxreg import position_to_world
 from voxreg.sampling import global_ncc, make_plane, sample_rigid, world_matrices
 
 
@@ -20,7 +21,7 @@ def test_physical_sampler_against_scipy(recording_factory, strided, sheared):
         data = create_voxeldata(
             data.values,
             dims=data.dims,
-            coords={dim: data[dim].values for dim in data.dims},
+            **{dim: data[dim] for dim in data.dims},
             voxel_to_world=affine,
         )
     affine = position_to_world(data)

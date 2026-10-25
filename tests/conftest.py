@@ -3,9 +3,8 @@
 import numpy as np
 import pytest
 import torch
+from confusius import create_voxeldata
 from scipy.spatial.transform import Rotation
-
-from voxreg import create_voxeldata
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -90,7 +89,7 @@ def recording_factory():
         data = create_voxeldata(
             np.array(values, dtype=np.float32)[:, None],
             dims=("time", "k", "j", "i"),
-            coords=coords,
+            **coords,
             voxel_to_world=affine,
             attrs={"units": "power"},
         )

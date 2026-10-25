@@ -11,7 +11,7 @@ import xarray as xr
 from confusius._utils.progress import progress_bar
 
 from voxreg.convergence import WindowConvergence
-from voxreg.geometry import VOXEL_DIMS, validate_voxeldata
+from voxreg.geometry import VOXEL_DIMS, _validate_registration_geometry
 from voxreg.sampling import Plane, global_ncc, make_plane, sample_rigid, world_matrices
 
 
@@ -224,13 +224,13 @@ def register_rigid(
     output values use each original moving frame's minimum.
     """
     start = perf_counter()
-    validate_voxeldata(moving)
+    _validate_registration_geometry(moving)
     if moving.dims != ("time", *VOXEL_DIMS):
         raise ValueError("moving must have dimensions (time, k, j, i).")
     implicit_fixed = fixed is None
     if fixed is None:
         fixed = moving.isel(time=0, drop=True)
-    validate_voxeldata(fixed)
+    _validate_registration_geometry(fixed)
     if fixed.dims != VOXEL_DIMS:
         raise ValueError("fixed must have dimensions (k, j, i), without time.")
     if not moving.xindexes["z"].equals(fixed.xindexes["z"]):

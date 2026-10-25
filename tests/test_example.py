@@ -41,7 +41,24 @@ def test_nifti_round_trip_and_window(recording_factory, tmp_path, dtype):
     assert_array_equal(
         example.load_recording(path, slice(1, 3)).values, data.values[1:]
     )
+    single = example.load_recording(path, slice(1, 2))
+    assert_array_equal(single.values, data.values[1:2])
+    assert_array_equal(single.time, data.time[1:2])
+    assert_allclose(single.time.attrs["volume_acquisition_duration"], 0.1)
+    single_path = tmp_path / "single.nii.gz"
+    example.save_nifti(single_path, single)
+    assert_array_equal(example.load_recording(single_path).values, single.values)
     sidecar = tmp_path / "recording.json"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "VolumeTiming": data.time.values.tolist(),
+                "FrameAcquisitionDuration": 0.03,
+            }
+        )
+    )
+    declared = example.load_recording(path, slice(1, 2))
+    assert declared.time.attrs["volume_acquisition_duration"] == 0.03
     sidecar.write_text(json.dumps({"VolumeTiming": [1, 2]}))
     with pytest.raises(ValueError, match="VolumeTiming"):
         example.load_recording(path)

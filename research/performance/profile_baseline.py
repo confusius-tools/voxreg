@@ -9,10 +9,11 @@ from unittest.mock import patch
 
 import torch
 from affine_probe import make_sampler
+from confusius import create_voxeldata
 from torch.profiler import ProfilerActivity, profile, record_function, schedule
 
 import voxreg.rigid as vr
-from voxreg import create_voxeldata, register_rigid
+from voxreg import register_rigid
 
 
 def scoped(label, function):
@@ -61,7 +62,7 @@ def main():
     raw = raw[: args.batch + 1]
     coords["time"] = coords["time"][: len(raw)]
     data = create_voxeldata(
-        raw, dims=("time", "k", "j", "i"), coords=coords, voxel_to_world=affine
+        raw, dims=("time", "k", "j", "i"), **coords, voxel_to_world=affine
     )
     fixed, moving = data.isel(time=0, drop=True), data.isel(time=slice(1, None))
 

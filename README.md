@@ -44,14 +44,15 @@ installs them transitively. No registration is delegated to ConfUSIus or ITK.
 
 ```python
 import numpy as np
+import confusius as cf
 import voxreg
 
 # values: real NumPy array (time, 1, j, i); its dtype is retained.
 # Affine rows/columns are world z/y/x and native voxel k/j/i, respectively.
-recording = voxreg.create_voxeldata(
+recording = cf.create_voxeldata(
     values,
     dims=("time", "k", "j", "i"),
-    coords={"time": time_seconds},
+    time=time_seconds,
     voxel_to_world=np.diag([0.4, 0.1, 0.1, 1.0]),
     units="mm",
 )
@@ -152,12 +153,17 @@ identical grids and a single slice. It does not modify source values or geometry
 Start with `pwd.isel(time=slice(0, 120))` before processing a long recording.
 The default device is CPU; select CUDA explicitly when available.
 
-`voxreg.create_voxeldata(..., coords=...)` remains a thin compatibility constructor
-that attaches ConfUSIus's index; it does not implement another index/transform.
-Use `cf.create_voxeldata` for the full acquisition-metadata constructor. Existing
-floating native-coordinate arrays must use integer voxel indices; no rounding or
-coordinate rebasing is performed automatically. Restart an existing Python kernel
-after `uv sync` to discard the previous duplicated index implementation.
+VoxelData construction and general validation belong to ConfUSIus:
+`cf.create_voxeldata(...)` and `confusius.validation.validate_voxeldata(...)`.
+Voxreg no longer exports either helper. Migrate old `coords={...}` constructor
+calls to ConfUSIus's `time=`, `k=`, `j=` and `i=` arguments. Its timing metadata rules
+also apply; a singleton time coordinate needs `volume_acquisition_duration=` when
+no duration can be inferred. Solver-specific geometry checks remain private and
+run automatically inside registration and `position_to_world`.
+
+Existing floating native-coordinate arrays must use integer voxel indices; no
+rounding or coordinate rebasing is performed automatically. Restart an existing
+Python kernel after updating to discard the old exports/index implementation.
 
 ### CPU and CUDA progress
 

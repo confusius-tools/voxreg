@@ -1,4 +1,4 @@
-"""Reproduce the 120-frame motion-correction example without importing ConfUSIus."""
+"""Reproduce the 120-frame motion-correction example using ConfUSIus VoxelData."""
 
 import argparse
 import hashlib
@@ -15,11 +15,11 @@ import nibabel as nib
 import numpy as np
 import torch
 import xarray as xr
+from confusius import create_voxeldata
 from scipy.ndimage import map_coordinates
 
 from voxreg import (
     RegistrationResult,
-    create_voxeldata,
     position_to_world,
     register_rigid,
 )
@@ -76,7 +76,14 @@ def load_recording(path: Path, window: slice | None = None) -> xr.DataArray:
     result = create_voxeldata(
         values,
         dims=("time", "k", "j", "i"),
-        coords={"time": time[window]},
+        time=time[window],
+        # Infer before cropping so singleton windows retain source timing.
+        volume_acquisition_duration=metadata.get(
+            "FrameAcquisitionDuration",
+            float(np.median(np.diff(time)))
+            if len(time) > 1
+            else float(image.header.get_zooms()[3]),
+        ),
         voxel_to_world=affine,
         attrs={"source": str(path.resolve())},
     )

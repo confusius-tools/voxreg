@@ -3,14 +3,11 @@
 import numpy as np
 import pytest
 import torch
+from confusius import create_voxeldata
+from confusius.validation import validate_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 
-from voxreg import (
-    create_voxeldata,
-    position_to_world,
-    register_rigid,
-    validate_voxeldata,
-)
+from voxreg import position_to_world, register_rigid
 
 
 def assert_mapping_close(data, actual, expected, tolerance_pixels):
@@ -174,6 +171,7 @@ def test_invalid_geometry_constants_and_dtypes(recording_factory):
     volume = create_voxeldata(
         np.ones((2, 2, 4, 5), dtype=np.float32),
         dims=("time", "k", "j", "i"),
+        dt=1,
         voxel_to_world=np.eye(4),
     )
     with pytest.raises(ValueError, match="k=1"):
@@ -191,13 +189,9 @@ def test_nonzero_constant_frame_is_not_optimized(recording_factory):
 
 
 def test_empty_and_invalid_time_labels(recording_factory):
-    with pytest.raises(ValueError, match="nonempty"):
-        create_voxeldata(
-            np.empty((0, 1, 4, 5)),
-            dims=("time", "k", "j", "i"),
-            voxel_to_world=np.eye(4),
-        )
     data, _, _ = recording_factory()
+    with pytest.raises(ValueError, match="nonempty"):
+        register_rigid(data.isel(time=slice(0, 0)))
     for invalid in (data.drop_vars("time"), data.assign_coords(time=[1, 1, 2])):
         with pytest.raises(ValueError, match="time labels"):
             register_rigid(invalid)

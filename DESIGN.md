@@ -98,10 +98,10 @@ classes. Both `cf.load(...).compute()` and `cf.create_voxeldata(...)` feed the
 registration API directly, and registered/valid outputs retain that same model.
 Geometry stays authoritative in the index rather than mutable DataArray attrs.
 
-Keep voxreg's existing `create_voxeldata(..., coords=...)` as a thin constructor
-that delegates index attachment to ConfUSIus. Keep only registration-specific
-validation and array-position affine conversion locally. The bridge imports
-ConfUSIus's geometry helpers in one module; changing private upstream helpers is
+Use ConfUSIus's constructor and general validator directly; voxreg does not export
+VoxelData construction/validation wrappers. Keep only private registration-specific
+geometry validation and array-position affine conversion locally. The bridge
+imports ConfUSIus's index class in one module; changing private upstream helpers is
 therefore an explicit integration risk, covered by shared-class and regression
 tests. ConfUSIus's indexing features are inherited, not reimplemented.
 
@@ -233,10 +233,16 @@ be copied directly.
 Implemented API (the device is explicitly selected below; CPU is the default):
 
 ```python
-recording = voxreg.create_voxeldata(
+import confusius as cf
+import voxreg
+
+recording = cf.create_voxeldata(
     values,
     dims=("time", "k", "j", "i"),
-    coords={"time": times, "k": k, "j": j, "i": i},
+    time=times,
+    k=k,
+    j=j,
+    i=i,
     voxel_to_world=affine_zyx,
     units="mm",
 )

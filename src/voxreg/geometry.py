@@ -1,12 +1,11 @@
 """ConfUSIus VoxelData geometry with voxreg's registration restrictions."""
 
-from collections.abc import Mapping, Sequence
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
-from confusius._utils.geometry import VoxelToWorldIndex, attach_voxel_to_world_index
+from confusius._utils.geometry import VoxelToWorldIndex
 
 VOXEL_DIMS = ("k", "j", "i")
 """Native voxel dimensions, always last in a supported registration array."""
@@ -27,66 +26,7 @@ def _check_affine(affine: npt.ArrayLike) -> npt.NDArray[np.float64]:
     return matrix
 
 
-def create_voxeldata(
-    values: npt.ArrayLike,
-    *,
-    dims: Sequence[str],
-    voxel_to_world: npt.ArrayLike,
-    coords: Mapping[str, npt.ArrayLike] | None = None,
-    units: str = "mm",
-    attrs: Mapping[str, Any] | None = None,
-) -> xr.DataArray:
-    """Construct an array using ConfUSIus's voxel-to-world index.
-
-    Parameters
-    ----------
-    values : array-like
-        Spatial-only or time-dependent voxel values.
-    dims : sequence of str
-        Exactly k/j/i, optionally preceded by time.
-    voxel_to_world : (4, 4) array-like
-        Native k/j/i to world z/y/x affine, not an array-position affine.
-    coords : mapping, optional
-        Integer native voxel indices and optional time labels. Unspecified
-        coordinates start at zero. Coordinate DataArrays retain their attrs.
-    units : str, default: "mm"
-        Spatial units; registration currently accepts mm only.
-    attrs : mapping, optional
-        Intensity and recording metadata.
-
-    Returns
-    -------
-    data : xarray.DataArray
-        Array with the same index implementation as ConfUSIus-loaded VoxelData.
-
-    Notes
-    -----
-    This compatibility constructor keeps voxreg's ``coords=`` API. For full
-    acquisition metadata and other ConfUSIus options, use
-    ``confusius.create_voxeldata`` directly; registration accepts its output.
-    """
-    array = np.asarray(values)
-    dims = tuple(dims)
-    if dims not in (VOXEL_DIMS, ("time", *VOXEL_DIMS)) or array.ndim != len(dims):
-        raise ValueError("Expected dimensions (k, j, i) or (time, k, j, i).")
-    if units != "mm":
-        raise ValueError("Spatial units must be mm in this prototype.")
-    supplied = dict(coords or {})
-    if set(supplied) - set(dims):
-        raise ValueError("coords must contain only data dimension names.")
-    dimension_coords = {
-        dim: supplied.get(dim, np.arange(size))
-        for dim, size in zip(dims, array.shape, strict=True)
-    }
-    data = xr.DataArray(
-        array, dims=dims, coords=dimension_coords, attrs=dict(attrs or {})
-    )
-    data = attach_voxel_to_world_index(data, _check_affine(voxel_to_world), units=units)
-    validate_voxeldata(data)
-    return data
-
-
-def validate_voxeldata(data: xr.DataArray) -> None:
+def _validate_registration_geometry(data: xr.DataArray) -> None:
     """Check the ConfUSIus geometry subset supported by registration.
 
     Parameters
@@ -161,7 +101,7 @@ def position_to_world(data: xr.DataArray) -> npt.NDArray[np.float64]:
     affine : (4, 4) numpy.ndarray
         Array-position k/j/i to world z/y/x map, accounting for crop and stride.
     """
-    validate_voxeldata(data)
+    _validate_registration_geometry(data)
     conversion = np.eye(4)
     for axis, dim in enumerate(VOXEL_DIMS):
         values = data.coords[dim].values

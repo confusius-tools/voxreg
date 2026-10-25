@@ -20,13 +20,30 @@ unchanged. This is a geometry/integration check, not a full-recording quality ga
 
 `uv sync` now includes ConfUSIus's larger dependency tree; the tested environment
 uses ConfUSIus 0.8.0 and xarray 2026.9.0. Numerical synthetic, dtype and registration
-gates are unchanged; **165 tests pass**. Batch progress tests cover CPU/CUDA,
+gates are unchanged; **167 tests pass**. Batch progress tests cover CPU/CUDA,
 partial/oversized batches, failed/reference frames, default Rich rendering, silent
 modes, callback overrides, errors and display cleanup. Outputs/diagnostics remain
 identical and CUDA synchronization counts match quiet calls. Timing/profiling
 harnesses explicitly disable the default display.
 The previous timing/memory reports below describe the pre-integration environment
 and have not been retimed with this dependency stack.
+
+## VoxelData API cleanup
+
+Construction and general validation now use ConfUSIus directly in every tracked
+example, research harness and test fixture. Voxreg's constructor and public
+validator exports are removed; the same solver-specific geometry checks remain
+private and automatic. Tests cover otherwise-valid ConfUSIus Dask/pose/non-mm
+inputs being rejected by the narrower solver boundary, plus the existing native
+coordinate, stale-index and affine checks. NIfTI example tests include singleton
+windows and declared acquisition duration for ConfUSIus's timing requirements.
+
+The focused pre-refactor baseline passed 33 tests. After migration, the full suite
+passes 167 tests. On the existing 120-frame real window, transforms, registered
+output bytes, iteration counts and statuses match the pre-cleanup results exactly
+on CPU (batch32) and CUDA (batch120); outputs pass ConfUSIus validation. This is
+behavior-preservation proof, not a new performance benchmark or full-recording
+comparison. Local logs are under `artifacts/api-cleanup/`.
 
 ## ITK-style convergence
 
@@ -91,7 +108,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 165 passed, including ITK-style convergence, Rich progress, dtype/interpolation and CUDA.
+# 167 passed, including the API cleanup, ITK-style convergence, dtype/interpolation and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples

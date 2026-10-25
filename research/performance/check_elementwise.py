@@ -10,9 +10,10 @@ from unittest.mock import patch
 import numpy as np
 import torch
 from affine_probe import make_sampler
+from confusius import create_voxeldata
 
 import voxreg.rigid as vr
-from voxreg import create_voxeldata, register_rigid
+from voxreg import register_rigid
 
 
 def main():
@@ -41,7 +42,7 @@ def main():
     spec.loader.exec_module(benchmark)
     raw, affine, position, coords = benchmark.load_input(args.input)
     data = create_voxeldata(
-        raw, dims=("time", "k", "j", "i"), coords=coords, voxel_to_world=affine
+        raw, dims=("time", "k", "j", "i"), **coords, voxel_to_world=affine
     )
     fixed, moving = data.isel(time=0, drop=True), data.isel(time=slice(1, None))
     j, i = np.indices(raw.shape[-2:])

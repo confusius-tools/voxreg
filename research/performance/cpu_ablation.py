@@ -17,8 +17,9 @@ from unittest.mock import patch
 import numpy as np
 import torch
 import torch.nn.functional as F
+from confusius import create_voxeldata
 
-from voxreg import create_voxeldata, register_rigid, rigid, sampling
+from voxreg import register_rigid, rigid, sampling
 
 VARIANTS = [
     "voxreg",
@@ -165,7 +166,7 @@ def main():
     spec.loader.exec_module(benchmark)
     raw, affine, position, coords = benchmark.load_input(args.input)
     data = create_voxeldata(
-        raw, dims=("time", "k", "j", "i"), coords=coords, voxel_to_world=affine
+        raw, dims=("time", "k", "j", "i"), **coords, voxel_to_world=affine
     )
     fireants = args.variant.startswith("fireants")
     fireants_run = benchmark.run_fireants
