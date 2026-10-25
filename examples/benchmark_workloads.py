@@ -489,7 +489,7 @@ def standard_worker(args, measure):
         else:
             from confusius import create_voxeldata
 
-            from voxreg import register_rigid
+            from voxreg import register
 
             kwargs = {"voxel_to_world": data["am"]}
             if data["reference"]:
@@ -515,7 +515,7 @@ def standard_worker(args, measure):
             )
 
             def run():
-                r = register_rigid(
+                r = register(
                     moving,
                     fixed,
                     device=device,

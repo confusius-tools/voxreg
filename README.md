@@ -1,15 +1,16 @@
 # voxreg
 
-A proof of concept for **batched physical-space rigid registration** using
+A proof of concept for **batched physical-space linear registration** using
 PyTorch and ConfUSIus's xarray-based VoxelData implementation.
 
 The engine registers **single 3D volume pairs or batched frames**, with independent
 fixed/moving shapes, spacings, origins and orientations. Coplanar single-slice
-pairs retain constrained in-plane rigid motion. CPU and CUDA share one optimizer,
+pairs retain identifiable in-plane transforms. CPU and CUDA share one optimizer,
 metric, convergence policy and dtype-preserving resampling path.
 
-This remains a rigid-registration proof of concept, not a complete ConfUSIus
-replacement. A [shared benchmark protocol](research/registration/README.md) now
+This remains a linear-registration proof of concept, not a complete ConfUSIus
+replacement. Translation, rigid and affine models share one engine; the historical
+performance benchmarks below measure rigid registration only. A [shared benchmark protocol](research/registration/README.md) now
 covers 3D pairs and motion correction against ITK/FireANTs, including 64³/128³
 phantoms and a real-template known-pose control—not a natural 3D session pair.
 
@@ -62,7 +63,7 @@ recording = cf.create_voxeldata(
     units="mm",
 )
 
-result = voxreg.register_rigid(recording, device="cuda", batch_size=32)
+result = voxreg.register(recording, device="cuda", batch_size=32)
 registered = result.registered  # VoxelData, original intensities and dtype.
 valid = result.valid  # VoxelData, boolean sample-support mask.
 matrices = result.transforms  # (time, world_out, world_in), float64.
@@ -77,12 +78,60 @@ physical parameters, and dB fitting intensities. Use `intensity_scaling="none"`
 for already-prepared fitting intensities or signed integer images. dB mode
 requires nonnegative power.
 
+### Transform models
+
+Use one entry point, `voxreg.register(..., transform=...)`:
+
+| Model | Coplanar slice | 3D volume |
+| --- | ---: | ---: |
+| `"translation"` | 2 parameters | 3 parameters |
+| `"rigid"` (default) | 3 parameters | 6 parameters |
+| `"affine"` | 6 parameters | 12 parameters |
+
+Euler transforms belong to the rigid family. Voxreg's rigid optimizer uses a
+rotation vector in 3D, not ITK's Euler-angle parameterization. Affine adds scale
+and shear; it optimizes the **full** supplied matrix, not a rigid residual after
+freezing a manual affine prefix.
+
+```python
+registered = voxreg.register(
+    pwd, template,
+    transform="affine",
+    initialization=np.linalg.inv(affine),  # If affine maps pwd world -> template world.
+    intensity_scaling="none",
+).registered
+```
+
+The pre-release `register_rigid` name has been removed. Change existing calls to
+`register`; omitting `transform` keeps rigid fitting and its numerical behavior.
+All three models accept matrix or geometry/moments initialization and support
+pairs/recordings on the same sampling/optimizer path.
+
+Slices use an orthonormal intrinsic i/j plane; affine slices leave the world
+normal unchanged, rather than fitting unidentifiable 3D coefficients. Affine
+parameters are centered linear deviations from identity plus center displacement;
+diagnostics expose **actual** `linear_ii`/`linear_ij`/... or world `linear_zz`/...,
+plus translations in mm. They do not report fictitious rigid angles for a shear.
+
+Affine seeds must be finite and numerically nonsingular:
+`abs(det(A / max(abs(A)))) > 1e-8` for the active linear map `A`.
+The optimizer preserves the initial determinant sign. A reflected affine can be
+supplied explicitly; identity initialization does not search for reflections.
+An invalid/singular/orientation-changing candidate stops only that frame with
+`invalid_transform` and retains its best valid full pose. This is not an anatomical
+regularizer: implausible but invertible scale/shear can still overfit the metric.
+
+New-model qualification uses fixed budgets and analytic ITK/SciPy controls, not
+natural inter-session data or new performance benchmarks. Defaults were calibrated
+on **rigid slices**, not affine fitting or general 3D; see
+[research/linear/README.md](research/linear/README.md) and [VALIDATION.md](VALIDATION.md).
+
 ### Single 3D volume registration
 
 ```python
 # moving_volume and fixed_volume: VoxelData with dimensions (k, j, i).
 # Their shapes, spacings, orientations and origins need not match.
-result = voxreg.register_rigid(
+result = voxreg.register(
     moving_volume, fixed_volume, intensity_scaling="none", device="cuda"
 )
 registered = result.registered  # (k, j, i), on fixed_volume's grid.
@@ -90,11 +139,13 @@ matrix = result.transforms     # (world_out, world_in), no synthetic time axis.
 print(result.diagnostics)       # Scalar objective, status and motion parameters.
 ```
 
-All three axes must contain at least two samples for 6-DOF volume fitting.
+All three axes must contain at least two samples for volume fitting (6 DOFs for
+the default rigid model).
 Recordings `(time, k, j, i)` use the same volume engine in batches. Choose a small
 `batch_size` for 3D series: the default 32 was sized for slices. Single-pair
 3D memory is benchmarked at the documented sizes; large 3D batches are not. Spatial-only input requires an explicit fixed image. Coplanar `k=1` slice pairs instead fit
-three identifiable in-plane parameters; tilted-plane/slice-to-volume registration
+three identifiable in-plane parameters with the default rigid model;
+tilted-plane/slice-to-volume registration
 is rejected, not silently approximated.
 
 The metric is evaluated on fixed-grid points, sampling moving array positions as
@@ -107,7 +158,7 @@ estimating their known geometry as motion.
 A matrix passed as `initialization=matrix` is an alias for
 `initial_transform=matrix`; supply only one. Both follow **ITK's optimized `InitialTransform` model with
 `InPlaceOff`**, not its separate frozen `MovingInitialTransform`. It supplies the
-starting full rigid pose; voxreg copies it, starts fresh Adam state, refines it and
+starting full pose of the selected model; voxreg copies it, starts fresh Adam state, refines it and
 returns the **full transform**, not an increment to compose afterward. Omission
 still starts at identity in physical world space. Original images are not
 pre-resampled.
@@ -117,7 +168,7 @@ import numpy as np
 
 initial = np.eye(4)
 initial[:3, 3] = [5.0, -2.0, 1.0]  # World z/y/x offset in mm, fixed → moving.
-result = voxreg.register_rigid(
+result = voxreg.register(
     moving_volume, fixed_volume,
     initial_transform=initial, intensity_scaling="none",
 )
@@ -134,7 +185,7 @@ fixed-to-moving pulls in mm.
 For a pose adjusted manually in napari:
 
 ```python
-registered = voxreg.register_rigid(
+registered = voxreg.register(
     pwd, template,
     intensity_scaling="none",
     initialization=np.linalg.inv(affine),
@@ -148,16 +199,17 @@ matrix in layer-data/pixel coordinates or x/y/z order needs conversion first.
 Do not invert a matrix that is already a fixed-to-moving pull.
 
 A homogeneous 4×4 matrix is often called an affine even when it contains only a
-rotation and translation. This API currently fits **rigid transforms only**;
-general affine fitting (scale/shear), translation-only fitting and slice-to-volume
-registration are not added by accepting a matrix initializer. ITK Euler transforms
-are members of the rigid family, although voxreg uses rotation-vector parameters.
+rotation and translation. Select `transform="affine"` to initialize and optimize
+scale/shear too; the default `"rigid"` model still rejects them. Slice-to-volume
+registration remains unsupported.
 
-Seeds must be finite proper rigid homogeneous matrices. Scale, shear and
-reflection are rejected beyond a 1e-6 rotation-roundoff tolerance. Accepted
+Rigid seeds must be finite proper rigid homogeneous matrices. Scale, shear and
+reflection are rejected beyond a 1e-6 rotation-roundoff tolerance. Translation
+seeds require an identity linear part; affine seeds use the determinant guard
+above and are not projected into rotations. Accepted
 float32 rotation roundoff is normalized while preserving the mapped fixed center.
-Explicit matrix seeds keep the fixed geometric rotation center and the existing
-rotation-vector/Adam policy; following ITK's initialization model does not mean
+Explicit matrix seeds keep the fixed geometric center and the selected model's
+parameterization/Adam policy; following ITK's initialization model does not mean
 identical optimizer trajectories.
 For slices the seed must preserve the existing fixed plane. With an omitted
 `fixed`, the first frame's seed must be identity (up to float64 roundoff), since
@@ -173,7 +225,7 @@ capture range and substantial partial overlap remain unqualified.
 ### Automatic centering
 
 ```python
-result = voxreg.register_rigid(
+result = voxreg.register(
     moving_volume, fixed_volume,
     initialization="center_moments",  # Or "center_geometry".
     intensity_scaling="db",          # Scale fitting images, not the input data.
@@ -187,7 +239,7 @@ result = voxreg.register_rigid(
   physical lever-arm scales are recomputed around that pivot.
 
 Both modes produce translation-only seeds (`moving_center - fixed_center` for pull
-sampling), then use the same rigid optimizer and single final resampling path.
+sampling), then use the shared optimizer and single final resampling path.
 For recordings, moving moments are computed separately per frame; the fixed
 centroid/pivot is shared. The implicit reference stays exactly identity.
 `initialization` and `initial_transform` are mutually exclusive. Omitting both
@@ -221,7 +273,7 @@ a normalized energy profile fitted with ITK's first-order B-spline construction.
 Defaults use a **50-value window and NCC-calibrated 1e-6 threshold**:
 
 ```python
-result = register_rigid(
+result = register(
     pwd,
     convergence_window_size=50,
     convergence_minimum_value=1e-6,
@@ -275,7 +327,7 @@ float32-only NCC failed the existing CPU/CUDA agreement gates; see
 
 **Transform direction:** `moving_world = matrix @ fixed_world`, using homogeneous
 **z/y/x** vectors. These are physical pull mappings, not normalized Torch grids.
-Matrix inversion gives inverse rigid transforms. Slice `translation_i/j` describe
+Matrix inversion gives inverse world transforms. Slice `translation_i/j` describe
 center displacement along an orthonormal fixed-plane basis. Volume
 `rotation_z/y/x` are components of a rotation vector (radians, right-handed XYZ
 convention, stored z/y/x), **not Euler angles**; `translation_z/y/x` describe center
@@ -298,7 +350,7 @@ import confusius as cf
 import voxreg
 
 pwd = cf.load(path).compute()
-result = voxreg.register_rigid(pwd, device="cuda", batch_size=120)
+result = voxreg.register(pwd, device="cuda", batch_size=120)
 ```
 
 Inputs and registered/valid outputs use the same geometry class, including
@@ -330,9 +382,9 @@ Use `progress=True` to force a bar, including for a single pair.
 No callback is needed:
 
 ```python
-result = voxreg.register_rigid(pwd, device="cuda", batch_size=120)
+result = voxreg.register(pwd, device="cuda", batch_size=120)
 # Quiet execution: progress=False (or None).
-result = voxreg.register_rigid(pwd, device="cpu", progress=False)
+result = voxreg.register(pwd, device="cpu", progress=False)
 ```
 
 A callback overrides the built-in display and receives
@@ -343,7 +395,7 @@ def report_progress(completed, total):
     print(f"Registered {completed:,}/{total:,} frames")
 
 
-result = voxreg.register_rigid(pwd, progress=report_progress)
+result = voxreg.register(pwd, progress=report_progress)
 ```
 
 Progress counts processed frames, including reference/failed frames, not optimizer
@@ -480,8 +532,8 @@ runs are kept separately, not mixed into the AC tables.
 
 ## Current limits
 
-- Rigid only: 6-DOF volumes or constrained coplanar slices. No affine, deformable,
-  multi-pose, slice-to-volume or non-coplanar slice registration.
+- Translation, rigid and affine: volumes or constrained coplanar slices only.
+  No deformable, multi-pose, slice-to-volume or non-coplanar slice registration.
 - Independent fixed/moving grids, but uniform native coordinates, mm and finite
   NumPy-backed real input with supported dtype/range remain required. No masks,
   Dask or multiresolution fitting.
@@ -490,7 +542,8 @@ runs are kept separately, not mixed into the AC tables.
 - Output fill is each original frame's minimum. Use `result.valid` to exclude
   padding from downstream analyses.
 - Per-frame status distinguishes convergence, iteration limit, invalid metric,
-  insufficient overlap and the fixed reference. An iteration limit is **not** a
+  insufficient overlap, invalid affine transform and the fixed reference.
+  An iteration limit is **not** a
   convergence claim. With the calibrated defaults, one of 476 moving frames across
   four checked windows still reaches the 100-step limit; other data may need more.
 - Fitting interpolation is float32; physical geometry, optimizer state, NCC
@@ -499,7 +552,7 @@ runs are kept separately, not mixed into the AC tables.
   are numerically, not bitwise, equal; output dtype is not a transform-accuracy guarantee.
 - The lazy index builds on xarray's experimental coordinate-transform index API.
 
-No compiled engine, affine/deformable extension or compatibility layer is included.
+No compiled engine, deformable extension or compatibility wrapper is included.
 Performance claims are limited to the documented pair/series controls and their
 measurement boundaries. Natural independent-session 3D registration, broad capture
 range and general 3D-series memory scaling remain unqualified.

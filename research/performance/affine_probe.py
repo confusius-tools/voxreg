@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from confusius import create_voxeldata
 
 import voxreg.rigid as vr
-from voxreg import register_rigid
+from voxreg import register
 from voxreg.sampling import rotation_matrices
 
 
@@ -138,7 +138,7 @@ def main():
         with patch.object(vr, "sample_rigid", sampler):
 
             def run():
-                return register_rigid(
+                return register(
                     moving,
                     fixed=fixed,
                     batch_size=batch,

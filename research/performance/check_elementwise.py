@@ -13,7 +13,7 @@ from affine_probe import make_sampler
 from confusius import create_voxeldata
 
 import voxreg.rigid as vr
-from voxreg import register_rigid
+from voxreg import register
 
 
 def main():
@@ -60,7 +60,7 @@ def main():
         files[name] = path
 
     for device in args.devices:
-        baseline = register_rigid(
+        baseline = register(
             moving,
             fixed=fixed,
             device=device,
@@ -79,7 +79,7 @@ def main():
             )
             with patch.object(vr, "sample_rigid", sampler):
                 start = perf_counter()
-                result = register_rigid(
+                result = register(
                     moving,
                     fixed=fixed,
                     device=device,

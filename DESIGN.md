@@ -1,6 +1,6 @@
-# First design: VoxelData-native batched rigid registration
+# VoxelData-native batched linear registration
 
-Status: eager rigid implementation available, with synthetic CPU/CUDA tests and
+Status: eager translation/rigid/affine implementation available, with synthetic CPU/CUDA tests and
 real-notebook quality comparison. Isolated ITK/FireANTs time/memory comparisons are
 available in [BENCHMARK.md](BENCHMARK.md). [PERFORMANCE.md](PERFORMANCE.md) identifies
 the dense-grid bottleneck that motivated the production scalar-affine sampler.
@@ -10,9 +10,60 @@ threshold calibration on four real windows and bounded whole-batch termination.
 Broader data qualification remains pending; see [research/convergence/CALIBRATION.md](research/convergence/CALIBRATION.md).
 See [VALIDATION.md](VALIDATION.md).
 
-## Independent-grid / 3D extension (current)
+## Shared linear models (current)
 
-`register_rigid` now accepts spatial-only fixed/moving volume pairs, or batches
+The sole public fitting entry point is `register(..., transform="rigid")`, with
+`translation`, `rigid` and `affine` families. The pre-release `register_rigid`
+wrapper is removed; live examples, tests and research callers use `register`.
+The original rigid/default numerical path remains unchanged. Euler is a rigid
+parameterization, not another family; this API does not claim ITK Euler-angle
+optimizer trajectories.
+
+`transforms.py` owns non-rigid model scaling, centered state, seed validation,
+world export and diagnostics. `sampling.py` retains the qualified rigid kernels
+and dispatches the same centered physical sampling composition on other linear
+maps. `rigid.py` is the shared engine despite its historical internal filename:
+one preprocessing, NCC, masked Adam, reference/stop/failure state and final
+original-intensity resampling path, not three registration implementations.
+
+Translation uses d physical center-displacement parameters and a fixed identity
+linear map. Affine uses d*d row-major deviations from identity and d center shifts,
+where d=2 in the fixed plane and d=3 for volumes. The pull is
+`y = center + A @ (x-center) + t`; `b = t - (A-I) @ center` in exported world matrices.
+An affine initializer seeds this full optimized state, not a frozen prefix or
+rigid residual. Its rotation/scale/shear can all change during fitting.
+
+Affine coefficients are dimensionless. An entry in column j has optimizer scale
+`minimum_active_spacing / RMS(fixed_coordinate_j - center_j)`; physical translations
+use minimum spacing. These are unweighted fixed-domain lever arms including pivot
+offsets, not intensity covariance. The dense-domain scale oracle and gradients
+are tested in world and orthonormal-plane coordinates, including oblique/sheared
+and cropped/strided sampling geometry.
+
+The 2D affine embedding is `I + B @ (A2-I) @ B.T`; its normal is unchanged. Seeds
+with unidentifiable normal components or normal displacement are rejected, rather
+than silently fitting a 3D affine to a plane. Translation seeds require identity
+linear parts; rigid keeps its existing SVD-normalized proper-rotation policy.
+Affine allows either determinant sign, but a fit preserves its seed orientation.
+A finite active matrix passes the numerical guard only when
+`abs(det(A / max(abs(A)))) > 1e-8`. This is scale-normalized to avoid determinant
+overflow/underflow. Invalid or orientation-changing candidates mark only their
+frame `invalid_transform`, do not update its best state, and retain the best
+valid full pose (or validated seed if no metric was valid). No new CUDA scalar
+reads are introduced by this vectorized guard.
+
+Affine diagnostics expose actual linear entries plus center shifts, not rotation
+angles obtained by pretending a shear is rigid. Default rigid diagnostic fields
+and attributes are retained unchanged. Affine is unconstrained beyond numerical
+invertibility/orientation; no anatomical regularizer or plausible-scale bound is
+claimed. Fixed-budget analytic ITK/SciPy qualification is in
+[research/linear/README.md](research/linear/README.md); default rigid-slice convergence
+thresholds are not calibrated for affine or general 3D. Historical timing results
+remain rigid measurements.
+
+## Independent-grid / 3D rigid extension
+
+`register` now accepts spatial-only fixed/moving volume pairs, or batches
 `(time, k, j, i)`, with independent shapes, spacings, origins and orientations.
 The shared engine evaluates the metric on fixed-grid points and resamples original
 moving intensities onto that grid using `inverse(G_moving) @ T @ G_fixed`.
@@ -80,7 +131,7 @@ non-coplanar planes, or change the 90% overlap policy.
 A matrix-valued `initialization` aliases `initial_transform`, using the same
 validation and optimizer path; it is not a frozen affine pre-transform. Named
 initialization modes remain centering-only. Supplying both arguments is an error.
-Scale/shear require a future affine model, not silent projection into rigid state.
+Scale/shear require `transform="affine"`, not silent projection into rigid state.
 Euler is a rigid parameterization rather than a separate transform family.
 
 `initial_transform` is a full fixed-world-to-moving-world rigid pull matrix, one
@@ -118,7 +169,7 @@ matrix_xyz[:3, :3] = np.asarray(itk_transform.GetMatrix())
 matrix_xyz[:3, 3] = np.asarray(itk_transform.GetOffset())  # Not GetTranslation().
 order = [2, 1, 0, 3]
 initial_zyx = matrix_xyz[np.ix_(order, order)]
-result = voxreg.register_rigid(moving, fixed, initial_transform=initial_zyx)
+result = voxreg.register(moving, fixed, initial_transform=initial_zyx)
 ```
 
 `GetOffset` incorporates a nonzero ITK center, whereas `GetTranslation` does not.
@@ -376,7 +427,7 @@ recording = cf.create_voxeldata(
     units="mm",
 )
 
-result = voxreg.register_rigid(
+result = voxreg.register(
     recording,
     fixed=None,  # First frame; explicit fixed images use the same grid.
     intensity_scaling="db",  # Fitting only; output retains original intensities.

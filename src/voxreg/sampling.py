@@ -9,6 +9,12 @@ import torch.nn.functional as F
 import xarray as xr
 
 from voxreg.geometry import position_to_world
+from voxreg.transforms import (
+    initial_linear_parameters,
+    intrinsic_linear,
+    linear_world_matrices,
+    validate_matrices,
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +45,8 @@ class Plane:
         Radian/mm conversion for scaled optimizer parameters.
     rotation_offset : torch.Tensor, optional
         Intrinsic displacement from the rotation pivot to the geometric grid center.
+    transform : str, default: "rigid"
+        Selected translation, rigid or affine parameterization.
     """
 
     inverse_lattice: torch.Tensor
@@ -52,6 +60,7 @@ class Plane:
     center: npt.NDArray[np.float64]
     parameter_scale: torch.Tensor
     rotation_offset: torch.Tensor | None = None
+    transform: str = "rigid"
 
 
 def make_plane(
@@ -146,6 +155,7 @@ class SpatialGrid:
     parameter_scale: torch.Tensor
     planar: bool
     rotation_offset: torch.Tensor | None = None
+    transform: str = "rigid"
 
 
 def make_grid(
@@ -250,6 +260,17 @@ def rotation_vectors(vectors: torch.Tensor) -> torch.Tensor:
 def _physical_transform(
     parameters: torch.Tensor, grid: SpatialGrid
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    if grid.transform != "rigid":
+        linear, translation = intrinsic_linear(parameters, grid)
+        if grid.planar:
+            basis = grid.resident_basis
+            identity = torch.eye(2, device=parameters.device, dtype=parameters.dtype)
+            linear = (
+                torch.eye(3, device=parameters.device, dtype=parameters.dtype)
+                + basis @ (linear - identity) @ basis.T
+            )
+            translation = translation @ basis.T
+        return linear, translation
     if grid.planar:
         basis = grid.resident_basis
         identity = torch.eye(2, device=parameters.device, dtype=parameters.dtype)
@@ -326,15 +347,17 @@ def sample_rigid(
     *,
     interpolation: str = "linear",
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Pull-sample on the fixed domain under centered physical rigid transforms.
+    """Pull-sample the fixed domain under the geometry's centered physical model.
 
     Parameters
     ----------
     images : (B, H, W) or (B, D, H, W) torch.Tensor
         Moving image intensities.
-    parameters : (B, 3) or (B, 6) torch.Tensor
-        Slices: angle and intrinsic i/j translations. Volumes: world z/y/x
-        rotation vector (right-handed XYZ convention), then z/y/x translation.
+    parameters : (B, P) torch.Tensor
+        Rigid slices: angle and intrinsic i/j translations. Rigid volumes: world
+        z/y/x rotation vector (right-handed XYZ), then z/y/x translation.
+        Translation: d center shifts. Affine: d*d row-major identity deviations
+        then d center shifts, where d=2 in the plane or 3 for volumes.
     plane : Plane or SpatialGrid
         Fixed/moving geometry, on the image device and parameter dtype.
         The final normalized interpolation grid uses the image dtype.
@@ -350,14 +373,17 @@ def sample_rigid(
     """
     if isinstance(plane, SpatialGrid):
         return _sample_grid(images, parameters, plane, interpolation)
-    rotation = rotation_matrices(parameters[:, 0])
+    if plane.transform == "rigid":
+        rotation = rotation_matrices(parameters[:, 0])
+        physical_translation = parameters[:, 1:]
+    else:
+        rotation, physical_translation = intrinsic_linear(parameters, plane)
     # Compose tiny matrices first; dense, skinny GEMMs are slow on CPU and CUDA.
     delta = (
         plane.plane_to_normalized
         @ (rotation - plane.identity)
         @ plane.normalized_to_plane
     )
-    physical_translation = parameters[:, 1:]
     if plane.rotation_offset is not None:
         physical_translation = (
             physical_translation + (rotation - plane.identity) @ plane.rotation_offset
@@ -437,21 +463,9 @@ def _initial_parameters(
     transforms: npt.ArrayLike, plane: Plane | SpatialGrid, count: int
 ) -> npt.NDArray[np.float64]:
     """Validate world pull seeds and recover the optimized centered parameters."""
-    values = np.asarray(transforms)
-    if values.dtype.kind not in "iuf":
-        raise TypeError("initial_transform must contain real numeric matrices.")
-    values = np.array(values, dtype=np.float64, copy=True)
-    if values.shape == (4, 4):
-        values = np.broadcast_to(values, (count, 4, 4))
-    if values.shape != (count, 4, 4) or not np.isfinite(values).all():
-        raise ValueError(
-            "initial_transform must be finite with shape (4, 4) or (N, 4, 4), "
-            "where N is the number of moving frames."
-        )
-    if not np.allclose(values[:, 3], [0, 0, 0, 1], rtol=0, atol=1e-12):
-        raise ValueError(
-            "initial_transform must have homogeneous last row [0, 0, 0, 1]."
-        )
+    values = validate_matrices(transforms, count)
+    if plane.transform != "rigid":
+        return initial_linear_parameters(values, plane)
     rotations = values[:, :3, :3]
     if not np.allclose(
         rotations.transpose(0, 2, 1) @ rotations, np.eye(3), rtol=0, atol=1e-6
@@ -524,13 +538,14 @@ def _initial_parameters(
 def world_matrices(
     parameters: npt.ArrayLike, plane: Plane | SpatialGrid
 ) -> npt.NDArray[np.float64]:
-    """Embed centered rigid transforms in homogeneous world z/y/x coordinates.
+    """Embed centered model transforms in homogeneous world z/y/x coordinates.
 
     Parameters
     ----------
-    parameters : (B, 3) or (B, 6) array-like
-        Slice angle/i/j translations or volume rotation-vector/translations.
-        Rotation uses radians; center translations use physical mm.
+    parameters : (B, P) array-like
+        Rigid slice angle/i/j shifts or volume rotation-vector/shifts; translation
+        d center shifts; affine d*d row-major identity deviations then d shifts.
+        Rotation uses radians; affine entries are dimensionless; shifts use mm.
     plane : Plane or SpatialGrid
         World basis and fixed-domain rotation center.
 
@@ -539,6 +554,8 @@ def world_matrices(
     transforms : (B, 4, 4) numpy.ndarray
         Fixed-world-to-moving-world pull matrices.
     """
+    if plane.transform != "rigid":
+        return linear_world_matrices(parameters, plane)
     values = np.asarray(parameters, dtype=np.float64)
     if isinstance(plane, SpatialGrid) and not plane.planar:
         rotation = rotation_vectors(torch.from_numpy(values[:, :3])).numpy()

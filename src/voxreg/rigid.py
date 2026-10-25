@@ -1,4 +1,4 @@
-"""Independent rigid optimization with fixed-domain physical-space sampling."""
+"""Independent linear registration with fixed-domain physical-space sampling."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,6 +27,7 @@ from voxreg.sampling import (
     sample_rigid,
     world_matrices,
 )
+from voxreg.transforms import affine_properties, configure_transform, linear_diagnostics
 
 
 @dataclass(frozen=True)
@@ -99,7 +100,8 @@ def _optimize(
     steps : torch.Tensor
         Number of optimizer updates per frame.
     status : torch.Tensor
-        1 converged, 2 insufficient overlap, 3 invalid metric, 4 reference, 5 limit.
+        1 converged, 2 insufficient overlap, 3 invalid metric, 4 reference, 5 limit,
+        6 invalid affine transform.
     """
     b = len(images)
     u = (
@@ -120,6 +122,11 @@ def _optimize(
     constant = images.amax(dim=spatial_axes) == images.amin(dim=spatial_axes)
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
     check_interval = 10 if images.is_cuda else 1
+    orientation = (
+        affine_properties(u.detach() * plane.parameter_scale, plane)[1]
+        if plane.transform == "affine"
+        else None
+    )
     for iteration in range(max_iterations):
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         loss, meaningful = global_ncc(moved, fixed, valid)
@@ -127,6 +134,15 @@ def _optimize(
         good = overlap & meaningful & torch.isfinite(loss)
         active = status == 0
         with torch.no_grad():
+            if orientation is not None:
+                admissible, sign = affine_properties(
+                    u.detach() * plane.parameter_scale, plane
+                )
+                status = torch.where(
+                    active & (~admissible | (sign != orientation)), 6, status
+                )
+                active = status == 0
+                good = good & admissible & (sign == orientation)
             status = torch.where(active & ~overlap, 2, status)
             status = torch.where(active & overlap & ~good, 3, status)
             improved = active & good & (loss < best_loss)
@@ -173,6 +189,13 @@ def _optimize(
         overlap = valid.float().mean(dim=spatial_axes) >= 0.9
         good = overlap & meaningful & torch.isfinite(loss)
         eligible = (status == 0) | (status == 1)
+        if orientation is not None:
+            admissible, sign = affine_properties(u * plane.parameter_scale, plane)
+            status = torch.where(
+                eligible & (~admissible | (sign != orientation)), 6, status
+            )
+            eligible = (status == 0) | (status == 1)
+            good = good & admissible & (sign == orientation)
         improved = eligible & good & (loss < best_loss)
         best = torch.where(improved[:, None], u, best)
         status = torch.where(eligible & ~overlap, 2, status)
@@ -181,10 +204,11 @@ def _optimize(
     return best * plane.parameter_scale, steps, status
 
 
-def register_rigid(
+def register(
     moving: xr.DataArray,
     fixed: xr.DataArray | None = None,
     *,
+    transform: Literal["translation", "rigid", "affine"] = "rigid",
     initial_transform: npt.ArrayLike | xr.DataArray | None = None,
     initialization: Literal["center_geometry", "center_moments"]
     | npt.ArrayLike
@@ -213,21 +237,30 @@ def register_rigid(
         orientation. Required for spatial-only moving input. For recordings,
         omission uses the first frame and preserves that reference exactly.
         Slice pairs must be coplanar; no plane alignment is inferred.
+    transform : {"translation", "rigid", "affine"}, default: "rigid"
+        Model with 2/3, 3/6 or 6/12 parameters for coplanar slices/volumes.
+        Euler belongs to the rigid family; the rigid model uses rotation vectors,
+        not ITK's Euler optimizer parameterization. Affine refines the full linear
+        map, including scale and shear, rather than freezing an affine prefix.
     initial_transform : array-like or xarray.DataArray, optional
-        Proper rigid fixed-world-to-moving-world pull matrix in world z/y/x,
+        Model-compatible fixed-world-to-moving-world pull matrix in world z/y/x,
         with translations in mm. Shape (4, 4) broadcasts to all frames;
         (N, 4, 4) follows moving frame order. Labeled arrays must use
         (time, world_out, world_in) or (world_out, world_in); supplied axis/time
         labels must match. Copied, never modified, like ITK InitialTransform
         with InPlaceOff: initializes the optimized transform, not a frozen
-        pre-transform. Float32 rotation roundoff within 1e-6 is normalized.
+        pre-transform. Rigid seeds require proper rotations (float32 roundoff
+        within 1e-6 is normalized); translation seeds require an identity linear
+        part. Affine seeds must pass the normalized determinant guard. Negative
+        determinant affine seeds are supported, but fitting preserves their
+        orientation sign. Slice seeds must preserve the fixed plane and its normal.
         For an implicit first-frame reference its initial transform must be identity;
         use explicit fixed to optimize every frame from a shared nonidentity pose.
     initialization : {"center_geometry", "center_moments"} or array-like, optional
-        Named centering mode or rigid matrix seed, mutually exclusive with
-        initial_transform. Matrices alias initial_transform with the same shape,
-        world-coordinate, label and rigidity requirements; scale/shear are not
-        supported. Geometry aligns physical grid centers. Moments aligns
+        Named centering mode or model-compatible matrix seed, mutually exclusive
+        with initial_transform. Matrices alias initial_transform with the same
+        shape, world-coordinate, label and model requirements.
+        Geometry aligns physical grid centers. Moments aligns
         original-intensity centers of gravity and uses the fixed centroid as the
         rotation center, including physical lever-arm scaling, following ITK.
         Moments requires nonnegative original values with positive mass in every
@@ -249,7 +282,8 @@ def register_rigid(
     max_iterations : int, default: 100
         Maximum Adam steps per frame.
     learning_rate : float, default: 0.1
-        Step size in physically scaled rotation/translation parameters.
+        Step size in physically scaled parameters. Affine coefficients use
+        minimum spacing divided by the fixed-domain RMS input-axis lever arm.
     convergence_window_size : int, default: 50
         ITK-style metric-history window, at least two values. A window larger
         than max_iterations disables convergence checks for a fixed-budget run.
@@ -291,15 +325,23 @@ def register_rigid(
     Optimization starts at initial_transform or the selected automatic seed
     (identity when neither is provided) in physical
     world space, not voxel coordinates. Sampling composes
-    inverse(A_moving) @ T @ A_fixed, without pre-resampling the input. Volumes use
-    a centered axis-angle rotation vector (right-handed XYZ, stored z/y/x) and
-    world z/y/x translation. Slices optimize only fixed-plane rotation and i/j
-    translation; slice seeds must preserve the fixed plane. Automatic modes
-    also require coplanar slices and do not infer plane alignment. Separate ITK-style
+    inverse(A_moving) @ T @ A_fixed, without pre-resampling the input. Rigid volumes
+    use a centered axis-angle rotation vector (right-handed XYZ, stored z/y/x).
+    Affine parameters are row-major deviations from identity plus physical center
+    displacement; diagnostics report actual linear coefficients, not deviations.
+    Slices optimize only their intrinsic orthonormal i/j plane, leaving its normal
+    fixed. All models use the same sampling, optimizer and per-frame stopping path.
+    Automatic modes also require coplanar slices and do not infer plane alignment.
+    Separate ITK-style
     fixed/moving pre-transforms and slice-to-volume fitting are not supported.
     Less than 90% valid fixed-grid support flags insufficient overlap. Physical
     scaling uses minimum fixed spacing and RMS lever arms, not ITK's estimator.
-    The default convergence threshold was calibrated on slices, not general 3D.
+    Affine candidates with normalized |determinant| <= 1e-8 or a changed orientation
+    sign stop only that frame with invalid_transform, retaining its best valid pose.
+    Normalization divides the linear map by its largest absolute entry first.
+    This guard prevents numerical singularity, not implausible anatomical scaling.
+    The default convergence threshold was calibrated on rigid slices, not affine
+    models or general 3D.
 
     Convergence follows ITK v4's accumulated-absolute-energy normalization and
     first-order B-spline window gradient, checked before the next Adam update.
@@ -317,6 +359,14 @@ def register_rigid(
     """
     start = perf_counter()
     _validate_registration_geometry(moving)
+    if not isinstance(transform, str) or transform not in (
+        "translation",
+        "rigid",
+        "affine",
+    ):
+        raise ValueError(
+            "transform must be translation, rigid or affine. Euler transforms belong to the rigid family."
+        )
     spatial_input = moving.dims == VOXEL_DIMS
     if spatial_input:
         if fixed is None:
@@ -396,12 +446,12 @@ def register_rigid(
         if isinstance(initialization, str):
             if initialization not in ("center_geometry", "center_moments"):
                 raise ValueError(
-                    "initialization must be None, center_geometry, center_moments or a rigid matrix."
+                    "initialization must be None, center_geometry, center_moments or a model-compatible matrix."
                 )
         else:
             if np.ndim(initialization) not in (2, 3):
                 raise ValueError(
-                    "initialization must be a rigid (4, 4) or (N, 4, 4) matrix, or a named mode."
+                    "initialization must be a model-compatible (4, 4) or (N, 4, 4) matrix, or a named mode."
                 )
             initial_transform, initialization = initialization, None
     center = None
@@ -421,6 +471,7 @@ def register_rigid(
             center = af[:3, 3] + fixed_offset
     # Double physical geometry/state keeps gradient reductions stable across chunk sizes.
     plane = make_grid(fixed, moving, device=device, dtype=torch.float64, center=center)
+    plane = configure_transform(plane, fixed, transform)
     initial = None
     if initial_transform is not None:
         if isinstance(initial_transform, xr.DataArray):
@@ -602,51 +653,58 @@ def register_rigid(
             "invalid_metric",
             "reference",
             "max_iterations",
+            "invalid_transform",
         ]
     )
     motion = (
-        {
-            "angle": (
-                "time",
-                params[:, 0],
-                {"units": "rad", "basis": "intrinsic i/j plane"},
-            ),
-            "translation_i": (
-                "time",
-                params[:, 1],
-                {
-                    "units": "mm",
-                    "meaning": "center displacement along intrinsic unit i",
-                },
-            ),
-            "translation_j": (
-                "time",
-                params[:, 2],
-                {
-                    "units": "mm",
-                    "meaning": "center displacement along orthogonalized intrinsic j",
-                },
-            ),
-        }
-        if planar
-        else {
-            name: (
-                "time",
-                params[:, column],
-                {"units": "rad" if column < 3 else "mm", "basis": "world z/y/x"},
-            )
-            for column, name in enumerate(
-                (
-                    "rotation_z",
-                    "rotation_y",
-                    "rotation_x",
-                    "translation_z",
-                    "translation_y",
-                    "translation_x",
+        {}
+        if transform != "rigid"
+        else (
+            {
+                "angle": (
+                    "time",
+                    params[:, 0],
+                    {"units": "rad", "basis": "intrinsic i/j plane"},
+                ),
+                "translation_i": (
+                    "time",
+                    params[:, 1],
+                    {
+                        "units": "mm",
+                        "meaning": "center displacement along intrinsic unit i",
+                    },
+                ),
+                "translation_j": (
+                    "time",
+                    params[:, 2],
+                    {
+                        "units": "mm",
+                        "meaning": "center displacement along orthogonalized intrinsic j",
+                    },
+                ),
+            }
+            if planar
+            else {
+                name: (
+                    "time",
+                    params[:, column],
+                    {"units": "rad" if column < 3 else "mm", "basis": "world z/y/x"},
                 )
-            )
-        }
+                for column, name in enumerate(
+                    (
+                        "rotation_z",
+                        "rotation_y",
+                        "rotation_x",
+                        "translation_z",
+                        "translation_y",
+                        "translation_x",
+                    )
+                )
+            }
+        )
     )
+    if transform != "rigid":
+        motion = linear_diagnostics(params, plane)
     diagnostics = xr.Dataset(
         {
             "objective": ("time", np.concatenate(objectives)),
@@ -658,6 +716,11 @@ def register_rigid(
         coords={"time": moving.time},
         attrs={
             "timings_seconds": timings,
+            **(
+                {"transform": transform, "center_zyx_mm": plane.center.tolist()}
+                if transform != "rigid"
+                else {}
+            ),
             **(
                 {
                     "initialization": initialization,

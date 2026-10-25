@@ -9,7 +9,7 @@ from confusius.validation import validate_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 
 import voxreg
-from voxreg import position_to_world, register_rigid
+from voxreg import position_to_world, register
 from voxreg.geometry import _check_affine, _validate_registration_geometry
 
 
@@ -58,7 +58,7 @@ def test_confusius_input_and_output_share_voxeldata(recording_factory):
     assert type(data.xindexes["z"]) is type(external.xindexes["z"]) is VoxelToWorldIndex
     assert np.shares_memory(data.data, external.data)
     assert_allclose(position_to_world(external), position_to_world(data), atol=1e-12)
-    result = register_rigid(external, batch_size=2, max_iterations=2)
+    result = register(external, batch_size=2, max_iterations=2)
     for output in [result.registered, result.valid]:
         validate_voxeldata(output)
         assert isinstance(output.xindexes["z"], VoxelToWorldIndex)
@@ -152,4 +152,4 @@ def test_valid_confusius_dask_data_is_not_supported(recording_factory):
     lazy = data.chunk({"time": 1})
     validate_voxeldata(lazy)
     with pytest.raises(TypeError, match="NumPy-backed"):
-        register_rigid(lazy)
+        register(lazy)

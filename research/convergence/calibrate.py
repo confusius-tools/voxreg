@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from confusius import create_voxeldata
 
-from voxreg import position_to_world, register_rigid
+from voxreg import position_to_world, register
 
 POLICIES = {
     "fixed100": (100, 101, 1e-8),
@@ -39,7 +39,7 @@ def compare(data, *, device, batch_size):
     common = np.ones(raw.shape, dtype=bool)
     results, sampled = {}, {}
     for name, (iterations, window, minimum) in POLICIES.items():
-        result = register_rigid(
+        result = register(
             data,
             device=device,
             batch_size=batch_size,

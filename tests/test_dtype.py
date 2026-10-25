@@ -6,7 +6,7 @@ import torch
 from numpy.testing import assert_allclose, assert_array_equal
 from scipy.ndimage import map_coordinates
 
-from voxreg import position_to_world, register_rigid, rigid
+from voxreg import position_to_world, register, rigid
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def test_original_dtype_and_fractional_sampling(
         original += np.linspace(0, 1e-9, original.size).reshape(original.shape)
     data = data.copy(data=original.astype(dtype))
     untouched = data.values.copy()
-    result = register_rigid(data, interpolation=interpolation, device=device)
+    result = register(data, interpolation=interpolation, device=device)
     assert result.registered.dtype == dtype
     assert_array_equal(data.values, untouched)
     assert_array_equal(result.registered[0], data[0])
@@ -93,7 +93,7 @@ def test_float64_low_contrast_preprocessing_and_original_precision(
     data, _, _ = recording_factory()
     data = data.copy(data=1 + data.values.astype(np.float64) * 1e-9)
     assert np.ptp(data.values.astype(np.float32)) == 0
-    result = register_rigid(data, intensity_scaling=scaling, max_iterations=2)
+    result = register(data, intensity_scaling=scaling, max_iterations=2)
     assert result.registered.dtype == np.float64
     assert_array_equal(result.registered[0], data[0])
     assert np.all(result.diagnostics.n_iterations[1:] == 2)
@@ -107,7 +107,7 @@ def test_dtype_preserving_fit_recovers_known_motion(recording_factory, dtype):
     if np.issubdtype(dtype, np.integer):
         values = np.rint(values * 1000)
     data = data.copy(data=values.astype(dtype))
-    result = register_rigid(data, intensity_scaling="none")
+    result = register(data, intensity_scaling="none")
     affine = position_to_world(data)
     j, i = np.indices(data.shape[-2:])
     points = affine @ np.stack((np.zeros_like(j), j, i, np.ones_like(j))).reshape(4, -1)
@@ -121,7 +121,7 @@ def test_dtype_preserving_fit_recovers_known_motion(recording_factory, dtype):
 def test_float64_outside_float32_range(recording_factory):
     data, _, _ = recording_factory()
     data = data.copy(data=data.values.astype(np.float64) * 1e100)
-    result = register_rigid(data, max_iterations=1)
+    result = register(data, max_iterations=1)
     assert_array_equal(result.registered[0], data[0])
     assert np.isfinite(result.registered).all()
 
@@ -131,13 +131,13 @@ def test_unsafe_large_integers_are_rejected(recording_factory, dtype):
     data, _, _ = recording_factory()
     data = data.copy(data=np.full(data.shape, 2**53 + 1, dtype=dtype))
     with pytest.raises(ValueError, match="exact floating-point representation"):
-        register_rigid(data)
+        register(data)
 
 
 def test_nearest_changes_only_output_not_fitting(recording_factory):
     data, _, _ = recording_factory()
-    linear = register_rigid(data, max_iterations=25)
-    nearest = register_rigid(data, interpolation="nearest", max_iterations=25)
+    linear = register(data, max_iterations=25)
+    nearest = register(data, interpolation="nearest", max_iterations=25)
     assert_array_equal(linear.transforms, nearest.transforms)
     assert_array_equal(linear.diagnostics.objective, nearest.diagnostics.objective)
     assert_array_equal(linear.valid, nearest.valid)
@@ -157,7 +157,7 @@ def test_integer_rounding_ties_and_saturation(recording_factory, monkeypatch):
         return sample(images, parameters, plane)
 
     monkeypatch.setattr(rigid, "sample_rigid", half_values)
-    result = register_rigid(data, max_iterations=1)
+    result = register(data, max_iterations=1)
     assert result.registered.values[1, 0, 0, 0] == -128
     assert result.registered.values[1, 0, 1, 1] == 126
     assert_array_equal(result.registered[0], data[0])

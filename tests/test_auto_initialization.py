@@ -7,7 +7,7 @@ from confusius import create_voxeldata
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
 
-from voxreg import position_to_world, register_rigid
+from voxreg import position_to_world, register
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
@@ -65,7 +65,7 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
     fixed, moving = volume_pair()
     original_fixed, original_moving = fixed.values.copy(), moving.values.copy()
     center, translation = native_centers(fixed, moving, mode)
-    before = register_rigid(
+    before = register(
         moving,
         fixed,
         intensity_scaling=scaling,
@@ -74,7 +74,7 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
         device=device,
     )
     assert before.diagnostics.status == "insufficient_overlap"
-    r = register_rigid(
+    r = register(
         moving,
         fixed,
         initialization=mode,
@@ -139,7 +139,7 @@ def test_moments_pivot_sampling_and_scales(
         )
 
     monkeypatch.setattr(rigid, "_optimize", rotated)
-    r = register_rigid(
+    r = register(
         moving,
         fixed,
         initialization="center_moments",
@@ -193,8 +193,8 @@ def test_moments_pivot_sampling_and_scales(
 def test_series_reference_batch_and_fitting_scaling(recording_factory, mode):
     data, _, _ = recording_factory(oblique=True, strided=True)
     options = {"initialization": mode, "max_iterations": 100, "progress": False}
-    combined = register_rigid(data, batch_size=3, **options)
-    serial = register_rigid(data, batch_size=1, **options)
+    combined = register(data, batch_size=3, **options)
+    serial = register(data, batch_size=1, **options)
     np.testing.assert_allclose(
         combined.transforms, serial.transforms, atol=1e-9, rtol=0
     )
@@ -214,8 +214,8 @@ def test_series_reference_batch_and_fitting_scaling(recording_factory, mode):
         )
 
     with patch("voxreg.rigid._optimize", frozen):
-        linear = register_rigid(data, intensity_scaling="none", **options)
-        db = register_rigid(data, intensity_scaling="db", **options)
+        linear = register(data, intensity_scaling="none", **options)
+        db = register(data, intensity_scaling="db", **options)
     np.testing.assert_array_equal(linear.transforms, db.transforms)
     np.testing.assert_array_equal(
         linear.diagnostics.attrs["rotation_center_zyx_mm"],
@@ -229,7 +229,7 @@ def test_moments_reject_invalid_original_weights(side, value):
     fixed, moving = volume_pair()
     bad = (fixed if side == "fixed" else moving).copy(data=np.full(fixed.shape, value))
     with pytest.raises(ValueError, match=f"{side}.*center_moments.*unscaled"):
-        register_rigid(
+        register(
             bad if side == "moving" else moving,
             bad if side == "fixed" else fixed,
             initialization="center_moments",
@@ -242,7 +242,7 @@ def test_moments_reject_invalid_original_weights(side, value):
 def test_invalid_mode(mode):
     fixed, moving = volume_pair()
     with pytest.raises(ValueError, match="initialization"):
-        register_rigid(moving, fixed, initialization=mode, progress=False)
+        register(moving, fixed, initialization=mode, progress=False)
 
 
 def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
@@ -263,7 +263,7 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
     ell = np.linalg.norm(af[:3, :3], axis=0).min()
     results = []
     for device in DEVICES:
-        r = register_rigid(
+        r = register(
             moving,
             fixed,
             initialization="center_moments",
@@ -292,7 +292,7 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
 def test_explicit_and_auto_are_exclusive():
     fixed, moving = volume_pair()
     with pytest.raises(ValueError, match="not both"):
-        register_rigid(
+        register(
             moving,
             fixed,
             initialization="center_geometry",

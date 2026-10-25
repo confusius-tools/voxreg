@@ -5,9 +5,48 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented pair/series controls, not general
 registration accuracy or performance.
 
-## Initialization/progress ergonomics
+## Translation/rigid/affine shared engine
 
-The current suite passes **308 tests**. Matrix-valued `initialization` is tested
+The current suite passes **352 tests**, including 44 new linear-model checks.
+The sole fitting entry point is `register(..., transform="translation" | "rigid" |
+"affine")`; `register_rigid` was removed rather than retained as a redundant
+pre-release wrapper. Existing live callers/tests were migrated. Default rigid
+sampling, optimization and output conventions remain unchanged.
+
+Translation and affine share the original preprocessing, squared NCC, masked
+per-frame Adam/convergence, progress, fixed-grid output and original-dtype final
+interpolation. Affine seeds optimize the complete centered linear map, not a
+frozen prefix. Seed validation preserves scale/shear and accepts negative
+orientation when explicit, but disallows numerical singularity. Runtime candidates
+must retain seed orientation and normalized |determinant| > 1e-8; failures mark
+only that frame invalid_transform and retain its best valid full matrix.
+
+The new suite checks 2D/3D parameter counts and physical scales, native ITK point
+oracles, finite-difference gradients, double SciPy pulls, non-geometric pivots,
+oblique/sheared/strided/cropped grids, both sampling kernels, per-frame/CPU/CUDA
+batch independence, reference identity, explicit seeded affine refinement after
+large displacement, reflection seeds, malformed/singular/incompatible matrices,
+per-frame affine failure isolation, and genuine low-contrast float64 output.
+Affine diagnostics expose actual linear coefficients and centered mm translations.
+
+The independent [linear-model qualification](research/linear/README.md) runs all
+three models on 2D/3D continuous-field phantoms with unequal orthogonal grids.
+Native ITK uses double images/GD/physical-shift scales; voxreg uses its qualified
+mixed precision/Adam/RMS scales. All run fixed160 updates; timing is not measured.
+SciPy64 joint-support NCC² is >=0.9990019. All 18 truth checks pass unchanged
+RMS <0.25 px (worst 0.06512 px, ITK 2D affine); all six CPU/CUDA maximum pointwise
+comparisons pass <0.001 px (worst 0.000388 px, 3D rigid).
+
+Four real120-frame fixed/convergence CPU/CUDA controls with default rigid fitting
+remain bitwise equal to every stored field in the frozen AC benchmark arrays.
+Historical time/memory reports and source snapshots were not rewritten. Ruff,
+format, lock, source/wheel builds and isolated wheel checks pass. New affine
+performance, natural independent-session data, affine early-stop calibration,
+regularization, pyramids and non-coplanar/slice-to-volume fitting remain unqualified.
+
+## Initialization/progress ergonomics (0df4bb8)
+
+At this boundary, the suite passed **308 tests**. Matrix-valued `initialization` is tested
 against `initial_transform` for NumPy arrays, nested lists, labeled matrices and
 batched matrices. The napari moving-to-fixed example is inverted into the existing
 physical fixed-to-moving pull convention. Scale/shear rejection and mutual
@@ -282,7 +321,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 308 passed, including matrix initialization, auto progress, centering, 3D and CUDA.
+# 352 passed, including translation/rigid/affine, initialization, 3D and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples

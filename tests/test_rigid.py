@@ -7,7 +7,7 @@ from confusius import create_voxeldata
 from confusius.validation import validate_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 
-from voxreg import position_to_world, register_rigid
+from voxreg import position_to_world, register
 
 
 def assert_mapping_close(data, actual, expected, tolerance_pixels):
@@ -28,7 +28,7 @@ def assert_mapping_close(data, actual, expected, tolerance_pixels):
 @pytest.mark.parametrize("scaling", ["none", "db"])
 def test_known_rigid_recovery(recording_factory, oblique, strided, scaling):
     data, truth, affine = recording_factory(oblique=oblique, strided=strided)
-    result = register_rigid(data, intensity_scaling=scaling)
+    result = register(data, intensity_scaling=scaling)
     validate_voxeldata(result.registered)
     validate_voxeldata(result.valid)
     j, i = np.mgrid[6:58:3, 6:74:3]
@@ -60,17 +60,15 @@ def test_known_rigid_recovery(recording_factory, oblique, strided, scaling):
 
 def test_batch_composition_and_failed_frame_independence(recording_factory):
     data, _, _ = recording_factory()
-    combined = register_rigid(
+    combined = register(
         data, intensity_scaling="none", batch_size=3, max_iterations=140
     )
-    serial = register_rigid(
-        data, intensity_scaling="none", batch_size=1, max_iterations=140
-    )
+    serial = register(data, intensity_scaling="none", batch_size=1, max_iterations=140)
     assert_mapping_close(data, combined.transforms, serial.transforms, 1e-5)
     assert_allclose(combined.registered, serial.registered, atol=2e-4)
     failed = data.copy(data=data.values.copy())
     failed.values[1] = 0
-    with_bad = register_rigid(failed, intensity_scaling="none", max_iterations=140)
+    with_bad = register(failed, intensity_scaling="none", max_iterations=140)
     assert with_bad.diagnostics.status[1] == "invalid_metric"
     assert with_bad.diagnostics.n_iterations[1] == 0
     assert np.isnan(with_bad.diagnostics.objective[1])
@@ -89,7 +87,7 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
         atol=3e-4,
     )
     # Exercise freezing within this budget; ITK's default 1e-8 is more conservative.
-    long = register_rigid(
+    long = register(
         data,
         intensity_scaling="none",
         max_iterations=400,
@@ -97,7 +95,7 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
     )
     assert np.all(long.diagnostics.status[1:].values == "converged")
     # Continuing the chunk cannot move frames whose own optimizer has stopped.
-    longer = register_rigid(
+    longer = register(
         data,
         intensity_scaling="none",
         max_iterations=450,
@@ -110,10 +108,10 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
 def test_explicit_fixed_and_low_overlap(recording_factory):
     data, _, _ = recording_factory()
     fixed = data.isel(time=0, drop=True)
-    explicit = register_rigid(data, fixed=fixed, intensity_scaling="none")
+    explicit = register(data, fixed=fixed, intensity_scaling="none")
     assert explicit.diagnostics.status[0] != "reference"
     assert_allclose(explicit.transforms[0], np.eye(4), atol=1e-3)
-    failed = register_rigid(
+    failed = register(
         data, intensity_scaling="none", learning_rate=200, max_iterations=3
     )
     assert np.all(failed.diagnostics.status[1:].values == "insufficient_overlap")
@@ -138,7 +136,7 @@ def test_explicit_fixed_and_low_overlap(recording_factory):
 def test_invalid_options(recording_factory, option):
     data, _, _ = recording_factory()
     with pytest.raises(ValueError):
-        register_rigid(data, **option)
+        register(data, **option)
 
 
 @pytest.mark.parametrize(
@@ -148,28 +146,28 @@ def test_invalid_intensities(recording_factory, bad, match):
     data, _, _ = recording_factory()
     data.values[2, 0, 2, 3] = bad
     with pytest.raises(ValueError, match=match):
-        register_rigid(data)
+        register(data)
 
 
 def test_invalid_geometry_constants_and_dtypes(recording_factory):
     data, _, _ = recording_factory()
     fixed = data.isel(time=0, j=slice(1, None), drop=True)
-    cropped = register_rigid(data, fixed=fixed, max_iterations=2, progress=False)
+    cropped = register(data, fixed=fixed, max_iterations=2, progress=False)
     assert cropped.registered.shape[1:] == fixed.shape
     assert cropped.registered.xindexes["z"].equals(fixed.xindexes["z"])
     with pytest.raises(ValueError, match="constant"):
-        register_rigid(data.copy(data=np.ones_like(data.values)))
+        register(data.copy(data=np.ones_like(data.values)))
     with pytest.raises(ValueError, match="all-zero"):
-        register_rigid(data.copy(data=np.zeros_like(data.values)))
+        register(data.copy(data=np.zeros_like(data.values)))
     with pytest.raises(ValueError, match="all-zero"):
-        register_rigid(
+        register(
             data.copy(data=np.zeros_like(data.values)),
             fixed=data.isel(time=0, drop=True),
         )
     with pytest.raises(TypeError, match="real integer or floating"):
-        register_rigid(data.astype(bool))
+        register(data.astype(bool))
     with pytest.raises(ValueError, match="time"):
-        register_rigid(data.isel(time=0, drop=True))
+        register(data.isel(time=0, drop=True))
     volume = create_voxeldata(
         np.ones((2, 2, 1, 5), dtype=np.float32),
         dims=("time", "k", "j", "i"),
@@ -177,13 +175,13 @@ def test_invalid_geometry_constants_and_dtypes(recording_factory):
         voxel_to_world=np.eye(4),
     )
     with pytest.raises(ValueError, match="k=1"):
-        register_rigid(volume)
+        register(volume)
 
 
 def test_nonzero_constant_frame_is_not_optimized(recording_factory):
     data, _, _ = recording_factory()
     data.values[1] = 1
-    result = register_rigid(data, intensity_scaling="none")
+    result = register(data, intensity_scaling="none")
     assert result.diagnostics.status[1] == "invalid_metric"
     assert result.diagnostics.n_iterations[1] == 0
     assert np.isnan(result.diagnostics.objective[1])
@@ -193,18 +191,18 @@ def test_nonzero_constant_frame_is_not_optimized(recording_factory):
 def test_empty_and_invalid_time_labels(recording_factory):
     data, _, _ = recording_factory()
     with pytest.raises(ValueError, match="nonempty"):
-        register_rigid(data.isel(time=slice(0, 0)))
+        register(data.isel(time=slice(0, 0)))
     for invalid in (data.drop_vars("time"), data.assign_coords(time=[1, 1, 2])):
         with pytest.raises(ValueError, match="time labels"):
-            register_rigid(invalid)
+            register(invalid)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_cuda_matches_cpu(recording_factory, batch_size):
     data, _, _ = recording_factory(oblique=True, strided=True)
-    cpu = register_rigid(data, intensity_scaling="none")
-    cuda = register_rigid(
+    cpu = register(data, intensity_scaling="none")
+    cuda = register(
         data, intensity_scaling="none", device="cuda", batch_size=batch_size
     )
     assert_mapping_close(data, cuda.transforms, cpu.transforms, 1e-3)

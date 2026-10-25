@@ -21,7 +21,7 @@ from scipy.ndimage import map_coordinates
 from voxreg import (
     RegistrationResult,
     position_to_world,
-    register_rigid,
+    register,
 )
 from voxreg.sampling import make_plane
 
@@ -335,11 +335,11 @@ def main() -> None:
     load_seconds = perf_counter() - start
     if data.sizes["time"] != 120:
         raise ValueError("The notebook requires frames 220:340.")
-    result = register_rigid(data, device=args.device, batch_size=args.batch_size)
+    result = register(data, device=args.device, batch_size=args.batch_size)
     elapsed = []
     for _ in range(args.repeats):
         start = perf_counter()
-        result = register_rigid(
+        result = register(
             data, device=args.device, batch_size=args.batch_size, progress=False
         )
         elapsed.append(perf_counter() - start)

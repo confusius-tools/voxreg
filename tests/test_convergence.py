@@ -9,7 +9,7 @@ import pytest
 import torch
 import xarray as xr
 
-from voxreg import register_rigid
+from voxreg import register
 from voxreg.convergence import WindowConvergence
 
 REFERENCE = json.loads(
@@ -80,10 +80,10 @@ def test_stops_before_next_update_and_disabled_window_reaches_limit(
     monkeypatch.setattr(rigid, "global_ncc", flat_metric)
     data, _, _ = recording_factory()
     options = {"device": device, "max_iterations": 8, "progress": False}
-    stopped = register_rigid(
+    stopped = register(
         data, **options, convergence_window_size=4, convergence_minimum_value=1
     )
-    limited = register_rigid(data, **options, convergence_window_size=9)
+    limited = register(data, **options, convergence_window_size=9)
     np.testing.assert_array_equal(stopped.diagnostics.n_iterations[1:], 3)
     np.testing.assert_array_equal(stopped.diagnostics.status[1:], "converged")
     np.testing.assert_array_equal(limited.diagnostics.n_iterations[1:], 8)
@@ -108,7 +108,7 @@ def test_stops_before_next_update_and_disabled_window_reaches_limit(
 def test_rejects_invalid_convergence_options(recording_factory, options):
     data, _, _ = recording_factory()
     with pytest.raises(ValueError, match="convergence_"):
-        register_rigid(data, **options)
+        register(data, **options)
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -130,11 +130,11 @@ def test_terminal_check_preserves_frozen_full_budget_results(
 
     monkeypatch.setattr(rigid, "sample_rigid", counted_sample)
     options = {"device": device, "max_iterations": 400, "progress": False}
-    stopped = register_rigid(data, **options)
+    stopped = register(data, **options)
     stopped_calls = len(calls)
     calls.clear()
     monkeypatch.setattr(rigid, "_all_frames_stopped", lambda status: False)
-    full_budget = register_rigid(data, **options)
+    full_budget = register(data, **options)
     assert stopped_calls < len(calls)
     for field in ["registered", "valid", "transforms", "diagnostics"]:
         xr.testing.assert_equal(getattr(stopped, field), getattr(full_budget, field))
@@ -163,12 +163,10 @@ def test_polling_is_batch_wide_bounded_and_absent_in_fixed_budget_controls(
     monkeypatch.setattr(rigid, "_all_frames_stopped", not_finished)
     data, _, _ = recording_factory()
     options = {"device": device, "max_iterations": 40, "progress": False}
-    register_rigid(
-        data, **options, convergence_window_size=4, convergence_minimum_value=1
-    )
+    register(data, **options, convergence_window_size=4, convergence_minimum_value=1)
     assert polls == list(range(4, 40, 10 if device == "cuda" else 1))
     polls.clear()
-    register_rigid(data, **options, convergence_window_size=41)
+    register(data, **options, convergence_window_size=41)
     assert polls == []
 
 

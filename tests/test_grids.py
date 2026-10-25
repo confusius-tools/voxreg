@@ -8,7 +8,7 @@ from confusius.validation import validate_voxeldata
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
 
-from voxreg import position_to_world, register_rigid
+from voxreg import position_to_world, register
 from voxreg.sampling import make_grid, rotation_vectors, sample_rigid, world_matrices
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
@@ -178,7 +178,7 @@ def test_single_pair_output_uses_fixed_grid_and_original_dtype(
         )
 
     monkeypatch.setattr(rigid, "_optimize", identity)
-    r = register_rigid(moving, fixed, intensity_scaling="none", progress=False)
+    r = register(moving, fixed, intensity_scaling="none", progress=False)
     assert r.registered.dims == fixed.dims and r.registered.shape == fixed.shape
     assert r.registered.dtype == dtype
     assert r.registered.xindexes["z"].equals(fixed.xindexes["z"])
@@ -239,7 +239,7 @@ def volume_phantom():
 @pytest.mark.parametrize("device", DEVICES)
 def test_3d_known_motion_recovery_on_independent_grids(device):
     fixed, moving, truth = volume_phantom()
-    r = register_rigid(
+    r = register(
         moving,
         fixed,
         device=device,
@@ -273,8 +273,8 @@ def test_3d_batch_and_cpu_cuda_independence():
     )
     data = data.assign_coords(acquisition=("time", [70, 73]))
     options = {"intensity_scaling": "none", "max_iterations": 120, "progress": False}
-    together = register_rigid(data, fixed, batch_size=2, **options)
-    alone = register_rigid(data, fixed, batch_size=1, **options)
+    together = register(data, fixed, batch_size=2, **options)
+    alone = register(data, fixed, batch_size=1, **options)
     np.testing.assert_allclose(together.transforms, alone.transforms, atol=1e-8, rtol=0)
     np.testing.assert_array_equal(
         together.diagnostics.n_iterations, alone.diagnostics.n_iterations
@@ -285,7 +285,7 @@ def test_3d_batch_and_cpu_cuda_independence():
     validate_voxeldata(together.registered)
     validate_voxeldata(together.valid)
     if torch.cuda.is_available():
-        cuda = register_rigid(data, fixed, device="cuda", **options)
+        cuda = register(data, fixed, device="cuda", **options)
         indices = np.indices(fixed.shape)
         points = position_to_world(fixed) @ np.concatenate(
             (indices, np.ones((1, *fixed.shape))), axis=0
@@ -310,7 +310,7 @@ def test_3d_reference_and_float64_detail_along_k_are_preserved():
         dt=1,
         voxel_to_world=np.eye(4),
     )
-    r = register_rigid(data, intensity_scaling="none", max_iterations=1, progress=False)
+    r = register(data, intensity_scaling="none", max_iterations=1, progress=False)
     assert r.registered.dtype == np.float64
     np.testing.assert_array_equal(r.registered[0], data[0])
     np.testing.assert_array_equal(r.transforms[0], np.eye(4))
@@ -355,7 +355,7 @@ def test_no_overlap_retains_identity_and_uses_original_minimum():
         **{dim: moving[dim] for dim in moving.dims},
         voxel_to_world=affine,
     )
-    r = register_rigid(moving, fixed, max_iterations=2, progress=False)
+    r = register(moving, fixed, max_iterations=2, progress=False)
     assert r.diagnostics.status == "insufficient_overlap"
     assert r.diagnostics.n_iterations == 0
     assert np.isnan(r.diagnostics.objective)
@@ -370,7 +370,7 @@ def test_non_coplanar_slices_and_mixed_dimensions_are_explicit_errors():
     fixed, _ = pair(True)
     tilted = grid_data((1, 15, 17), [0, 20, 0], [0.5, 0.4, 0.3])
     with pytest.raises(ValueError, match="coplanar"):
-        register_rigid(tilted, fixed, progress=False)
+        register(tilted, fixed, progress=False)
     volume = grid_data((3, 15, 17), [0, 0, 0], [0.5, 0.4, 0.3])
     with pytest.raises(ValueError, match="coplanar|3D"):
-        register_rigid(volume, fixed, progress=False)
+        register(volume, fixed, progress=False)

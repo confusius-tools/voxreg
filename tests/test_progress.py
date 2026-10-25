@@ -11,7 +11,7 @@ from confusius import create_voxeldata
 from numpy.testing import assert_array_equal
 from rich.console import Console
 
-from voxreg import register_rigid, rigid
+from voxreg import register, rigid
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
@@ -31,11 +31,11 @@ def test_batch_progress_is_silent_and_preserves_results(
 
     monkeypatch.setattr(torch.cuda, "synchronize", synchronize)
     options = {"device": device, "batch_size": batch_size, "max_iterations": 3}
-    baseline = register_rigid(data, **options, progress=False)
+    baseline = register(data, **options, progress=False)
     baseline_syncs = len(synchronizations)
     synchronizations.clear()
     updates = []
-    reported = register_rigid(
+    reported = register(
         data,
         **options,
         progress=lambda completed, total: updates.append((completed, total)),
@@ -56,7 +56,7 @@ def test_progress_counts_reference_and_failed_frames(recording_factory, rich_bar
     data = data.copy(deep=True)
     data.values[1] = 0
     updates = []
-    result = register_rigid(
+    result = register(
         data,
         batch_size=1,
         max_iterations=3,
@@ -66,7 +66,7 @@ def test_progress_counts_reference_and_failed_frames(recording_factory, rich_bar
     assert result.diagnostics.status[0] == "reference"
     assert result.diagnostics.status[1] == "invalid_metric"
     assert result.diagnostics.n_iterations[1] == 0
-    register_rigid(data, batch_size=2, max_iterations=3)
+    register(data, batch_size=2, max_iterations=3)
     assert rich_bars[0].tasks[0].completed == len(data)
 
 
@@ -74,7 +74,7 @@ def test_progress_counts_reference_and_failed_frames(recording_factory, rich_bar
 def test_progress_must_be_supported_type(recording_factory, progress):
     data, _, _ = recording_factory()
     with pytest.raises(TypeError, match="progress must be True, False, None"):
-        register_rigid(data, progress=progress)
+        register(data, progress=progress)
 
 
 def test_progress_callback_errors_propagate_without_mutating_input(recording_factory):
@@ -86,7 +86,7 @@ def test_progress_callback_errors_propagate_without_mutating_input(recording_fac
         raise RuntimeError("progress display failed")
 
     with pytest.raises(RuntimeError, match="progress display failed"):
-        register_rigid(data, batch_size=2, max_iterations=3, progress=failed)
+        register(data, batch_size=2, max_iterations=3, progress=failed)
     assert_array_equal(data.values, untouched)
 
 
@@ -127,10 +127,10 @@ def test_default_rich_progress_preserves_results_and_syncs(
         original()
 
     monkeypatch.setattr(torch.cuda, "synchronize", synchronize)
-    quiet = register_rigid(data, **options, progress=False)
+    quiet = register(data, **options, progress=False)
     baseline_syncs = len(synchronizations)
     synchronizations.clear()
-    reported = register_rigid(data, **options)
+    reported = register(data, **options)
     assert len(synchronizations) == baseline_syncs
     for field in ["registered", "valid", "transforms", "diagnostics"]:
         xr.testing.assert_equal(getattr(reported, field), getattr(quiet, field))
@@ -148,7 +148,7 @@ def test_quiet_modes_create_no_rich_display(
     recording_factory, progress, rich_bars, capsys
 ):
     data, _, _ = recording_factory()
-    register_rigid(data, max_iterations=3, progress=progress)
+    register(data, max_iterations=3, progress=progress)
     assert not rich_bars
     assert capsys.readouterr().out == ""
 
@@ -163,7 +163,7 @@ def test_rich_display_is_closed_on_registration_error(
 
     monkeypatch.setattr(rigid, "_optimize", fail)
     with pytest.raises(RuntimeError, match="optimizer failed"):
-        register_rigid(data)
+        register(data)
     assert len(rich_bars) == 1
     assert not rich_bars[0].live.is_started
     assert not rich_bars[0].finished
@@ -175,9 +175,9 @@ def test_spatial_pair_progress_is_auto_quiet(shape, mode, rich_bars):
     values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape) + 1
     data = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
     options = {"intensity_scaling": "none", "max_iterations": 2}
-    quiet = register_rigid(data, data, progress=False, **options)
+    quiet = register(data, data, progress=False, **options)
     kwargs = {} if mode == "default" else {"progress": mode}
-    result = register_rigid(data, data, **kwargs, **options)
+    result = register(data, data, **kwargs, **options)
     for name in ["registered", "valid", "transforms", "diagnostics"]:
         xr.testing.assert_equal(getattr(result, name), getattr(quiet, name))
     assert len(rich_bars) == (1 if mode is True else 0)
@@ -189,7 +189,7 @@ def test_spatial_pair_progress_is_auto_quiet(shape, mode, rich_bars):
 def test_single_frame_recording_is_auto_quiet(recording_factory, mode, rich_bars):
     data, _, _ = recording_factory()
     kwargs = {} if mode == "default" else {"progress": mode}
-    register_rigid(data.isel(time=slice(0, 1)), max_iterations=2, **kwargs)
+    register(data.isel(time=slice(0, 1)), max_iterations=2, **kwargs)
     assert not rich_bars
 
 
@@ -197,7 +197,7 @@ def test_spatial_pair_callback_is_honored(recording_factory, rich_bars):
     data, _, _ = recording_factory()
     fixed = data.isel(time=0, drop=True)
     updates = []
-    register_rigid(
+    register(
         fixed,
         fixed,
         max_iterations=2,

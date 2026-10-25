@@ -13,7 +13,7 @@ from confusius import create_voxeldata
 from torch.profiler import ProfilerActivity, profile, record_function, schedule
 
 import voxreg.rigid as vr
-from voxreg import register_rigid
+from voxreg import register
 
 
 def scoped(label, function):
@@ -68,7 +68,7 @@ def main():
 
     def run():
         if args.backend == "voxreg":
-            return register_rigid(
+            return register(
                 moving,
                 fixed=fixed,
                 batch_size=args.batch,

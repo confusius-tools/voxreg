@@ -19,7 +19,7 @@ import torch
 import torch.nn.functional as F
 from confusius import create_voxeldata
 
-from voxreg import register_rigid, rigid, sampling
+from voxreg import register, rigid, sampling
 
 VARIANTS = [
     "voxreg",
@@ -279,7 +279,7 @@ def main():
                     raw, position, args.device, args.batch_size
                 )
                 return matrices, steps, None
-            result = register_rigid(
+            result = register(
                 data,
                 batch_size=args.batch_size,
                 device=args.device,

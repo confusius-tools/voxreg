@@ -367,14 +367,14 @@ def worker(args) -> None:
         else:
             from confusius import create_voxeldata
 
-            from voxreg import register_rigid
+            from voxreg import register
 
             data = create_voxeldata(
                 raw, dims=("time", "k", "j", "i"), **coords, voxel_to_world=affine
             )
 
             def run():
-                result = register_rigid(
+                result = register(
                     data,
                     device="cuda" if cuda else "cpu",
                     batch_size=batch,

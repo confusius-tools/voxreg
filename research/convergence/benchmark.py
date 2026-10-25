@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from confusius import create_voxeldata
 
-from voxreg import register_rigid, rigid
+from voxreg import register, rigid
 
 
 def main():
@@ -44,7 +44,7 @@ def main():
             if args.device == "cuda":
                 torch.cuda.synchronize()
             start = perf_counter()
-            result = register_rigid(
+            result = register(
                 data,
                 device=args.device,
                 batch_size=args.batch_size,
