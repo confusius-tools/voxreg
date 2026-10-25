@@ -1,4 +1,10 @@
-# ConfUSIus examples: real-data validation
+# ConfUSIus examples: real-data validation (original guarded baseline)
+
+**Historical baseline at `c2effa2`, using the former 90% coverage rule.**
+The [coverage-policy follow-up](../overlap-policy/README.md) removes that cutoff and
+reruns the same comparison. The failures and results below are preserved, not
+current-policy claims. Check out `c2effa2` to reproduce these exact baseline numbers;
+the current script records source hashes and uses the currently checked-out engine.
 
 ## Verdict
 

@@ -5,7 +5,29 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented pair/series controls, not general
 registration accuracy or performance.
 
-## Real ConfUSIus example 01: same-subject session pair
+## Coverage cutoff removed (current)
+
+No fixed coverage percentage is required by the optimizer. Both evaluation sites
+require at least two valid sample centers, nonzero finite variances and finite
+metric arithmetic. Coverage remains diagnostic via valid_fraction; it is not a
+confidence test or a guarantee that the selected model is identifiable.
+
+The suite passes **373 tests**, including 21 new partial-field/sample-count/failure
+regressions. Six unchanged native ITK 2D/3D model controls retain the 0.25-pixel
+truth and 0.001-pixel CPU/CUDA maximum gates. Four real-series default-rigid
+CPU/CUDA fixed/convergence controls remain bitwise identical to frozen AC arrays.
+Ruff, format, lock, build and small-moving-image isolated wheel checks pass.
+
+The [real-example follow-up](research/overlap-policy/README.md) reruns all 36
+conditions on identical inputs and exactly the same joint scoring mask as c2effa2.
+Full-image fixed400 NCC² improves from 0.54936 to 0.83742 rigid and 0.72216 to
+0.87118 affine, without cropping; the unchanged ConfUSIus scores are 0.83623 and
+0.84656. No coverage failure occurs; all 12 CPU/CUDA precision screens still pass.
+Default100 remains under-captured, and small overlaps/affine/3D early stopping
+remain unqualified for general accuracy. No new defaults or coverage knob were
+introduced. Original baseline results below remain preserved.
+
+## Real ConfUSIus example 01: same-subject session pair (c2effa2 guarded baseline)
 
 The [real-example report](research/confusius-examples/README.md) checks the cached
 rat75 slice32 angiographies from 20220523/24, with the example's dB/qform
@@ -41,9 +63,9 @@ run. Example 03 remains unsupported slice-to-volume; the B-spline part of exampl
 was not attempted. The next general-registration gate is capture/fitting-domain/
 partial-overlap policy, before claiming drop-in example parity or adding models.
 
-## Translation/rigid/affine shared engine
+## Translation/rigid/affine shared engine (ad335c9)
 
-The current suite passes **352 tests**, including 44 new linear-model checks.
+At this boundary, the suite passed **352 tests**, including 44 new linear-model checks.
 The sole fitting entry point is `register(..., transform="translation" | "rigid" |
 "affine")`; `register_rigid` was removed rather than retained as a redundant
 pre-release wrapper. Existing live callers/tests were migrated. Default rigid
@@ -357,7 +379,7 @@ errors or forced below the synthetic tolerance.
 
 ```bash
 uv run --extra examples pytest -q
-# 352 passed, including translation/rigid/affine, initialization, 3D and CUDA.
+# 373 passed, including partial coverage, translation/rigid/affine, 3D and CUDA.
 
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples

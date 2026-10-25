@@ -2,7 +2,9 @@
 
 Uses cached rat75 slice32 susi images only. This is a quality/capture diagnostic,
 not a timing benchmark. Full-image results are retained even when they underfit.
-A separately labeled symmetric central crop tests the unchanged 90% support guard.
+A separately labeled symmetric central crop diagnoses fitting-domain effects.
+Source hashes identify the engine's coverage policy; the original guarded report
+requires its frozen c2effa2 revision.
 """
 
 import argparse

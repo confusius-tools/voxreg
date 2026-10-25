@@ -218,9 +218,13 @@ from a shared nonidentity pose.
 
 On failure the best valid full transform is retained, or the initial pose if no
 valid metric was observed. Motion diagnostics describe that full transform.
-The 90% fixed-domain overlap guard remains: the seed must provide enough overlap.
-Large displacements are recoverable from a suitable seed, but broad uninitialized
-capture range and substantial partial overlap remain unqualified.
+There is no minimum coverage percentage: a smaller moving image can register
+against a larger fixed image. Fewer than two valid sample centers still flags
+`insufficient_overlap`; zero/invalid variance flags `invalid_metric`. The sample
+minimum only makes correlation mathematically usable—it does not establish enough
+information to identify every transform. Large displacements can be recovered from
+a suitable seed, but broad capture range and robust partial-overlap alignment remain
+unqualified.
 
 ### Automatic centering
 
@@ -532,21 +536,23 @@ runs are kept separately, not mixed into the AC tables.
 
 ## Current limits
 
-**Real-example capture warning:** the default full-image fit does not yet match
-ConfUSIus's same-subject session example. Its 100-update budget under-captures the
-motion, and simply raising the cap then hits the 90% overlap guard. A labeled
-central-crop/fixed400 diagnostic improves alignment, but is not a default-workflow
-fix. See the [real-example report](research/confusius-examples/README.md) for retained
-failures, common-support scores and overlays. This is distinct from the passing
-synthetic precision/truth checks.
+**Real-example capture warning:** the default 100-update budget still under-captures
+ConfUSIus's same-subject session pair. The former 90% coverage cutoff has been
+removed: full-image fits can now continue to better alignment without a manual
+crop. See the [coverage-policy follow-up](research/overlap-policy/README.md) and
+[original guarded results](research/confusius-examples/README.md). This does not
+calibrate defaults or guarantee robust matching from small overlaps.
 
 - Translation, rigid and affine: volumes or constrained coplanar slices only.
   No deformable, multi-pose, slice-to-volume or non-coplanar slice registration.
 - Independent fixed/moving grids, but uniform native coordinates, mm and finite
   NumPy-backed real input with supported dtype/range remain required. No masks,
   Dask or multiresolution fitting.
-- A frame losing more than 10% overlap is flagged and retains its best valid
-  transform. Constant/invalid fitting metrics are diagnosed separately.
+- No fixed overlap percentage is required. Fewer than two valid sample centers
+  is diagnosed as insufficient overlap; constant/nonfinite metrics separately
+  fail validation. Frames retain their best valid pose, or the seed if no valid
+  metric was observed. `valid_fraction` reports coverage, **not confidence**;
+  small overlaps can yield misleadingly high correlations.
 - Output fill is each original frame's minimum. Use `result.valid` to exclude
   padding from downstream analyses.
 - Per-frame status distinguishes convergence, iteration limit, invalid metric,

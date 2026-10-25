@@ -130,7 +130,7 @@ def _optimize(
     for iteration in range(max_iterations):
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         loss, meaningful = global_ncc(moved, fixed, valid)
-        overlap = valid.float().mean(dim=spatial_axes) >= 0.9
+        overlap = valid.sum(dim=spatial_axes) > 1
         good = overlap & meaningful & torch.isfinite(loss)
         active = status == 0
         with torch.no_grad():
@@ -186,7 +186,7 @@ def _optimize(
     with torch.no_grad():
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         loss, meaningful = global_ncc(moved, fixed, valid)
-        overlap = valid.float().mean(dim=spatial_axes) >= 0.9
+        overlap = valid.sum(dim=spatial_axes) > 1
         good = overlap & meaningful & torch.isfinite(loss)
         eligible = (status == 0) | (status == 1)
         if orientation is not None:
@@ -334,8 +334,11 @@ def register(
     Automatic modes also require coplanar slices and do not infer plane alignment.
     Separate ITK-style
     fixed/moving pre-transforms and slice-to-volume fitting are not supported.
-    Less than 90% valid fixed-grid support flags insufficient overlap. Physical
-    scaling uses minimum fixed spacing and RMS lever arms, not ITK's estimator.
+    Fewer than two valid sample centers flags insufficient overlap; zero/invalid
+    variance flags an invalid metric. No fixed coverage percentage is required.
+    valid_fraction reports coverage, not confidence: tiny overlaps can give
+    misleading correlations or fail to identify the transform. Physical scaling
+    uses minimum fixed spacing and RMS lever arms, not ITK's estimator.
     Affine candidates with normalized |determinant| <= 1e-8 or a changed orientation
     sign stop only that frame with invalid_transform, retaining its best valid pose.
     Normalization divides the linear map by its largest absolute entry first.

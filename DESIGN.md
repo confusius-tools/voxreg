@@ -82,8 +82,9 @@ handling are shared. Non-coplanar slices, other singleton configurations and
 slice-to-volume registration are explicit errors, not unconstrained 6-DOF fits.
 
 Initialization defaults to identity world motion; explicit rigid seeds now use
-the optimized ITK InitialTransform model described below. The 90% fixed-domain
-overlap policy is unchanged. Automatic geometry/moments centering is described below. Plane alignment, masks,
+the optimized ITK InitialTransform model described below. No fixed coverage
+percentage is required; fewer than two valid sample centers is insufficient overlap.
+Automatic geometry/moments centering is described below. Plane alignment, masks,
 pyramids and other metrics remain deferred. Initial 3D synthetic qualification and
 bitwise slice regression evidence are in [research/geometry/README.md](research/geometry/README.md).
 The subsequent [shared pair/series benchmark](research/registration/README.md)
@@ -124,7 +125,7 @@ not pre-apply dB/log/sqrt/power transforms. Pre-scaled nonnegative inputs cannot
 reliably detected, so this is also a documented caller responsibility. Geometry
 centering or an explicit matrix remains available for signed images. The API does
 not infer the original units, invert display transforms, estimate rotation, align
-non-coplanar planes, or change the 90% overlap policy.
+non-coplanar planes, or infer a reliable match from a small overlap.
 
 ## Initial-transform model
 
@@ -360,9 +361,15 @@ the batch or compute covariance across frames. Accumulate NCC statistics in
 float64: float32 loss quantization near unit NCC destabilized best-iterate selection. Use a small numerical denominator
 guard only after checking that the metric is meaningful.
 
-A frame that loses more than 10% overlap is flagged, with its best valid transform
-retained (or identity when no valid metric has been observed). This threshold is a deliberately narrow PoC policy, not an assertion
-that larger motion is invalid for registration in general.
+No minimum coverage fraction is enforced. Both optimizer evaluation sites require
+more than one valid sample center, nonzero finite variances and a finite metric.
+Fewer than two valid centers retains the existing insufficient_overlap status;
+constant or invalid arithmetic yields invalid_metric. Frames retain their best
+valid transform, or their seed when no metric was valid. valid_fraction continues
+to report coverage, not confidence. Two samples only satisfy the mathematical NCC
+minimum, not transform identifiability or anatomical validity. The former 90% rule
+rejected valid smaller fields of view and blocked the real same-subject pair;
+its removal is documented in [research/overlap-policy/README.md](research/overlap-policy/README.md).
 
 ### Optimization
 

@@ -1,0 +1,1269 @@
+{
+  "baseline": "c2effa2:research/confusius-examples/results.json",
+  "raw_new_results": "artifacts/overlap-policy/same-subject/results.json",
+  "inputs": [
+    {
+      "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220523/susi/sub-rat75_ses-20220523_acq-slice32_rec-minframe2d_pwd.nii.gz",
+      "sha256": "bfc059b22695ed6e7f5cf8b1927b0978d291a0f9d2f7bddae4ccd69f674d3049",
+      "sidecar_sha256": "324693cb1f9c93e767c75816ec78bb171bf4c8cf173d63b3e9ca459e8dbb402c",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "dtype": "float64",
+      "raw_range": [
+        20.989732573125544,
+        6766.365013732707
+      ],
+      "position_to_world": [
+        [
+          0.3999999761581421,
+          -1.9172617353978458e-34,
+          -1.388833351185086e-33,
+          1.7763568394002505e-15
+        ],
+        [
+          1.7463359889231874e-34,
+          0.09855999797582625,
+          -6.364600602585139e-19,
+          5.000000000000002
+        ],
+        [
+          -8.711952302508758e-34,
+          -2.2372464514507346e-19,
+          0.10999999940395355,
+          -6.984999656677246
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220524/susi/sub-rat75_ses-20220524_acq-slice32_rec-minframe2d_pwd.nii.gz",
+      "sha256": "f97e329ed71aec0427dd0a1f44e9694712c76905a3a5004c3981f9d30cb75f91",
+      "sidecar_sha256": "7604bae724589b16188bbecce2fcca8f71e3a70aacbe5fca0fba4e998e83f560",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "dtype": "float64",
+      "raw_range": [
+        37.04333990704922,
+        25065.500206656092
+      ],
+      "position_to_world": [
+        [
+          0.3999999761581421,
+          3.98012486173997e-34,
+          -2.7660057984100148e-33,
+          1.7763568394002505e-15
+        ],
+        [
+          -4.549644814859601e-34,
+          0.09855999797582628,
+          -8.449405938948477e-19,
+          4.999999999999998
+        ],
+        [
+          2.5388249847242993e-33,
+          1.2080067083566224e-18,
+          0.10999999940395354,
+          -6.984999656677246
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  ],
+  "source_sha256": {
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/research/confusius-examples/compare_same_subject.py": "03bb4fa10d66b65947ae76af576744e6d2d72ae1f3029462298b438c6ecc25ef",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/volume.py": "72de9672f313b1849e63ede8d581378ef86e1d26377a37d9f1adb3fa4f6fb2f0",
+    "src/voxreg/transforms.py": "2c0fecf89df7b6af0d0cbcfe20590caa5eba9fbaa5712a955c1b8b38d65e522b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/rigid.py": "c9d396ed41f2f4451fa0d565dd9fac71e3a1066ccaaa4e4d1b9b037cf7479923",
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/sampling.py": "8b352e9a6000cdb68fe31b8f82322687adc5bee9030c2a3fbca34b7bdd596562",
+    "src/voxreg/geometry.py": "1f034dcf2aa67b6ccd91327392688111e05fc8e98bf01bda785c03190281d26b"
+  },
+  "versions": {
+    "confusius": "0.8.0",
+    "torch": "2.14.1+cu130",
+    "itk": "5.4.7"
+  },
+  "protocols": {
+    "defaults": "each backend native defaults; CF GD auto LR/window10 vs voxreg Adam0.1/window50, both caps100",
+    "fixed100": "native GD auto vs Adam0.1, convergence disabled, cap100",
+    "fixed400": "native GD auto vs Adam0.1, convergence disabled, cap400"
+  },
+  "identical_inputs": true,
+  "identical_cross_revision_joint_support": true,
+  "unchanged_confusius_matrices": true,
+  "joint_support_fraction": 0.8415876116071429,
+  "precision": {
+    "full/defaults/rigid": {
+      "max_pointwise_pixels": 5.6026057354112544e-09,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "full/defaults/affine": {
+      "max_pointwise_pixels": 4.462258003184873e-08,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "full/fixed100/rigid": {
+      "max_pointwise_pixels": 5.6026057354112544e-09,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "full/fixed100/affine": {
+      "max_pointwise_pixels": 4.462258003184873e-08,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "full/fixed400/rigid": {
+      "max_pointwise_pixels": 5.944010102974012e-09,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "full/fixed400/affine": {
+      "max_pointwise_pixels": 3.444462721297575e-08,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "central-crop/defaults/rigid": {
+      "max_pointwise_pixels": 1.253524525880014e-08,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "central-crop/defaults/affine": {
+      "max_pointwise_pixels": 2.2245247827536845e-07,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "central-crop/fixed100/rigid": {
+      "max_pointwise_pixels": 1.253524525880014e-08,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "central-crop/fixed100/affine": {
+      "max_pointwise_pixels": 2.2245247827536845e-07,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "central-crop/fixed400/rigid": {
+      "max_pointwise_pixels": 2.089796520003263e-08,
+      "gate_pass": true,
+      "same_update_count": true
+    },
+    "central-crop/fixed400/affine": {
+      "max_pointwise_pixels": 1.17799665577774e-07,
+      "gate_pass": true,
+      "same_update_count": true
+    }
+  },
+  "runs": {
+    "identity": {
+      "matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "support_fraction": 1.0,
+      "cross_arm_joint_ncc2": 0.21798459820873564
+    },
+    "full/defaults/rigid/voxreg-cpu": {
+      "n_iterations": 100,
+      "status": "max_iterations",
+      "objective": -0.5439591231743492,
+      "valid_fraction": 0.9002510905265808,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.2301051405187131,
+        1.0028011632387557
+      ],
+      "matrix": [
+        [
+          1.0,
+          -7.718016991486655e-34,
+          1.433160899729545e-34,
+          0.0
+        ],
+        [
+          7.79147021551779e-34,
+          0.99811200800648,
+          -0.06142002501849317,
+          -0.21033769475709008
+        ],
+        [
+          -9.564143067151417e-35,
+          0.06142002501849317,
+          0.99811200800648,
+          0.3597285951698893
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "rigid",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu"
+      },
+      "full_grid_support_fraction": 0.9002511160714286,
+      "fit_grid_support_fraction": 0.9002511160714286,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0,
+        0.9999999999999999
+      ],
+      "active_determinant": 1.0,
+      "independent_resampling_max_abs_db": 4.671818487622659e-13,
+      "cross_arm_joint_ncc2": 0.5493617958149561,
+      "arm_joint_ncc2": 0.5474886179211033,
+      "arm_joint_support_fraction": 0.8542131696428571,
+      "arm_joint_identity_ncc2": 0.19638468764453015
+    },
+    "full/defaults/rigid/voxreg-cuda": {
+      "n_iterations": 100,
+      "status": "max_iterations",
+      "objective": -0.5439591233917811,
+      "valid_fraction": 0.9002511501312256,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.23010514000960924,
+        1.0028011630507208
+      ],
+      "matrix": [
+        [
+          1.0,
+          -7.718016991624116e-34,
+          1.4331608997594594e-34,
+          0.0
+        ],
+        [
+          7.791470215657884e-34,
+          0.9981120080064123,
+          -0.06142002501959233,
+          -0.21033769424727744
+        ],
+        [
+          -9.564143067279778e-35,
+          0.06142002501959233,
+          0.9981120080064123,
+          0.35972859497034604
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "rigid",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda"
+      },
+      "full_grid_support_fraction": 0.9002511160714286,
+      "fit_grid_support_fraction": 0.9002511160714286,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        0.9999999999999999,
+        0.9999999999999998
+      ],
+      "active_determinant": 0.9999999999999998,
+      "independent_resampling_max_abs_db": 5.719869022868806e-13,
+      "cross_arm_joint_ncc2": 0.5493617957300867,
+      "arm_joint_ncc2": 0.5474886178285586,
+      "arm_joint_support_fraction": 0.8542131696428571,
+      "arm_joint_identity_ncc2": 0.19638468764453015
+    },
+    "full/defaults/rigid/confusius": {
+      "metric": "correlation",
+      "final_metric_value": -0.8196879187283084,
+      "n_iterations": 27,
+      "stop_condition": "GradientDescentOptimizerv4Template: Convergence checker passed at iteration 27.",
+      "status": "completed",
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.19298668225629179,
+        1.4312116787349225
+      ],
+      "matrix": [
+        [
+          1.0,
+          -4.284401468325869e-21,
+          -6.561686801469318e-21,
+          4.4858027648720497e-20
+        ],
+        [
+          3.9164453900534685e-21,
+          0.9984816653136261,
+          -0.055085061791086104,
+          -0.17708957996671124
+        ],
+        [
+          6.787730484418077e-21,
+          0.055085061791086104,
+          0.9984816653136261,
+          0.8544666816294655
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform_type": "rigid",
+        "initialization": "center_geometry",
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false,
+        "sitk_threads": 1
+      },
+      "full_grid_support_fraction": 0.8738839285714286,
+      "fit_grid_support_fraction": 0.8738839285714286,
+      "native_k_max_absolute": 1.731735112289433e-19,
+      "active_singular_values": [
+        1.0,
+        1.0
+      ],
+      "active_determinant": 1.0,
+      "independent_resampling_max_abs_db": 3.9879211044535623e-13,
+      "cross_arm_joint_ncc2": 0.7994128160476043,
+      "arm_joint_ncc2": 0.7962039563619042,
+      "arm_joint_support_fraction": 0.8542131696428571,
+      "arm_joint_identity_ncc2": 0.19638468764453015
+    },
+    "full/defaults/affine/voxreg-cpu": {
+      "n_iterations": 100,
+      "status": "max_iterations",
+      "objective": -0.6283412485543877,
+      "valid_fraction": 0.9434989094734192,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.1415215020501357,
+        0.8516310277103456
+      ],
+      "matrix": [
+        [
+          1.0,
+          -1.2839483059896441e-33,
+          1.7765754251361208e-33,
+          2.965851754528047e-33
+        ],
+        [
+          8.849014831384946e-34,
+          1.0273240407095316,
+          -0.07429686484826749,
+          -0.42760636843681626
+        ],
+        [
+          1.4424167509368384e-33,
+          0.09748290650283539,
+          0.8707366550379173,
+          -0.16902275156890556
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "affine",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu"
+      },
+      "full_grid_support_fraction": 0.9434988839285714,
+      "fit_grid_support_fraction": 0.9434988839285714,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0320563923743273,
+        0.8737617244948367
+      ],
+      "active_determinant": 0.9017713731769121,
+      "independent_resampling_max_abs_db": 4.156675004196586e-13,
+      "cross_arm_joint_ncc2": 0.6419627561797728,
+      "arm_joint_ncc2": 0.6388768214647796,
+      "arm_joint_support_fraction": 0.8542131696428571,
+      "arm_joint_identity_ncc2": 0.19638468764453015
+    },
+    "full/defaults/affine/voxreg-cuda": {
+      "n_iterations": 100,
+      "status": "max_iterations",
+      "objective": -0.6283412477095017,
+      "valid_fraction": 0.9434989094734192,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.14152150132144925,
+        0.8516310271107428
+      ],
+      "matrix": [
+        [
+          1.0,
+          -1.2839483072818259e-33,
+          1.7765754257291742e-33,
+          2.9658517742102392e-33
+        ],
+        [
+          8.849014779344469e-34,
+          1.0273240406607718,
+          -0.07429686442857789,
+          -0.42760636719761036
+        ],
+        [
+          1.4424167521326e-33,
+          0.09748290661269282,
+          0.8707366549262833,
+          -0.16902275331872452
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "affine",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda"
+      },
+      "full_grid_support_fraction": 0.9434988839285714,
+      "fit_grid_support_fraction": 0.9434988839285714,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.032056392350374,
+        0.8737617243311226
+      ],
+      "active_determinant": 0.9017713729870204,
+      "independent_resampling_max_abs_db": 6.732392421326949e-13,
+      "cross_arm_joint_ncc2": 0.6419627560956952,
+      "arm_joint_ncc2": 0.6388768213824315,
+      "arm_joint_support_fraction": 0.8542131696428571,
+      "arm_joint_identity_ncc2": 0.19638468764453015
+    },
+    "full/defaults/affine/confusius": {
+      "metric": "correlation",
+      "final_metric_value": -0.8603589534922068,
+      "n_iterations": 36,
+      "stop_condition": "GradientDescentOptimizerv4Template: Convergence checker passed at iteration 36.",
+      "status": "completed",
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.04466237844211385,
+        1.3689352769318628
+      ],
+      "matrix": [
+        [
+          1.0,
+          -1.2488700185295266e-33,
+          -6.248704547989062e-35,
+          -3.407932566407409e-32
+        ],
+        [
+          -4.926061596535336e-19,
+          1.0208735805809315,
+          -0.058248601772044425,
+          -0.2632104168725179
+        ],
+        [
+          2.2716420531329093e-17,
+          0.06395885541753046,
+          0.9900042694239535,
+          0.6992809542405621
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform_type": "affine",
+        "initialization": "center_geometry",
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false,
+        "sitk_threads": 1
+      },
+      "full_grid_support_fraction": 0.8708844866071429,
+      "fit_grid_support_fraction": 0.8708844866071429,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0229904552593698,
+        0.9915974406223189
+      ],
+      "active_determinant": 1.014394717216252,
+      "independent_resampling_max_abs_db": 3.836930773104541e-13,
+      "cross_arm_joint_ncc2": 0.8447881293267337,
+      "arm_joint_ncc2": 0.8393519315676924,
+      "arm_joint_support_fraction": 0.8542131696428571,
+      "arm_joint_identity_ncc2": 0.19638468764453015
+    },
+    "full/fixed100/rigid/voxreg-cpu": {
+      "n_iterations": 100,
+      "status": "max_iterations",
+      "objective": -0.5439591231743492,
+      "valid_fraction": 0.9002510905265808,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.2301051405187131,
+        1.0028011632387557
+      ],
+      "matrix": [
+        [
+          1.0,
+          -7.718016991486655e-34,
+          1.433160899729545e-34,
+          0.0
+        ],
+        [
+          7.79147021551779e-34,
+          0.99811200800648,
+          -0.06142002501849317,
+          -0.21033769475709008
+        ],
+        [
+          -9.564143067151417e-35,
+          0.06142002501849317,
+          0.99811200800648,
+          0.3597285951698893
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "rigid",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu",
+        "max_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "full_grid_support_fraction": 0.9002511160714286,
+      "fit_grid_support_fraction": 0.9002511160714286,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0,
+        0.9999999999999999
+      ],
+      "active_determinant": 1.0,
+      "independent_resampling_max_abs_db": 4.671818487622659e-13,
+      "cross_arm_joint_ncc2": 0.5493617958149561,
+      "arm_joint_ncc2": 0.5472749455714019,
+      "arm_joint_support_fraction": 0.8576311383928571,
+      "arm_joint_identity_ncc2": 0.1968685331478646
+    },
+    "full/fixed100/rigid/voxreg-cuda": {
+      "n_iterations": 100,
+      "status": "max_iterations",
+      "objective": -0.5439591233917811,
+      "valid_fraction": 0.9002511501312256,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.23010514000960924,
+        1.0028011630507208
+      ],
+      "matrix": [
+        [
+          1.0,
+          -7.718016991624116e-34,
+          1.4331608997594594e-34,
+          0.0
+        ],
+        [
+          7.791470215657884e-34,
+          0.9981120080064123,
+          -0.06142002501959233,
+          -0.21033769424727744
+        ],
+        [
+          -9.564143067279778e-35,
+          0.06142002501959233,
+          0.9981120080064123,
+          0.35972859497034604
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "rigid",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda",
+        "max_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "full_grid_support_fraction": 0.9002511160714286,
+      "fit_grid_support_fraction": 0.9002511160714286,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        0.9999999999999999,
+        0.9999999999999998
+      ],
+      "active_determinant": 0.9999999999999998,
+      "independent_resampling_max_abs_db": 5.719869022868806e-13,
+      "cross_arm_joint_ncc2": 0.5493617957300867,
+      "arm_joint_ncc2": 0.5472749454799063,
+      "arm_joint_support_fraction": 0.8576311383928571,
+      "arm_joint_identity_ncc2": 0.1968685331478646
+    },
+    "full/fixed100/rigid/confusius": {
+      "metric": "correlation",
+      "final_metric_value": -0.7895138022255508,
+      "n_iterations": 100,
+      "stop_condition": "GradientDescentOptimizerv4Template: Maximum number of iterations (100) exceeded.",
+      "status": "completed",
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.12963157676115244,
+        1.3757852982182057
+      ],
+      "matrix": [
+        [
+          1.0,
+          -2.8714993298607896e-20,
+          -7.554034783783343e-21,
+          3.0064827611751653e-19
+        ],
+        [
+          2.8240421323394686e-20,
+          0.9983908697321119,
+          -0.05670688878396642,
+          -0.11278383698424543
+        ],
+        [
+          9.170217289184577e-21,
+          0.05670688878396642,
+          0.9983908697321119,
+          0.7820596429610667
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform_type": "rigid",
+        "initialization": "center_geometry",
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false,
+        "sitk_threads": 1,
+        "number_of_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "full_grid_support_fraction": 0.8790457589285714,
+      "fit_grid_support_fraction": 0.8790457589285714,
+      "native_k_max_absolute": 5.245956312585438e-19,
+      "active_singular_values": [
+        1.0,
+        1.0
+      ],
+      "active_determinant": 1.0,
+      "independent_resampling_max_abs_db": 3.9968028886505635e-13,
+      "cross_arm_joint_ncc2": 0.8362012893813837,
+      "arm_joint_ncc2": 0.8284192828012906,
+      "arm_joint_support_fraction": 0.8576311383928571,
+      "arm_joint_identity_ncc2": 0.1968685331478646
+    },
+    "full/fixed100/affine/voxreg-cpu": {
+      "n_iterations": 100,
+      "status": "max_iterations",
+      "objective": -0.6283412485543877,
+      "valid_fraction": 0.9434989094734192,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.1415215020501357,
+        0.8516310277103456
+      ],
+      "matrix": [
+        [
+          1.0,
+          -1.2839483059896441e-33,
+          1.7765754251361208e-33,
+          2.965851754528047e-33
+        ],
+        [
+          8.849014831384946e-34,
+          1.0273240407095316,
+          -0.07429686484826749,
+          -0.42760636843681626
+        ],
+        [
+          1.4424167509368384e-33,
+          0.09748290650283539,
+          0.8707366550379173,
+          -0.16902275156890556
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "affine",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu",
+        "max_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "full_grid_support_fraction": 0.9434988839285714,
+      "fit_grid_support_fraction": 0.9434988839285714,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0320563923743273,
+        0.8737617244948367
+      ],
+      "active_determinant": 0.9017713731769121,
+      "independent_resampling_max_abs_db": 4.156675004196586e-13,
+      "cross_arm_joint_ncc2": 0.6419627561797728,
+      "arm_joint_ncc2": 0.6390925727347812,
+      "arm_joint_support_fraction": 0.8576311383928571,
+      "arm_joint_identity_ncc2": 0.1968685331478646
+    },
+    "full/fixed100/affine/voxreg-cuda": {
+      "n_iterations": 100,
+      "status": "max_iterations",
+      "objective": -0.6283412477095017,
+      "valid_fraction": 0.9434989094734192,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.14152150132144925,
+        0.8516310271107428
+      ],
+      "matrix": [
+        [
+          1.0,
+          -1.2839483072818259e-33,
+          1.7765754257291742e-33,
+          2.9658517742102392e-33
+        ],
+        [
+          8.849014779344469e-34,
+          1.0273240406607718,
+          -0.07429686442857789,
+          -0.42760636719761036
+        ],
+        [
+          1.4424167521326e-33,
+          0.09748290661269282,
+          0.8707366549262833,
+          -0.16902275331872452
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "affine",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda",
+        "max_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "full_grid_support_fraction": 0.9434988839285714,
+      "fit_grid_support_fraction": 0.9434988839285714,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.032056392350374,
+        0.8737617243311226
+      ],
+      "active_determinant": 0.9017713729870204,
+      "independent_resampling_max_abs_db": 6.732392421326949e-13,
+      "cross_arm_joint_ncc2": 0.6419627560956952,
+      "arm_joint_ncc2": 0.639092572654364,
+      "arm_joint_support_fraction": 0.8576311383928571,
+      "arm_joint_identity_ncc2": 0.1968685331478646
+    },
+    "full/fixed100/affine/confusius": {
+      "metric": "correlation",
+      "final_metric_value": -0.8604572784575523,
+      "n_iterations": 100,
+      "stop_condition": "GradientDescentOptimizerv4Template: Maximum number of iterations (100) exceeded.",
+      "status": "completed",
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.04248412053327755,
+        1.3749605268088427
+      ],
+      "matrix": [
+        [
+          1.0,
+          -9.891769103645732e-34,
+          -1.6780993301880819e-34,
+          -3.4510984801452425e-32
+        ],
+        [
+          2.0987745406317766e-17,
+          1.0206811863304748,
+          -0.058358327837004065,
+          -0.2590177757579563
+        ],
+        [
+          3.1335016777620155e-17,
+          0.06357849457378828,
+          0.9899025568204665,
+          0.7092886125687304
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform_type": "affine",
+        "initialization": "center_geometry",
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false,
+        "sitk_threads": 1,
+        "number_of_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "full_grid_support_fraction": 0.87060546875,
+      "fit_grid_support_fraction": 0.87060546875,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0227480499991097,
+        0.9915298794044997
+      ],
+      "active_determinant": 1.0140852506768043,
+      "independent_resampling_max_abs_db": 5.648814749292796e-13,
+      "cross_arm_joint_ncc2": 0.8465570738888314,
+      "arm_joint_ncc2": 0.8408768379267967,
+      "arm_joint_support_fraction": 0.8576311383928571,
+      "arm_joint_identity_ncc2": 0.1968685331478646
+    },
+    "full/fixed400/rigid/voxreg-cpu": {
+      "n_iterations": 400,
+      "status": "max_iterations",
+      "objective": -0.8251570218268052,
+      "valid_fraction": 0.8775111436843872,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.14061629961459055,
+        1.3890455963347292
+      ],
+      "matrix": [
+        [
+          1.0,
+          -7.311933448738043e-34,
+          1.3454593213882412e-34,
+          0.0
+        ],
+        [
+          7.377820911965554e-34,
+          0.9983064732053948,
+          -0.05817375315558204,
+          -0.12288492101262527
+        ],
+        [
+          -9.178181384394654e-35,
+          0.05817375315558204,
+          0.9983064732053948,
+          0.7799617539481959
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "rigid",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu",
+        "max_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "full_grid_support_fraction": 0.8775111607142857,
+      "fit_grid_support_fraction": 0.8775111607142857,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0000000000000002,
+        1.0
+      ],
+      "active_determinant": 1.0000000000000002,
+      "independent_resampling_max_abs_db": 5.435651928564766e-13,
+      "cross_arm_joint_ncc2": 0.8374178364456657,
+      "arm_joint_ncc2": 0.828908976915373,
+      "arm_joint_support_fraction": 0.8622349330357143,
+      "arm_joint_identity_ncc2": 0.18965857350941337
+    },
+    "full/fixed400/rigid/voxreg-cuda": {
+      "n_iterations": 400,
+      "status": "max_iterations",
+      "objective": -0.8251570217593729,
+      "valid_fraction": 0.877511203289032,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.14061629992611024,
+        1.3890455962155557
+      ],
+      "matrix": [
+        [
+          1.0,
+          -7.311933452421658e-34,
+          1.345459322177539e-34,
+          0.0
+        ],
+        [
+          7.377820915715909e-34,
+          0.9983064732036793,
+          -0.058173753185021736,
+          -0.12288492130618422
+        ],
+        [
+          -9.178181387955649e-35,
+          0.058173753185021736,
+          0.9983064732036793,
+          0.7799617535207866
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "rigid",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda",
+        "max_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "full_grid_support_fraction": 0.8775111607142857,
+      "fit_grid_support_fraction": 0.8775111607142857,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0000000000000002,
+        1.0
+      ],
+      "active_determinant": 1.0000000000000002,
+      "independent_resampling_max_abs_db": 5.684341886080801e-13,
+      "cross_arm_joint_ncc2": 0.8374178364270332,
+      "arm_joint_ncc2": 0.828908976920223,
+      "arm_joint_support_fraction": 0.8622349330357143,
+      "arm_joint_identity_ncc2": 0.18965857350941337
+    },
+    "full/fixed400/rigid/confusius": {
+      "metric": "correlation",
+      "final_metric_value": -0.789346515107457,
+      "n_iterations": 400,
+      "stop_condition": "GradientDescentOptimizerv4Template: Maximum number of iterations (400) exceeded.",
+      "status": "completed",
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.12976527334376264,
+        1.3759017863196499
+      ],
+      "matrix": [
+        [
+          1.0,
+          -5.510478864647043e-20,
+          -3.232103632548329e-21,
+          5.769515403083089e-19
+        ],
+        [
+          5.483286372289631e-20,
+          0.9983911232850781,
+          -0.05670242451218479,
+          -0.1129201882880308
+        ],
+        [
+          6.3514786947600946e-21,
+          0.05670242451218479,
+          0.9983911232850781,
+          0.7822228723446273
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform_type": "rigid",
+        "initialization": "center_geometry",
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false,
+        "sitk_threads": 1,
+        "number_of_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "full_grid_support_fraction": 0.8790457589285714,
+      "fit_grid_support_fraction": 0.8790457589285714,
+      "native_k_max_absolute": 8.100096478802061e-19,
+      "active_singular_values": [
+        1.0,
+        1.0
+      ],
+      "active_determinant": 0.9999999999999999,
+      "independent_resampling_max_abs_db": 3.907985046680551e-13,
+      "cross_arm_joint_ncc2": 0.836226435100225,
+      "arm_joint_ncc2": 0.8269056902814824,
+      "arm_joint_support_fraction": 0.8622349330357143,
+      "arm_joint_identity_ncc2": 0.18965857350941337
+    },
+    "full/fixed400/affine/voxreg-cpu": {
+      "n_iterations": 400,
+      "status": "max_iterations",
+      "objective": -0.8648910767759451,
+      "valid_fraction": 0.8658621907234192,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.08739120268417366,
+        1.4049397838680702
+      ],
+      "matrix": [
+        [
+          1.0,
+          -8.80228566034345e-34,
+          2.322199188550474e-34,
+          -8.352366299321037e-33
+        ],
+        [
+          6.78771453042119e-34,
+          1.0240771793993417,
+          -0.05747046382584183,
+          -0.339481176909044
+        ],
+        [
+          -7.978080131625984e-36,
+          0.06600727453840675,
+          0.9904620270753068,
+          0.713838349197955
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "affine",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu",
+        "max_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "full_grid_support_fraction": 0.8658621651785714,
+      "fit_grid_support_fraction": 0.8658621651785714,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0265010231000407,
+        0.9918188143625595
+      ],
+      "active_determinant": 1.0181030276730365,
+      "independent_resampling_max_abs_db": 4.618527782440651e-13,
+      "cross_arm_joint_ncc2": 0.8711761262776702,
+      "arm_joint_ncc2": 0.8651171645008161,
+      "arm_joint_support_fraction": 0.8622349330357143,
+      "arm_joint_identity_ncc2": 0.18965857350941337
+    },
+    "full/fixed400/affine/voxreg-cuda": {
+      "n_iterations": 400,
+      "status": "max_iterations",
+      "objective": -0.8648910765998342,
+      "valid_fraction": 0.8658621907234192,
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.087391201818523,
+        1.4049397837636448
+      ],
+      "matrix": [
+        [
+          1.0,
+          -8.80228568673286e-34,
+          2.3221992046995112e-34,
+          -8.352366272056595e-33
+        ],
+        [
+          6.787714570922155e-34,
+          1.0240771793518286,
+          -0.057470464139301874,
+          -0.33948117554592583
+        ],
+        [
+          -7.978079547314524e-36,
+          0.06600727475473965,
+          0.9904620269956967,
+          0.7138383468285069
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform": "affine",
+        "initialization": "center_geometry",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda",
+        "max_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "full_grid_support_fraction": 0.8658621651785714,
+      "fit_grid_support_fraction": 0.8658621651785714,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.0265010230564053,
+        0.9918188143117215
+      ],
+      "active_determinant": 1.018103027577573,
+      "independent_resampling_max_abs_db": 5.151434834260726e-13,
+      "cross_arm_joint_ncc2": 0.871176126297429,
+      "arm_joint_ncc2": 0.865117164503466,
+      "arm_joint_support_fraction": 0.8622349330357143,
+      "arm_joint_identity_ncc2": 0.18965857350941337
+    },
+    "full/fixed400/affine/confusius": {
+      "metric": "correlation",
+      "final_metric_value": -0.8604572784576655,
+      "n_iterations": 400,
+      "stop_condition": "GradientDescentOptimizerv4Template: Maximum number of iterations (400) exceeded.",
+      "status": "completed",
+      "center_displacement_zyx_mm": [
+        0.0,
+        -0.04248412053279793,
+        1.3749605268086191
+      ],
+      "matrix": [
+        [
+          1.0,
+          1.3748319363466444e-33,
+          -3.628389527213971e-34,
+          -3.4568445408705967e-32
+        ],
+        [
+          7.413224260988096e-17,
+          1.0206811863304426,
+          -0.05835832783701682,
+          -0.2590177757571404
+        ],
+        [
+          -4.935429596481016e-17,
+          0.06357849457379691,
+          0.9899025568204697,
+          0.7092886125684165
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "fit_options": {
+        "transform_type": "affine",
+        "initialization": "center_geometry",
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false,
+        "sitk_threads": 1,
+        "number_of_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "full_grid_support_fraction": 0.87060546875,
+      "fit_grid_support_fraction": 0.87060546875,
+      "native_k_max_absolute": 7.888609052210118e-31,
+      "active_singular_values": [
+        1.022748049999078,
+        0.9915298794045035
+      ],
+      "active_determinant": 1.014085250676777,
+      "independent_resampling_max_abs_db": 4.298783551348606e-13,
+      "cross_arm_joint_ncc2": 0.8465570738883688,
+      "arm_joint_ncc2": 0.8391957869471852,
+      "arm_joint_support_fraction": 0.8622349330357143,
+      "arm_joint_identity_ncc2": 0.18965857350941337
+    }
+  },
+  "interpretation": "NCC scores are directly comparable on the same original full fixed-grid joint mask; reference disagreement is not biological truth error."
+}
