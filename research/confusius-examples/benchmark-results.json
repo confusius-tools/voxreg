@@ -1,0 +1,1553 @@
+{
+  "inputs": {
+    "pair": [
+      {
+        "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220523/susi/sub-rat75_ses-20220523_acq-slice32_rec-minframe2d_pwd.nii.gz",
+        "sha256": "bfc059b22695ed6e7f5cf8b1927b0978d291a0f9d2f7bddae4ccd69f674d3049",
+        "sidecar_sha256": "324693cb1f9c93e767c75816ec78bb171bf4c8cf173d63b3e9ca459e8dbb402c",
+        "shape": [
+          1,
+          112,
+          128
+        ],
+        "dtype": "float64",
+        "raw_range": [
+          20.989732573125544,
+          6766.365013732707
+        ],
+        "position_to_world": [
+          [
+            0.3999999761581421,
+            -1.9172617353978458e-34,
+            -1.388833351185086e-33,
+            1.7763568394002505e-15
+          ],
+          [
+            1.7463359889231874e-34,
+            0.09855999797582625,
+            -6.364600602585139e-19,
+            5.000000000000002
+          ],
+          [
+            -8.711952302508758e-34,
+            -2.2372464514507346e-19,
+            0.10999999940395355,
+            -6.984999656677246
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220524/susi/sub-rat75_ses-20220524_acq-slice32_rec-minframe2d_pwd.nii.gz",
+        "sha256": "f97e329ed71aec0427dd0a1f44e9694712c76905a3a5004c3981f9d30cb75f91",
+        "sidecar_sha256": "7604bae724589b16188bbecce2fcca8f71e3a70aacbe5fca0fba4e998e83f560",
+        "shape": [
+          1,
+          112,
+          128
+        ],
+        "dtype": "float64",
+        "raw_range": [
+          37.04333990704922,
+          25065.500206656092
+        ],
+        "position_to_world": [
+          [
+            0.3999999761581421,
+            3.98012486173997e-34,
+            -2.7660057984100148e-33,
+            1.7763568394002505e-15
+          ],
+          [
+            -4.549644814859601e-34,
+            0.09855999797582628,
+            -8.449405938948477e-19,
+            4.999999999999998
+          ],
+          [
+            2.5388249847242993e-33,
+            1.2080067083566224e-18,
+            0.10999999940395354,
+            -6.984999656677246
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "series": {
+      "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220523/fusi/sub-rat75_ses-20220523_task-openfield_acq-slice32_pwd.nii.gz",
+      "sha256": "f2d0a5e4daa10afc979b47d926af4e1ba3b2368c1384e32944ef9d3d8687e9b3",
+      "sidecar_sha256": "d582135c35ccb870d57c83630d017bac4aed266f58cf0e6a556e0ed003e3e1c7",
+      "window": [
+        220,
+        340
+      ],
+      "dtype": "float64",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "position_to_world": [
+        [
+          0.3999999761581421,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.09855999797582626,
+          0.0,
+          5.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.10999999940395355,
+          -6.984999656677246
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "archive_sha256": "347626c3a4a84438a40c6ef9c4271e3eae1c08a4951e8217ab1a09c137743ba4"
+    }
+  },
+  "versions": {
+    "confusius": "0.8.0",
+    "voxreg": "0.1.0",
+    "torch": "2.14.1+cu130",
+    "numpy": "2.5.4",
+    "SimpleITK": "2.5.6",
+    "python": "3.14.8 (main, Oct  2 2026, 10:23:31) [GCC 16.2.1 20260810]",
+    "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+    "logical_cpus": 24,
+    "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU"
+  },
+  "source_sha256": {
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/src/voxreg/transforms.py": "2c0fecf89df7b6af0d0cbcfe20590caa5eba9fbaa5712a955c1b8b38d65e522b",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/src/voxreg/rigid.py": "c9d396ed41f2f4451fa0d565dd9fac71e3a1066ccaaa4e4d1b9b037cf7479923",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/src/voxreg/sampling.py": "8b352e9a6000cdb68fe31b8f82322687adc5bee9030c2a3fbca34b7bdd596562",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/src/voxreg/geometry.py": "1f034dcf2aa67b6ccd91327392688111e05fc8e98bf01bda785c03190281d26b",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/research/confusius-examples/benchmark_examples.py": "4ae28269a8b4cbe6a4682e380c7512328a8531a8608333bf901936f676c806bf",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/research/confusius-examples/compare_same_subject.py": "03bb4fa10d66b65947ae76af576744e6d2d72ae1f3029462298b438c6ecc25ef",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/examples/notebook_motion_correction.py": "41622cdfa5d3b6a2e584cc403e0c01a2fc463749ae1b039ae465bc7ce4798065",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/examples/benchmark_registration.py": "4b6ed5780277dc1092378c5cb469d08e80fdb6d7afe62fb9d91b1ffc5f81d1b8",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/uv.lock": "290ed282aede57e370e75ce9b8b5f38b78ea3624d77b24683d25471277ee01ad",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/volumewise.py": "0d418a77e11f7be5aed3d692af865e5c31c75afddb31856a79550f28f6cefe04",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/volume.py": "72de9672f313b1849e63ede8d581378ef86e1d26377a37d9f1adb3fa4f6fb2f0",
+    "/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius/docs/examples/03_registration/01_register_volume_same_subject.py": "3f4b67d5b1ab2748f040944903ecc62199866b6a8bb64ad526758e5d9fb7f84f",
+    "/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius/docs/examples/03_registration/02_volumewise_motion_correction.py": "3609ea707a44556ab8c3b16d3bb3cb3d56d9bf40b63c55348a8ff9ff2b5671fd",
+    "/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius/docs/examples/03_registration/03_register_to_allen_fusi_template.py": "b74bfeb08bde0434fdebc66f4a2a1081980ed92d5c7882ab19beda4a1f670226"
+  },
+  "timed_script_sha256": "7d967aaa1d7885f85ab07b5e3c7d48d5f2f6de98c72c92dd8370da797c7d64d1",
+  "unsupported": {
+    "example01_bspline": "No voxreg deformable model; not run or timed.",
+    "example03_atlas": "Single-slice-to-volume atlas fitting is unsupported in voxreg; no substituted task, no head-to-head result."
+  },
+  "raw_report": "artifacts/confusius-examples/timing-b75fc85/results.json",
+  "timed_functions_unchanged_from_snapshot": [
+    "worker",
+    "options",
+    "decode",
+    "series_input",
+    "matrices_from_motion"
+  ],
+  "power_checks": {
+    "snapshots": 40,
+    "all_on_mains": true,
+    "all_performance_profile": true
+  },
+  "runs": {
+    "pair/example/affine/confusius": {
+      "key": "pair/example/affine/confusius",
+      "options": {
+        "transform_type": "affine",
+        "initialization": "center_geometry",
+        "sitk_threads": 8,
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.13205400100559928,
+        0.13886259502032772,
+        0.1440591389837209
+      ],
+      "cold_seconds": 0.20402612298494205,
+      "run_status": "completed",
+      "warm_median_seconds": 0.13886259502032772,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 3.801403636316536e-13,
+      "independent_resampling_max_relative_to_input_peak": 1.3430783563584822e-14,
+      "moving_frame_iterations": {
+        "minimum": 36,
+        "median": 36.0,
+        "maximum": 36
+      },
+      "all_frame_status_counts": {
+        "completed": 1
+      },
+      "last_output_sha256": {
+        "registered": "6adce6902499f323991ff34bddb8d6bbe67fb20157264c1eb5ce7715aff776dc",
+        "transforms": "e0bb174df2b1e4e27c672917706344743ff88210e67076debe2014f2007962f1",
+        "n_iterations": "dd3168a635e962767dc4501dcef1d88bdfd9825d9c5a55d01dff715e7da9b5ec",
+        "status": "626be23975c2fd6e2a0d3786824d20365f0c6cc2fdb900efd6b1a507bf488eb9"
+      },
+      "matrix": [
+        [
+          1.0,
+          -1.2785775843177221e-33,
+          2.789680957766704e-35,
+          -3.221032671519689e-32
+        ],
+        [
+          -5.2250301397015237e-17,
+          1.0208735805809992,
+          -0.058248601772033566,
+          -0.26321041687365854
+        ],
+        [
+          6.629735845024291e-18,
+          0.06395885541755938,
+          0.9900042694239828,
+          0.6992809542395209
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/example/affine/voxreg-cpu": {
+      "key": "pair/example/affine/voxreg-cpu",
+      "options": {
+        "transform": "affine",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu",
+        "initialization": "center_geometry"
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.08246666900231503,
+        0.08224713397794403,
+        0.08239689999027178
+      ],
+      "cold_seconds": 0.27749762701569125,
+      "run_status": "completed",
+      "warm_median_seconds": 0.08239689999027178,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 4.156675004196586e-13,
+      "independent_resampling_max_relative_to_input_peak": 1.4685996980742283e-14,
+      "moving_frame_iterations": {
+        "minimum": 100,
+        "median": 100.0,
+        "maximum": 100
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 1
+      },
+      "last_output_sha256": {
+        "registered": "f19320318831e060140a3ea01b1c3f478fe651db63667f196fdc4bc58f738769",
+        "transforms": "57ed27b4ebf4cbb44c36ca36e80e0a271f04018daf4a14508701c49bc542de77",
+        "n_iterations": "26ab39150b6330152576e4c7fa7e0caa804b5e9db0476a3e48e6b53f1cda8279",
+        "status": "e9c9d560a4d133dceb7ea51378b054eb6ae0909c185ad55969cc119d401ecdd1"
+      },
+      "matrix": [
+        [
+          1.0,
+          -1.2839483059896441e-33,
+          1.7765754251361208e-33,
+          2.965851754528047e-33
+        ],
+        [
+          8.849014831384946e-34,
+          1.0273240407095316,
+          -0.07429686484826749,
+          -0.42760636843681626
+        ],
+        [
+          1.4424167509368384e-33,
+          0.09748290650283539,
+          0.8707366550379173,
+          -0.16902275156890556
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/example/affine/voxreg-cuda": {
+      "key": "pair/example/affine/voxreg-cuda",
+      "options": {
+        "transform": "affine",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda",
+        "initialization": "center_geometry"
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.22417665299144574,
+        0.222596842009807,
+        0.22284024002146907
+      ],
+      "cold_seconds": 0.8848104530188721,
+      "run_status": "completed",
+      "warm_median_seconds": 0.22284024002146907,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 6.732392421326949e-13,
+      "independent_resampling_max_relative_to_input_peak": 2.3786294255133868e-14,
+      "moving_frame_iterations": {
+        "minimum": 100,
+        "median": 100.0,
+        "maximum": 100
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 1
+      },
+      "last_output_sha256": {
+        "registered": "b0dcb326f3bcac6251e755f52258d3288b10539c96f74d74500c7c1948dcca0a",
+        "transforms": "0bfdaae5e1940d82a26c6895316f0645a1bcd281e4abc1ab41e863468d27d42a",
+        "n_iterations": "26ab39150b6330152576e4c7fa7e0caa804b5e9db0476a3e48e6b53f1cda8279",
+        "status": "e9c9d560a4d133dceb7ea51378b054eb6ae0909c185ad55969cc119d401ecdd1"
+      },
+      "matrix": [
+        [
+          1.0,
+          -1.2839483072818259e-33,
+          1.7765754257291742e-33,
+          2.9658517742102392e-33
+        ],
+        [
+          8.849014779344469e-34,
+          1.0273240406607718,
+          -0.07429686442857789,
+          -0.42760636719761036
+        ],
+        [
+          1.4424167521326e-33,
+          0.09748290661269282,
+          0.8707366549262833,
+          -0.16902275331872452
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/example/rigid/confusius": {
+      "key": "pair/example/rigid/confusius",
+      "options": {
+        "transform_type": "rigid",
+        "initialization": "center_geometry",
+        "sitk_threads": 8,
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.07826793999993242,
+        0.09259200200904161,
+        0.08148161999997683
+      ],
+      "cold_seconds": 0.25184402900049463,
+      "run_status": "completed",
+      "warm_median_seconds": 0.08148161999997683,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 3.2507330161024584e-13,
+      "independent_resampling_max_relative_to_input_peak": 1.148520276699076e-14,
+      "moving_frame_iterations": {
+        "minimum": 27,
+        "median": 27.0,
+        "maximum": 27
+      },
+      "all_frame_status_counts": {
+        "completed": 1
+      },
+      "last_output_sha256": {
+        "registered": "3c5f4d853d5b98c6f8fe7686459daf4cee898d47a41559b6b3928844f58c9adf",
+        "transforms": "0e64f217ac216dad9c05f99f23c83ab7d7647e3a44e10e11fec1d504d4f53a0e",
+        "n_iterations": "4d159113222bfeb85fbe717cc2393ee8a6a85b7ce5ac1791c4eade5e3dd6de41",
+        "status": "626be23975c2fd6e2a0d3786824d20365f0c6cc2fdb900efd6b1a507bf488eb9"
+      },
+      "matrix": [
+        [
+          1.0,
+          7.281075497583841e-21,
+          -7.285590058988844e-22,
+          -7.623344190516343e-20
+        ],
+        [
+          -7.310153105960146e-21,
+          0.9984816653136261,
+          -0.05508506179108742,
+          -0.17708957996669905
+        ],
+        [
+          3.2637431579917954e-22,
+          0.05508506179108742,
+          0.9984816653136261,
+          0.8544666816294092
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/example/rigid/voxreg-cpu": {
+      "key": "pair/example/rigid/voxreg-cpu",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu",
+        "initialization": "center_geometry"
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.078046695998637,
+        0.07780917899799533,
+        0.07772521997685544
+      ],
+      "cold_seconds": 0.3556382480019238,
+      "run_status": "completed",
+      "warm_median_seconds": 0.07780917899799533,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 4.671818487622659e-13,
+      "independent_resampling_max_relative_to_input_peak": 1.65060564356206e-14,
+      "moving_frame_iterations": {
+        "minimum": 100,
+        "median": 100.0,
+        "maximum": 100
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 1
+      },
+      "last_output_sha256": {
+        "registered": "b5bd47890833c4e2aee9018d67ecbaa06dfacd673c470e833579f5828612bbcf",
+        "transforms": "cb02c3b018050737f40503f5146fce0c21625606dfd9f377ce5ce47799343393",
+        "n_iterations": "26ab39150b6330152576e4c7fa7e0caa804b5e9db0476a3e48e6b53f1cda8279",
+        "status": "e9c9d560a4d133dceb7ea51378b054eb6ae0909c185ad55969cc119d401ecdd1"
+      },
+      "matrix": [
+        [
+          1.0,
+          -7.718016991486655e-34,
+          1.433160899729545e-34,
+          0.0
+        ],
+        [
+          7.79147021551779e-34,
+          0.99811200800648,
+          -0.06142002501849317,
+          -0.21033769475709008
+        ],
+        [
+          -9.564143067151417e-35,
+          0.06142002501849317,
+          0.99811200800648,
+          0.3597285951698893
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/example/rigid/voxreg-cuda": {
+      "key": "pair/example/rigid/voxreg-cuda",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda",
+        "initialization": "center_geometry"
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.21394503500778228,
+        0.21215837099589407,
+        0.21550346599542536
+      ],
+      "cold_seconds": 1.0902120570244733,
+      "run_status": "completed",
+      "warm_median_seconds": 0.21394503500778228,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 5.719869022868806e-13,
+      "independent_resampling_max_relative_to_input_peak": 2.0208936016235107e-14,
+      "moving_frame_iterations": {
+        "minimum": 100,
+        "median": 100.0,
+        "maximum": 100
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 1
+      },
+      "last_output_sha256": {
+        "registered": "987c88d985cf1bfd5896e617581c953674d06671692a889a6542b3ec4879034e",
+        "transforms": "d8d73acc2b068f73c81a27adf7e26359bdde9f2ed665e9db5ebd3569108df584",
+        "n_iterations": "26ab39150b6330152576e4c7fa7e0caa804b5e9db0476a3e48e6b53f1cda8279",
+        "status": "e9c9d560a4d133dceb7ea51378b054eb6ae0909c185ad55969cc119d401ecdd1"
+      },
+      "matrix": [
+        [
+          1.0,
+          -7.718016991624116e-34,
+          1.4331608997594594e-34,
+          0.0
+        ],
+        [
+          7.791470215657884e-34,
+          0.9981120080064123,
+          -0.06142002501959233,
+          -0.21033769424727744
+        ],
+        [
+          -9.564143067279778e-35,
+          0.06142002501959233,
+          0.9981120080064123,
+          0.35972859497034604
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/fixed400/affine/confusius": {
+      "key": "pair/fixed400/affine/confusius",
+      "options": {
+        "transform_type": "affine",
+        "initialization": "center_geometry",
+        "sitk_threads": 8,
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false,
+        "number_of_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        1.281982533982955,
+        1.2880334189976566,
+        1.2912033679895103
+      ],
+      "cold_seconds": 1.289380545989843,
+      "run_status": "completed",
+      "warm_median_seconds": 1.2880334189976566,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 4.440892098500626e-13,
+      "independent_resampling_max_relative_to_input_peak": 1.569016771446825e-14,
+      "moving_frame_iterations": {
+        "minimum": 400,
+        "median": 400.0,
+        "maximum": 400
+      },
+      "all_frame_status_counts": {
+        "completed": 1
+      },
+      "last_output_sha256": {
+        "registered": "408895207011b97c3bff0b71db33766bca6c8682ad16a982254402301c7e1bf5",
+        "transforms": "0d0a9ee31dfbef2d13945aa53e6e715b9bfa5c8278a19c64509347bdd4740d47",
+        "n_iterations": "1e7be6b7b822671624a11e5bad13b99f401945b10fce09c9b3a6e746970c1ad3",
+        "status": "626be23975c2fd6e2a0d3786824d20365f0c6cc2fdb900efd6b1a507bf488eb9"
+      },
+      "matrix": [
+        [
+          1.0,
+          1.594326596949031e-33,
+          6.249962246222064e-34,
+          -1.8225087767868249e-32
+        ],
+        [
+          3.670015862106864e-17,
+          1.020681186330483,
+          -0.05835832783700079,
+          -0.25901777575816154
+        ],
+        [
+          1.0627609220982942e-16,
+          0.06357849457378585,
+          0.9899025568204657,
+          0.7092886125688105
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/fixed400/affine/voxreg-cpu": {
+      "key": "pair/fixed400/affine/voxreg-cpu",
+      "options": {
+        "transform": "affine",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu",
+        "initialization": "center_geometry",
+        "max_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.295935759000713,
+        0.29556514200521633,
+        0.2963699809915852
+      ],
+      "cold_seconds": 0.4784005330002401,
+      "run_status": "completed",
+      "warm_median_seconds": 0.295935759000713,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 4.618527782440651e-13,
+      "independent_resampling_max_relative_to_input_peak": 1.6317774423046982e-14,
+      "moving_frame_iterations": {
+        "minimum": 400,
+        "median": 400.0,
+        "maximum": 400
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 1
+      },
+      "last_output_sha256": {
+        "registered": "00e48e14b3ddcf226a8f5c3ff86f3dd6bad404bbfd09293429487fc2ffce3864",
+        "transforms": "23d7d396d15cfec8d18990da8f34fa01714f320a15730022b8e8fdb73011ffed",
+        "n_iterations": "1e7be6b7b822671624a11e5bad13b99f401945b10fce09c9b3a6e746970c1ad3",
+        "status": "e9c9d560a4d133dceb7ea51378b054eb6ae0909c185ad55969cc119d401ecdd1"
+      },
+      "matrix": [
+        [
+          1.0,
+          -8.80228566034345e-34,
+          2.322199188550474e-34,
+          -8.352366299321037e-33
+        ],
+        [
+          6.78771453042119e-34,
+          1.0240771793993417,
+          -0.05747046382584183,
+          -0.339481176909044
+        ],
+        [
+          -7.978080131625984e-36,
+          0.06600727453840675,
+          0.9904620270753068,
+          0.713838349197955
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/fixed400/affine/voxreg-cuda": {
+      "key": "pair/fixed400/affine/voxreg-cuda",
+      "options": {
+        "transform": "affine",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda",
+        "initialization": "center_geometry",
+        "max_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.8236844640050549,
+        0.826324404013576,
+        0.8259275990130845
+      ],
+      "cold_seconds": 1.4714037189842202,
+      "run_status": "completed",
+      "warm_median_seconds": 0.8259275990130845,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 5.151434834260726e-13,
+      "independent_resampling_max_relative_to_input_peak": 1.8200594548783172e-14,
+      "moving_frame_iterations": {
+        "minimum": 400,
+        "median": 400.0,
+        "maximum": 400
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 1
+      },
+      "last_output_sha256": {
+        "registered": "708d24a35676119702aac494e80610a3f7640c44390e967d10b08e21e011bc4a",
+        "transforms": "b72c49ff3a41510a47d31a89cee5707cd5723c486f27e8533b4f79ad88a5ec89",
+        "n_iterations": "1e7be6b7b822671624a11e5bad13b99f401945b10fce09c9b3a6e746970c1ad3",
+        "status": "e9c9d560a4d133dceb7ea51378b054eb6ae0909c185ad55969cc119d401ecdd1"
+      },
+      "matrix": [
+        [
+          1.0,
+          -8.80228568673286e-34,
+          2.3221992046995112e-34,
+          -8.352366272056595e-33
+        ],
+        [
+          6.787714570922155e-34,
+          1.0240771793518286,
+          -0.057470464139301874,
+          -0.33948117554592583
+        ],
+        [
+          -7.978079547314524e-36,
+          0.06600727475473965,
+          0.9904620269956967,
+          0.7138383468285069
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/fixed400/rigid/confusius": {
+      "key": "pair/fixed400/rigid/confusius",
+      "options": {
+        "transform_type": "rigid",
+        "initialization": "center_geometry",
+        "sitk_threads": 8,
+        "show_progress": false,
+        "plot_metric": false,
+        "plot_composite": false,
+        "number_of_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        1.1408522889832966,
+        0.9931802470237017,
+        1.0752737169968896
+      ],
+      "cold_seconds": 1.1303407269879244,
+      "run_status": "completed",
+      "warm_median_seconds": 1.0752737169968896,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 4.902744876744691e-13,
+      "independent_resampling_max_relative_to_input_peak": 1.732194515677295e-14,
+      "moving_frame_iterations": {
+        "minimum": 400,
+        "median": 400.0,
+        "maximum": 400
+      },
+      "all_frame_status_counts": {
+        "completed": 1
+      },
+      "last_output_sha256": {
+        "registered": "1d21fec8d82fb7dcc6ed7756f573bbb08024b6dd31d339744bf5d4ba63e9a823",
+        "transforms": "432a3b19eb65537f7a2b3208c53eacd85f035bd26bdefb335346a05fa52dcf0f",
+        "n_iterations": "1e7be6b7b822671624a11e5bad13b99f401945b10fce09c9b3a6e746970c1ad3",
+        "status": "626be23975c2fd6e2a0d3786824d20365f0c6cc2fdb900efd6b1a507bf488eb9"
+      },
+      "matrix": [
+        [
+          1.0,
+          -2.0064428275533327e-20,
+          -4.387192112065668e-21,
+          2.1007616828504272e-19
+        ],
+        [
+          1.9783382654527743e-20,
+          0.9983911232850781,
+          -0.05670242451218494,
+          -0.11292018828802461
+        ],
+        [
+          5.5178353905062535e-21,
+          0.05670242451218494,
+          0.9983911232850781,
+          0.7822228723446226
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/fixed400/rigid/voxreg-cpu": {
+      "key": "pair/fixed400/rigid/voxreg-cpu",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cpu",
+        "initialization": "center_geometry",
+        "max_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.2792721470177639,
+        0.27869797000312246,
+        0.2791142860078253
+      ],
+      "cold_seconds": 0.46039168298011646,
+      "run_status": "completed",
+      "warm_median_seconds": 0.2791142860078253,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 5.435651928564766e-13,
+      "independent_resampling_max_relative_to_input_peak": 1.920476528250914e-14,
+      "moving_frame_iterations": {
+        "minimum": 400,
+        "median": 400.0,
+        "maximum": 400
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 1
+      },
+      "last_output_sha256": {
+        "registered": "02433d1bef457fa7d47d2c419a9ddbb6179928fac35ab00402478c2af92f1de3",
+        "transforms": "887a2ebe106b941f10f0b3bbb6899a810b4b85f59d91623b7b3c7731ba25da0a",
+        "n_iterations": "1e7be6b7b822671624a11e5bad13b99f401945b10fce09c9b3a6e746970c1ad3",
+        "status": "e9c9d560a4d133dceb7ea51378b054eb6ae0909c185ad55969cc119d401ecdd1"
+      },
+      "matrix": [
+        [
+          1.0,
+          -7.311933448738043e-34,
+          1.3454593213882412e-34,
+          0.0
+        ],
+        [
+          7.377820911965554e-34,
+          0.9983064732053948,
+          -0.05817375315558204,
+          -0.12288492101262527
+        ],
+        [
+          -9.178181384394654e-35,
+          0.05817375315558204,
+          0.9983064732053948,
+          0.7799617539481959
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "pair/fixed400/rigid/voxreg-cuda": {
+      "key": "pair/fixed400/rigid/voxreg-cuda",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "none",
+        "progress": false,
+        "device": "cuda",
+        "initialization": "center_geometry",
+        "max_iterations": 400,
+        "convergence_window_size": 401
+      },
+      "input_dtype": "float64",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.7957610549929086,
+        0.8007457620115019,
+        0.8021084200008772
+      ],
+      "cold_seconds": 1.4587505910021719,
+      "run_status": "completed",
+      "warm_median_seconds": 0.8007457620115019,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 5.684341886080801e-13,
+      "independent_resampling_max_relative_to_input_peak": 2.0083414674519362e-14,
+      "moving_frame_iterations": {
+        "minimum": 400,
+        "median": 400.0,
+        "maximum": 400
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 1
+      },
+      "last_output_sha256": {
+        "registered": "37bcce40500e88c020c3c95d2a197427d817f23ff79d3f64defef65c628142cb",
+        "transforms": "90811f32214a21bc010b090d553563a8fffd5836a4f2e2094f6afd82cdb62f24",
+        "n_iterations": "1e7be6b7b822671624a11e5bad13b99f401945b10fce09c9b3a6e746970c1ad3",
+        "status": "e9c9d560a4d133dceb7ea51378b054eb6ae0909c185ad55969cc119d401ecdd1"
+      },
+      "matrix": [
+        [
+          1.0,
+          -7.311933452421658e-34,
+          1.345459322177539e-34,
+          0.0
+        ],
+        [
+          7.377820915715909e-34,
+          0.9983064732036793,
+          -0.058173753185021736,
+          -0.12288492130618422
+        ],
+        [
+          -9.178181387955649e-35,
+          0.058173753185021736,
+          0.9983064732036793,
+          0.7799617535207866
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "series/example/rigid/confusius": {
+      "key": "series/example/rigid/confusius",
+      "options": {
+        "transform": "rigid",
+        "n_jobs": 8,
+        "moving_intensity_scaling": "db",
+        "learning_rate": 1.0,
+        "show_progress": false
+      },
+      "input_dtype": "float64",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        7.494821973989019,
+        7.458238812017953,
+        7.4692267020000145
+      ],
+      "cold_seconds": 9.57369272102369,
+      "run_status": "completed",
+      "warm_median_seconds": 7.4692267020000145,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 2.128217602148652e-10,
+      "independent_resampling_max_relative_to_input_peak": 1.7103180575252246e-14,
+      "full_grid_support_fraction": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.9832589285714286,
+        "median": 0.9833286830357143,
+        "maximum": 0.9833984375
+      },
+      "moving_frame_iterations": {
+        "minimum": 10,
+        "median": 33.0,
+        "maximum": 40
+      },
+      "all_frame_status_counts": {
+        "completed": 120
+      },
+      "last_output_sha256": {
+        "registered": "9a6b00c77bd3c54b5b4d87677fd10e3103568bd160df2b8381863168cb683514",
+        "transforms": "0cf5182fc38d5cdb76345f805ec757b75f940e8044f677b65860730166551c6c",
+        "n_iterations": "6797aa726a808405da37a113dfa8a2ce0f8dfb747f13e2241f37894d49d6d306",
+        "status": "5a58a091cbbedde130a83f53412e1316e80302f6fccda3e07cc070c44f0908bd"
+      }
+    },
+    "series/example/rigid/voxreg-cpu": {
+      "key": "series/example/rigid/voxreg-cpu",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "db",
+        "progress": false,
+        "device": "cpu",
+        "batch_size": 32
+      },
+      "input_dtype": "float64",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        1.3710037800192367,
+        1.086698125989642,
+        1.0947252819896676
+      ],
+      "cold_seconds": 1.4662793970201164,
+      "run_status": "completed",
+      "warm_median_seconds": 1.0947252819896676,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 2.255546860396862e-10,
+      "independent_resampling_max_relative_to_input_peak": 1.8126447789156226e-14,
+      "full_grid_support_fraction": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.9832589285714286,
+        "median": 0.9833286830357143,
+        "maximum": 0.9833286830357143
+      },
+      "moving_frame_iterations": {
+        "minimum": 51,
+        "median": 79.0,
+        "maximum": 95
+      },
+      "all_frame_status_counts": {
+        "converged": 119,
+        "reference": 1
+      },
+      "last_output_sha256": {
+        "registered": "022ed02c5a6987372689101939e22ebef1c615e25f0897b686eec12081243cbc",
+        "transforms": "e3fa3dc34be219cf17d17fcfcd6956415a963a8c1481d0d1a0a17d40b6d85c40",
+        "n_iterations": "7242a4dba27fd3331ae525e0eac114d9b27c8493a9c73fe5cc1190c21b34c01b",
+        "status": "b588075b36adc63ae6e520387b1c4a04d0035ea53b1691eb1a7293153b1be3cc"
+      }
+    },
+    "series/example/rigid/voxreg-cuda120": {
+      "key": "series/example/rigid/voxreg-cuda120",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "db",
+        "progress": false,
+        "device": "cuda",
+        "batch_size": 120
+      },
+      "input_dtype": "float64",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.23628662299597636,
+        0.23545257799560204,
+        0.24032100598560646
+      ],
+      "cold_seconds": 0.8178189680038486,
+      "run_status": "completed",
+      "warm_median_seconds": 0.23628662299597636,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 2.1464074961841106e-10,
+      "independent_resampling_max_relative_to_input_peak": 1.7249361605809958e-14,
+      "full_grid_support_fraction": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.9832589285714286,
+        "median": 0.9833286830357143,
+        "maximum": 0.9833286830357143
+      },
+      "moving_frame_iterations": {
+        "minimum": 51,
+        "median": 79.0,
+        "maximum": 95
+      },
+      "all_frame_status_counts": {
+        "converged": 119,
+        "reference": 1
+      },
+      "last_output_sha256": {
+        "registered": "1c71df3d7c2bb890836906ece28f915290f20bf382205ea911127fed40e748a1",
+        "transforms": "f125fbcdd8a551b3bce7ca547dd732dc6f593831b08137528ea7e23344dc2d38",
+        "n_iterations": "7242a4dba27fd3331ae525e0eac114d9b27c8493a9c73fe5cc1190c21b34c01b",
+        "status": "b588075b36adc63ae6e520387b1c4a04d0035ea53b1691eb1a7293153b1be3cc"
+      }
+    },
+    "series/example/rigid/voxreg-cuda32": {
+      "key": "series/example/rigid/voxreg-cuda32",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "db",
+        "progress": false,
+        "device": "cuda",
+        "batch_size": 32
+      },
+      "input_dtype": "float64",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.8800395420112181,
+        0.8801089679764118,
+        0.8827349889907055
+      ],
+      "cold_seconds": 1.5520661310001742,
+      "run_status": "completed",
+      "warm_median_seconds": 0.8801089679764118,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 2.1464074961841106e-10,
+      "independent_resampling_max_relative_to_input_peak": 1.7249361605809958e-14,
+      "full_grid_support_fraction": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.9832589285714286,
+        "median": 0.9833286830357143,
+        "maximum": 0.9833286830357143
+      },
+      "moving_frame_iterations": {
+        "minimum": 51,
+        "median": 79.0,
+        "maximum": 95
+      },
+      "all_frame_status_counts": {
+        "converged": 119,
+        "reference": 1
+      },
+      "last_output_sha256": {
+        "registered": "1c71df3d7c2bb890836906ece28f915290f20bf382205ea911127fed40e748a1",
+        "transforms": "f125fbcdd8a551b3bce7ca547dd732dc6f593831b08137528ea7e23344dc2d38",
+        "n_iterations": "7242a4dba27fd3331ae525e0eac114d9b27c8493a9c73fe5cc1190c21b34c01b",
+        "status": "b588075b36adc63ae6e520387b1c4a04d0035ea53b1691eb1a7293153b1be3cc"
+      }
+    },
+    "series/fixed100/rigid/confusius": {
+      "key": "series/fixed100/rigid/confusius",
+      "options": {
+        "transform": "rigid",
+        "n_jobs": 8,
+        "moving_intensity_scaling": "db",
+        "learning_rate": 1.0,
+        "show_progress": false,
+        "number_of_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "input_dtype": "float64",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        21.830357800994534,
+        21.865271300979657,
+        21.857986636983696
+      ],
+      "cold_seconds": 23.76677342900075,
+      "run_status": "completed",
+      "warm_median_seconds": 21.857986636983696,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 2.482920535840094e-10,
+      "independent_resampling_max_relative_to_input_peak": 1.9953710671127622e-14,
+      "full_grid_support_fraction": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.9832589285714286,
+        "median": 0.9833286830357143,
+        "maximum": 0.9833984375
+      },
+      "moving_frame_iterations": {
+        "minimum": 100,
+        "median": 100.0,
+        "maximum": 100
+      },
+      "all_frame_status_counts": {
+        "completed": 120
+      },
+      "last_output_sha256": {
+        "registered": "19be442e6eb6cfa6493f648cc873761afd0eb480350627a39f9f2185213187c2",
+        "transforms": "1810760ac8b411dae4d0c3b0ae0a54a56b490fab0d8cabe6acd4c6848269053d",
+        "n_iterations": "9cb2a523b4027e067efc98d8730c35a1916cc4a9fc4937464988d6c0bd087c86",
+        "status": "5a58a091cbbedde130a83f53412e1316e80302f6fccda3e07cc070c44f0908bd"
+      }
+    },
+    "series/fixed100/rigid/voxreg-cpu": {
+      "key": "series/fixed100/rigid/voxreg-cpu",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "db",
+        "progress": false,
+        "device": "cpu",
+        "batch_size": 32,
+        "max_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "input_dtype": "float64",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        1.2171983839944005,
+        1.117515462974552,
+        1.1192111800191924
+      ],
+      "cold_seconds": 1.5387531830056105,
+      "run_status": "completed",
+      "warm_median_seconds": 1.1192111800191924,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 2.382876118645072e-10,
+      "independent_resampling_max_relative_to_input_peak": 1.9149715003060206e-14,
+      "full_grid_support_fraction": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.9832589285714286,
+        "median": 0.9833286830357143,
+        "maximum": 0.9833984375
+      },
+      "moving_frame_iterations": {
+        "minimum": 100,
+        "median": 100.0,
+        "maximum": 100
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 119,
+        "reference": 1
+      },
+      "last_output_sha256": {
+        "registered": "9d6662e5e8455bae4e3e43515039fac3f221fa230656e983bbdc812b210372a0",
+        "transforms": "25fb1b29c0ba1f35460e47a198f20428fd23dde670e77f2f74926ad933ac1f18",
+        "n_iterations": "013e59431bd73d89110d2f4eaa433179adb4e9018d825a47a6865b7b465b1789",
+        "status": "dc27b220dffe581a9818ae1ff97e1040e5c4093fc9ab2c9a931fee8ea533e9b9"
+      }
+    },
+    "series/fixed100/rigid/voxreg-cuda120": {
+      "key": "series/fixed100/rigid/voxreg-cuda120",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "db",
+        "progress": false,
+        "device": "cuda",
+        "batch_size": 120,
+        "max_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "input_dtype": "float64",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.22539955799584277,
+        0.22216915199533105,
+        0.23321304700220935
+      ],
+      "cold_seconds": 0.783250181004405,
+      "run_status": "completed",
+      "warm_median_seconds": 0.22539955799584277,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 2.191882231272757e-10,
+      "independent_resampling_max_relative_to_input_peak": 1.7614814182204236e-14,
+      "full_grid_support_fraction": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.9832589285714286,
+        "median": 0.9833286830357143,
+        "maximum": 0.9833984375
+      },
+      "moving_frame_iterations": {
+        "minimum": 100,
+        "median": 100.0,
+        "maximum": 100
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 119,
+        "reference": 1
+      },
+      "last_output_sha256": {
+        "registered": "d490ac60759d3ea6e960b60da8d02d84860a034fed9bb7e7d7ed5d563ca7fb45",
+        "transforms": "86260c883628d89a1180267d8d50f968290a76e929c7a89f8d944c1fbe237305",
+        "n_iterations": "013e59431bd73d89110d2f4eaa433179adb4e9018d825a47a6865b7b465b1789",
+        "status": "dc27b220dffe581a9818ae1ff97e1040e5c4093fc9ab2c9a931fee8ea533e9b9"
+      }
+    },
+    "series/fixed100/rigid/voxreg-cuda32": {
+      "key": "series/fixed100/rigid/voxreg-cuda32",
+      "options": {
+        "transform": "rigid",
+        "intensity_scaling": "db",
+        "progress": false,
+        "device": "cuda",
+        "batch_size": 32,
+        "max_iterations": 100,
+        "convergence_window_size": 101
+      },
+      "input_dtype": "float64",
+      "shape": [
+        120,
+        1,
+        112,
+        128
+      ],
+      "warm_seconds": [
+        0.8319974140031263,
+        0.8315499940072186,
+        0.8344294000125956
+      ],
+      "cold_seconds": 1.4926268139970489,
+      "run_status": "completed",
+      "warm_median_seconds": 0.8319974140031263,
+      "output_dtype": "float64",
+      "repeated_outputs_bitwise_equal": true,
+      "independent_resampling_max_abs": 2.191882231272757e-10,
+      "independent_resampling_max_relative_to_input_peak": 1.7614814182204236e-14,
+      "full_grid_support_fraction": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.9832589285714286,
+        "median": 0.9833286830357143,
+        "maximum": 0.9833984375
+      },
+      "moving_frame_iterations": {
+        "minimum": 100,
+        "median": 100.0,
+        "maximum": 100
+      },
+      "all_frame_status_counts": {
+        "max_iterations": 119,
+        "reference": 1
+      },
+      "last_output_sha256": {
+        "registered": "d490ac60759d3ea6e960b60da8d02d84860a034fed9bb7e7d7ed5d563ca7fb45",
+        "transforms": "86260c883628d89a1180267d8d50f968290a76e929c7a89f8d944c1fbe237305",
+        "n_iterations": "013e59431bd73d89110d2f4eaa433179adb4e9018d825a47a6865b7b465b1789",
+        "status": "dc27b220dffe581a9818ae1ff97e1040e5c4093fc9ab2c9a931fee8ea533e9b9"
+      }
+    }
+  },
+  "quality": {
+    "pair": {
+      "common_fraction": 0.8541434151785714,
+      "scores": {
+        "identity": 0.19639856265022,
+        "pair/example/affine/confusius": 0.8394016424021734,
+        "pair/example/affine/voxreg-cpu": 0.6389199637915056,
+        "pair/example/affine/voxreg-cuda": 0.6389199637086919,
+        "pair/example/rigid/confusius": 0.796209883930197,
+        "pair/example/rigid/voxreg-cpu": 0.5474885289688023,
+        "pair/example/rigid/voxreg-cuda": 0.5474885288762739,
+        "pair/fixed400/affine/confusius": 0.8409802716765455,
+        "pair/fixed400/affine/voxreg-cpu": 0.8680762835874233,
+        "pair/fixed400/affine/voxreg-cuda": 0.868076283568958,
+        "pair/fixed400/rigid/confusius": 0.8287415630660856,
+        "pair/fixed400/rigid/voxreg-cpu": 0.8308327231651873,
+        "pair/fixed400/rigid/voxreg-cuda": 0.8308327231712322
+      }
+    },
+    "series": {
+      "common_fraction": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.9734933035714286,
+        "median": 0.9833286830357143,
+        "maximum": 0.9833286830357143
+      },
+      "before": {
+        "n_valid": 119,
+        "n_invalid": 0,
+        "minimum": 0.8702558835198037,
+        "median": 0.939937325286192,
+        "maximum": 0.9722482193033705
+      },
+      "frames_selected_by_initial_alignment": [
+        76,
+        115
+      ],
+      "selection": "worst and median initial full-grid NCC\u00b2, excluding reference; no registered result used for selection",
+      "scores": {
+        "series/example/rigid/confusius": {
+          "n_valid": 119,
+          "n_invalid": 0,
+          "minimum": 0.9174638321430129,
+          "median": 0.9608550148204529,
+          "maximum": 0.975732419330932
+        },
+        "series/example/rigid/voxreg-cpu": {
+          "n_valid": 119,
+          "n_invalid": 0,
+          "minimum": 0.9175760317493741,
+          "median": 0.961167198841533,
+          "maximum": 0.97598484502726
+        },
+        "series/example/rigid/voxreg-cuda120": {
+          "n_valid": 119,
+          "n_invalid": 0,
+          "minimum": 0.917576031748942,
+          "median": 0.9611671988445154,
+          "maximum": 0.9759848450270545
+        },
+        "series/example/rigid/voxreg-cuda32": {
+          "n_valid": 119,
+          "n_invalid": 0,
+          "minimum": 0.917576031748942,
+          "median": 0.9611671988445154,
+          "maximum": 0.9759848450270545
+        },
+        "series/fixed100/rigid/confusius": {
+          "n_valid": 119,
+          "n_invalid": 0,
+          "minimum": 0.9174627860543773,
+          "median": 0.9608560300533407,
+          "maximum": 0.9757330033558557
+        },
+        "series/fixed100/rigid/voxreg-cpu": {
+          "n_valid": 119,
+          "n_invalid": 0,
+          "minimum": 0.9175761687255418,
+          "median": 0.9611676217009115,
+          "maximum": 0.9759851011416133
+        },
+        "series/fixed100/rigid/voxreg-cuda120": {
+          "n_valid": 119,
+          "n_invalid": 0,
+          "minimum": 0.9175761687262227,
+          "median": 0.9611676217005533,
+          "maximum": 0.9759851011417381
+        },
+        "series/fixed100/rigid/voxreg-cuda32": {
+          "n_valid": 119,
+          "n_invalid": 0,
+          "minimum": 0.9175761687262227,
+          "median": 0.9611676217005533,
+          "maximum": 0.9759851011417381
+        }
+      },
+      "raster_column": 101
+    },
+    "cpu_cuda_max_pointwise_pixels": {
+      "pair/example/affine/voxreg-cuda": 4.462258003184873e-08,
+      "pair/example/rigid/voxreg-cuda": 5.6026057354112544e-09,
+      "pair/fixed400/affine/voxreg-cuda": 3.444462721297575e-08,
+      "pair/fixed400/rigid/voxreg-cuda": 5.944010102974012e-09,
+      "series/example/rigid/voxreg-cuda32": 4.745591396618793e-08,
+      "series/example/rigid/voxreg-cuda120": 4.745591396618793e-08,
+      "series/fixed100/rigid/voxreg-cuda32": 0.0019650704977373073,
+      "series/fixed100/rigid/voxreg-cuda120": 0.0019650704977373073
+    },
+    "cpu_cuda_precision_gate": {
+      "maximum_pointwise_limit_pixels": 0.001,
+      "failed_cases": [
+        "series/fixed100/rigid/voxreg-cuda32",
+        "series/fixed100/rigid/voxreg-cuda120"
+      ],
+      "all_pass": false
+    },
+    "precision_failure_detail": {
+      "source_frame": 258,
+      "frame_offset": 38,
+      "maximum_pointwise_pixels": 0.0019650704977373073,
+      "limit_pixels": 0.001,
+      "policy": "fixed100",
+      "both_gpu_batch_sizes_fail": true,
+      "product_or_gate_changed": false
+    }
+  }
+}

@@ -1,5 +1,9 @@
 # ConfUSIus examples: real-data validation (original guarded baseline)
 
+For **current public-API timings, motion-correction comparisons and alignment
+figures**, see [BENCHMARK.md](BENCHMARK.md). It preserves all successful and failed
+precision screens and does not claim atlas/B-spline support.
+
 **Historical baseline at `c2effa2`, using the former 90% coverage rule.**
 The [coverage-policy follow-up](../overlap-policy/README.md) removes that cutoff and
 reruns the same comparison. The failures and results below are preserved, not

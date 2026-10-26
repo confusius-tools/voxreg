@@ -543,6 +543,13 @@ crop. See the [coverage-policy follow-up](research/overlap-policy/README.md) and
 [original guarded results](research/confusius-examples/README.md). This does not
 calibrate defaults or guarantee robust matching from small overlaps.
 
+The [public-API example benchmark](research/confusius-examples/BENCHMARK.md) compares
+fresh float64 same-subject and motion-correction inputs with ConfUSIus 0.8.0:
+actual call times, common-support scores and inspected overlays. It retains a
+fixed100 motion-control CPU/CUDA precision failure (0.001965 px versus the unchanged
+0.001-pixel limit); native-stopping motion correction passes that screen. Atlas
+slice-to-volume and B-spline stages have no voxreg counterpart and were not timed.
+
 - Translation, rigid and affine: volumes or constrained coplanar slices only.
   No deformable, multi-pose, slice-to-volume or non-coplanar slice registration.
 - Independent fixed/moving grids, but uniform native coordinates, mm and finite

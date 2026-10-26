@@ -5,7 +5,25 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented pair/series controls, not general
 registration accuracy or performance.
 
-## Coverage cutoff removed (current)
+## Public-API example comparison (b75fc85 engine)
+
+[Benchmark report](research/confusius-examples/BENCHMARK.md) and
+[bounded records](research/confusius-examples/benchmark-results.json): 20 sequential
+fresh workers, one cold plus three warm calls each, original float64 example
+inputs/outputs. All repeated outputs are bitwise identical within each case.
+Native-stopping same-subject registration still under-captures in voxreg; fixed400
+improves it. Motion-correction scores and inspected overlays are very similar,
+with measured public-workflow speed advantages for voxreg on this 120-frame window.
+
+**Retained failure:** fixed100 float64 motion correction reaches **0.00196507 px**
+maximum CPU/CUDA disagreement at source frame258, exceeding the unchanged
+**0.001-pixel** gate for both CUDA batch sizes. Native-stopping motion correction
+passes (worst4.75e-8 px), as do all pair checks. No biological truth gate is claimed.
+Neither product code nor numerical gates changed. Three new harness tests pass;
+the prior373-test engine qualification is reused, not reported as a fresh full run.
+B-spline and slice-to-volume atlas stages remain unsupported/not compared.
+
+## Coverage cutoff removed (b75fc85)
 
 No fixed coverage percentage is required by the optimizer. Both evaluation sites
 require at least two valid sample centers, nonzero finite variances and finite
