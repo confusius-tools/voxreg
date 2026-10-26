@@ -1,5 +1,11 @@
 # Slice geometry extension
 
+**Subsequent reference acceptance test:** the
+[rigid→affine atlas comparison](../confusius-examples/RIGID-AFFINE-ATLAS.md) treats
+installed ConfUSIus as ground truth by operator instruction. Voxreg fails the
+placement/label comparison while CPU/CUDA agreement passes. The earlier atlas
+scores below remain frozen evidence, not a pass against that new criterion.
+
 One physical-space optimizer, three metric domains; no replicated slices and no
 separate slice-to-volume fitter. Original default rigid slice arithmetic is retained.
 

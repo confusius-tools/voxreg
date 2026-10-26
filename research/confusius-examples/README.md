@@ -1,5 +1,10 @@
 # ConfUSIus examples: real-data validation (original guarded baseline)
 
+For **rigid→affine atlas comparison with current installed ConfUSIus designated
+as ground truth**, see [RIGID-AFFINE-ATLAS.md](RIGID-AFFINE-ATLAS.md). Voxreg fails
+the reference-placement gate despite passing CPU/CUDA agreement; results and
+atlas-label overlays are retained separately from this historical baseline.
+
 For **current public-API timings, motion-correction comparisons and alignment
 figures**, see [BENCHMARK.md](BENCHMARK.md). It preserves all successful and failed
 precision screens and does not claim atlas/B-spline support.

@@ -5,6 +5,18 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented pair/series controls, not general
 registration accuracy or performance.
 
+## Rigid→affine atlas reference comparison
+
+[Report](research/confusius-examples/RIGID-AFFINE-ATLAS.md): current installed
+ConfUSIus is designated ground truth by the operator. Each library's own rigid
+matrix directly initializes its affine fit. Voxreg fails the unchanged 0.25-px
+RMS truth gate: rigid **7.710 px**, affine **7.654 px** (about **0.370 mm** final
+RMS). Foreground atlas-label agreement is only **45.40%** after affine; a higher
+native-slice correlation does not override this failure. Both CPU/CUDA precision
+checks pass, worst **2.94e-6 px**. No engine, optimizer or default change was made.
+Five new harness tests and 49 focused tests pass; the prior full422 engine run is
+reused, not presented as a fresh full427 run. Failed reference arms are retained.
+
 ## Slice geometry extension
 
 [Qualification](research/slice-geometry/README.md) and
