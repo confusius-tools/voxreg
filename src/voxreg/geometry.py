@@ -117,6 +117,33 @@ def _center_positions(
     return np.asarray(centers)
 
 
+def _plane_alignment(fixed: xr.DataArray, moving: xr.DataArray, mapped_normal=None):
+    """Align normals (unoriented unless seeded), with normal-only center shift."""
+    affines = [position_to_world(data) for data in (fixed, moving)]
+    normals, centers = [], []
+    for data, affine in zip((fixed, moving), affines, strict=True):
+        normal = np.cross(affine[:3, 2], affine[:3, 1])
+        normals.append(normal / np.linalg.norm(normal))
+        half = (np.array([data.sizes[d] for d in VOXEL_DIMS]) - 1) / 2
+        centers.append(affine[:3, 3] + affine[:3, :3] @ half)
+    first, second = normals
+    if (first if mapped_normal is None else mapped_normal) @ second < 0:
+        second = -second
+    axis = np.cross(first, second)
+    sine, cosine = np.linalg.norm(axis), np.clip(first @ second, -1, 1)
+    if sine > 1e-12:
+        # Unit-axis Rodrigues avoids division by 1+cos near opposite normals.
+        z, y, x = axis / sine
+        skew = np.array([[0, -x, y], [x, 0, -z], [-y, z, 0]])
+        rotation = np.eye(3) + sine * skew + (1 - cosine) * (skew @ skew)
+    elif cosine < 0:
+        axis = affines[0][:3, 2] / np.linalg.norm(affines[0][:3, 2])
+        rotation = 2 * np.outer(axis, axis) - np.eye(3)
+    else:
+        rotation = np.eye(3)
+    return rotation, second * (second @ (centers[1] - centers[0]))
+
+
 def position_to_world(data: xr.DataArray) -> npt.NDArray[np.float64]:
     """Return the physical affine mapping zero-based array positions to world.
 

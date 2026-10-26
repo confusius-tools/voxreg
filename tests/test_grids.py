@@ -366,11 +366,12 @@ def test_no_overlap_retains_identity_and_uses_original_minimum():
     )
 
 
-def test_non_coplanar_slices_and_mixed_dimensions_are_explicit_errors():
+def test_non_coplanar_needs_seed_and_mixed_grids_use_slice_domain():
     fixed, _ = pair(True)
     tilted = grid_data((1, 15, 17), [0, 20, 0], [0.5, 0.4, 0.3])
     with pytest.raises(ValueError, match="coplanar"):
         register(tilted, fixed, progress=False)
     volume = grid_data((3, 15, 17), [0, 0, 0], [0.5, 0.4, 0.3])
-    with pytest.raises(ValueError, match="coplanar|3D"):
-        register(volume, fixed, progress=False)
+    result = register(volume, fixed, max_iterations=1, progress=False)
+    assert result.registered.shape == fixed.shape
+    assert result.diagnostics.attrs["metric_domain"] == "fixed_slice"

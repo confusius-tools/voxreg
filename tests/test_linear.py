@@ -80,6 +80,40 @@ def error(a, b, data):
     )
 
 
+@pytest.mark.parametrize("model", ["rigid", "affine"])
+@pytest.mark.parametrize("device", DEVICES)
+def test_nonparallel_planes_refine_image_motion_after_geometry_alignment(model, device):
+    fixed, moving, truth = pair(True, model)
+    placement = np.eye(4)
+    placement[:3, :3] = Rotation.from_rotvec([0, 0.3, 0]).as_matrix()
+    placement[:3, 3] = [2, 1, -1]
+    center = (position_to_world(fixed) @ np.r_[(np.array(fixed.shape) - 1) / 2, 1])[:3]
+    spin = np.eye(4)
+    spin[:3, :3] = Rotation.from_rotvec([0.07, 0, 0]).as_matrix()
+    spin[:3, 3] = center - spin[:3, :3] @ center
+    placement = placement @ spin
+    moving = create_voxeldata(
+        moving.values,
+        dims=moving.dims,
+        voxel_to_world=placement @ position_to_world(moving),
+    )
+    truth = placement @ truth
+    kwargs = {
+        "transform": model,
+        "initialization": "align_planes",
+        "intensity_scaling": "none",
+        "max_iterations": 400,
+        "convergence_window_size": 401,
+        "progress": False,
+    }
+    result = register(moving, fixed, device=device, **kwargs)
+    assert np.sqrt(np.mean(error(result.transforms, truth, fixed) ** 2)) < 0.25
+    assert result.diagnostics.objective < -0.999
+    if device == "cuda":
+        cpu = register(moving, fixed, device="cpu", **kwargs)
+        assert error(result.transforms, cpu.transforms, fixed).max() < 0.001
+
+
 @pytest.mark.parametrize("planar", [False, True])
 @pytest.mark.parametrize("model", ["translation", "affine"])
 def test_seed_roundtrip_and_itk_oracle(planar, model):

@@ -18,7 +18,14 @@ def configure_transform(grid, fixed, transform):
     sizes = np.array([fixed.sizes[d] for d in ("k", "j", "i")])
     ell = np.linalg.norm(affine[:3, :3][:, sizes > 1], axis=0).min()
     scales = np.full(dimensions, ell)
-    if transform == "affine":
+    if transform == "affine" and getattr(grid, "slice_basis", None) is not None:
+        lattice = grid.slice_basis.T @ affine[:3, :3]
+        offset = grid.slice_basis.T @ (
+            affine[:3, 3] + affine[:3, :3] @ ((sizes - 1) / 2) - grid.center
+        )
+        variance = lattice**2 @ ((sizes.astype(float) ** 2 - 1) / 12) + offset**2
+        scales = np.r_[np.tile(ell / np.sqrt(variance), 3), scales]
+    elif transform == "affine":
         center_offset = grid.basis.T @ (
             affine[:3, 3] + affine[:3, :3] @ ((sizes - 1) / 2) - grid.center
         )
@@ -34,6 +41,18 @@ def configure_transform(grid, fixed, transform):
 def intrinsic_linear(parameters, grid):
     """Return centered intrinsic linear map and center displacement (non-rigid models)."""
     dimensions = grid.basis.shape[1]
+    if grid.transform == "affine" and getattr(grid, "slice_basis", None) is not None:
+        basis = grid.resident_slice_basis.to(parameters)
+        tangents = basis + parameters[:, :6].reshape(-1, 3, 2)
+        normal = torch.linalg.cross(tangents[:, :, 0], tangents[:, :, 1])
+        normal = normal / torch.linalg.vector_norm(
+            normal, dim=-1, keepdim=True
+        ).clamp_min(torch.finfo(parameters.dtype).tiny)
+        frame = torch.cat(
+            (basis, torch.linalg.cross(basis[:, 0], basis[:, 1])[:, None]), dim=1
+        )
+        linear = torch.cat((tangents, normal[:, :, None]), dim=-1) @ frame.T
+        return linear, parameters[:, -3:]
     identity = torch.eye(dimensions, dtype=parameters.dtype, device=parameters.device)
     linear = identity.expand(len(parameters), -1, -1)
     if grid.transform == "affine":
@@ -96,6 +115,23 @@ def initial_linear_parameters(values, grid):
     dimensions = grid.basis.shape[1]
     intrinsic = grid.basis.T @ linear @ grid.basis
     local_translation = translation @ grid.basis
+    if grid.transform == "affine" and getattr(grid, "slice_basis", None) is not None:
+        basis = grid.slice_basis
+        tangents = linear @ basis
+        parameters = np.column_stack(
+            ((tangents - basis).reshape(len(values), -1), translation)
+        )
+        reconstructed, _ = intrinsic_linear(torch.from_numpy(parameters), grid)
+        valid, _ = affine_properties(torch.from_numpy(parameters), grid)
+        if not valid.all():
+            raise ValueError(
+                "Slice-to-volume affine seed must have independent tangent columns."
+            )
+        if not np.allclose(linear, reconstructed.numpy(), rtol=0, atol=1e-6):
+            raise ValueError(
+                "Slice-to-volume affine seed has unidentifiable normal scale/shear/reflection; use a unit orthogonal normal completion."
+            )
+        return parameters
     if grid.transform == "translation" and not np.allclose(
         linear, np.eye(3), atol=1e-12, rtol=0
     ):
@@ -112,7 +148,7 @@ def initial_linear_parameters(values, grid):
             translation, local_translation @ grid.basis.T, rtol=0, atol=tolerance
         ):
             raise ValueError(
-                "Slice initial_transform must preserve the fixed plane and its normal; out-of-plane motion is unsupported."
+                "Slice initial_transform must preserve the fixed plane and its normal after accounting for seeded plane placement; use align_planes when centering cannot correct tilt."
             )
     if grid.transform == "translation":
         return local_translation
@@ -131,6 +167,14 @@ def linear_world_matrices(parameters, grid):
     """Export full centered world pulls, including affine scale/shear/reflection."""
     values = np.asarray(parameters, dtype=np.float64)
     dimensions = grid.basis.shape[1]
+    if grid.transform == "affine" and getattr(grid, "slice_basis", None) is not None:
+        linear, _ = intrinsic_linear(torch.from_numpy(values), grid)
+        matrices = np.broadcast_to(np.eye(4), (len(values), 4, 4)).copy()
+        matrices[:, :3, :3] = linear.numpy()
+        matrices[:, :3, 3] = values[:, -3:] - np.einsum(
+            "bij,j->bi", matrices[:, :3, :3] - np.eye(3), grid.center
+        )
+        return matrices
     linear = np.broadcast_to(np.eye(3), (len(values), 3, 3)).copy()
     if grid.transform == "affine":
         delta = values[:, : dimensions**2].reshape(-1, dimensions, dimensions)

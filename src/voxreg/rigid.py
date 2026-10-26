@@ -1,7 +1,8 @@
 """Independent linear registration with fixed-domain physical-space sampling."""
 
+import warnings
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Literal
 
@@ -15,6 +16,7 @@ from voxreg.convergence import WindowConvergence
 from voxreg.geometry import (
     VOXEL_DIMS,
     _center_positions,
+    _plane_alignment,
     _validate_registration_geometry,
     position_to_world,
 )
@@ -24,10 +26,16 @@ from voxreg.sampling import (
     _initial_parameters,
     global_ncc,
     make_grid,
+    sample_inverse_slice,
     sample_rigid,
     world_matrices,
 )
-from voxreg.transforms import affine_properties, configure_transform, linear_diagnostics
+from voxreg.transforms import (
+    affine_properties,
+    configure_transform,
+    linear_diagnostics,
+    validate_matrices,
+)
 
 
 @dataclass(frozen=True)
@@ -210,7 +218,7 @@ def register(
     *,
     transform: Literal["translation", "rigid", "affine"] = "rigid",
     initial_transform: npt.ArrayLike | xr.DataArray | None = None,
-    initialization: Literal["center_geometry", "center_moments"]
+    initialization: Literal["center_geometry", "center_moments", "align_planes"]
     | npt.ArrayLike
     | xr.DataArray
     | None = None,
@@ -236,9 +244,11 @@ def register(
         Spatial-only VoxelData with independent shape, spacing, origin and
         orientation. Required for spatial-only moving input. For recordings,
         omission uses the first frame and preserves that reference exactly.
-        Slice pairs must be coplanar; no plane alignment is inferred.
+        Noncoplanar slice pairs require a plane-compatible seed or align_planes.
+        Mixed slice/volume inputs fit on the native slice, sampling the 3D volume.
     transform : {"translation", "rigid", "affine"}, default: "rigid"
-        Model with 2/3, 3/6 or 6/12 parameters for coplanar slices/volumes.
+        Translation/rigid/affine use 2/3/6 in-plane parameters for slice pairs,
+        3/6/12 for volume pairs, and 3/6/9 for mixed slice/volume inputs.
         Euler belongs to the rigid family; the rigid model uses rotation vectors,
         not ITK's Euler optimizer parameterization. Affine refines the full linear
         map, including scale and shear, rather than freezing an affine prefix.
@@ -253,10 +263,12 @@ def register(
         within 1e-6 is normalized); translation seeds require an identity linear
         part. Affine seeds must pass the normalized determinant guard. Negative
         determinant affine seeds are supported, but fitting preserves their
-        orientation sign. Slice seeds must preserve the fixed plane and its normal.
+        orientation sign. For two slices, seeds must map the fixed plane into the
+        moving plane with the supported normal completion. Mixed affine seeds
+        require unit orthogonal normal completion.
         For an implicit first-frame reference its initial transform must be identity;
         use explicit fixed to optimize every frame from a shared nonidentity pose.
-    initialization : {"center_geometry", "center_moments"} or array-like, optional
+    initialization : {"center_geometry", "center_moments", "align_planes"} or array-like, optional
         Named centering mode or model-compatible matrix seed, mutually exclusive
         with initial_transform. Matrices alias initial_transform with the same
         shape, world-coordinate, label and model requirements.
@@ -329,11 +341,23 @@ def register(
     use a centered axis-angle rotation vector (right-handed XYZ, stored z/y/x).
     Affine parameters are row-major deviations from identity plus physical center
     displacement; diagnostics report actual linear coefficients, not deviations.
-    Slices optimize only their intrinsic orthonormal i/j plane, leaving its normal
+    Slice pairs optimize only their intrinsic orthonormal i/j plane, leaving its normal
     fixed. All models use the same sampling, optimizer and per-frame stopping path.
-    Automatic modes also require coplanar slices and do not infer plane alignment.
-    Separate ITK-style
-    fixed/moving pre-transforms and slice-to-volume fitting are not supported.
+    align_planes explicitly assumes corresponding sections: align centers and
+    unoriented plane normals, then refine in-plane. Centering alone corrects
+    parallel-plane offsets, not tilt. Translation cannot align nonparallel planes.
+    Mixed slice/volume fitting samples the volume along the transformed native
+    slice, in either argument order; rigid has six identifiable pose parameters,
+    affine nine tangent/translation parameters with unit orthogonal normal
+    completion. Unidentifiable affine normal scale/shear seeds are rejected.
+    Mixed fits use the geometric slice pivot; moments changes the seed, not that
+    pivot. valid_fraction describes metric-domain overlap. For a moving slice
+    against a fixed volume, returned intensities still use the fixed volume grid
+    and only centers lying on the zero-thickness slice are valid; an empty mask
+    warns rather than inventing thickness. Use the inverse returned pull to view
+    the volume on the native slice. Diagnostics name the fitting domain; exported
+    transforms always retain the original fixed-world-to-moving-world convention.
+    Separate ITK-style fixed/moving pre-transform chains remain unsupported.
     Fewer than two valid sample centers flags insufficient overlap; zero/invalid
     variance flags an invalid metric. No fixed coverage percentage is required.
     valid_fraction reports coverage, not confidence: tiny overlaps can give
@@ -443,13 +467,20 @@ def register(
         )
     if isinstance(progress, str):
         progress = moving.sizes["time"] > 1
+    reverse = moving.sizes["k"] == 1 and fixed.sizes["k"] > 1
+    fit_fixed = moving.isel(time=0, drop=True) if reverse else fixed
+    fit_moving = fixed if reverse else moving
     if initialization is not None and initial_transform is not None:
         raise ValueError("Use initialization or initial_transform, not both.")
     if initialization is not None:
         if isinstance(initialization, str):
-            if initialization not in ("center_geometry", "center_moments"):
+            if initialization not in (
+                "center_geometry",
+                "center_moments",
+                "align_planes",
+            ):
                 raise ValueError(
-                    "initialization must be None, center_geometry, center_moments or a model-compatible matrix."
+                    "initialization must be None, center_geometry, center_moments, align_planes or a model-compatible matrix."
                 )
         else:
             if np.ndim(initialization) not in (2, 3):
@@ -459,8 +490,13 @@ def register(
             initial_transform, initialization = initialization, None
     center = None
     if initialization is not None:
-        fixed_position = _center_positions(fixed, initialization, "fixed")[0]
-        moving_positions = _center_positions(moving, initialization, "moving")
+        if initialization == "align_planes" and (
+            fixed.sizes["k"] != 1 or moving.sizes["k"] != 1
+        ):
+            raise ValueError("align_planes is only defined for two k=1 slices.")
+        mode = "center_geometry" if initialization == "align_planes" else initialization
+        fixed_position = _center_positions(fixed, mode, "fixed")[0]
+        moving_positions = _center_positions(moving, mode, "moving")
         af, am = position_to_world(fixed), position_to_world(moving)
         fixed_offset = af[:3, :3] @ fixed_position
         initial_transform = np.broadcast_to(
@@ -470,11 +506,35 @@ def register(
         initial_transform[:, :3, 3] = (
             am[:3, 3] - af[:3, 3] + moving_positions @ am[:3, :3].T - fixed_offset
         )
-        if initialization == "center_moments":
+        if initialization == "align_planes":
+            rotation, _ = _plane_alignment(fixed, moving)
+            initial_transform[:, :3, :3] = rotation
+            initial_transform[:, :3, 3] -= (rotation - np.eye(3)) @ (
+                af[:3, 3] + fixed_offset
+            )
+        if initialization == "center_moments" and not (
+            fit_fixed.sizes["k"] == 1 and fit_moving.sizes["k"] > 1
+        ):
             center = af[:3, 3] + fixed_offset
     # Double physical geometry/state keeps gradient reductions stable across chunk sizes.
-    plane = make_grid(fixed, moving, device=device, dtype=torch.float64, center=center)
-    plane = configure_transform(plane, fixed, transform)
+    plane = make_grid(
+        fit_fixed,
+        fit_moving,
+        device=device,
+        dtype=torch.float64,
+        center=center,
+        plane_seed=initial_transform,
+    )
+    if (
+        transform == "translation"
+        and isinstance(plane, SpatialGrid)
+        and plane.plane_rotation is not None
+        and not np.allclose(plane.plane_rotation, np.eye(3), atol=1e-6, rtol=0)
+    ):
+        raise ValueError(
+            "Translation cannot align nonparallel slice planes; choose rigid or affine."
+        )
+    plane = configure_transform(plane, fit_fixed, transform)
     initial = None
     if initial_transform is not None:
         if isinstance(initial_transform, xr.DataArray):
@@ -509,6 +569,14 @@ def register(
                     and initial_transform.attrs[key] != expected
                 ):
                     raise ValueError(f"initial_transform {key} must be {expected!r}.")
+        if reverse:
+            initial_transform = validate_matrices(
+                initial_transform, moving.sizes["time"]
+            )
+            try:
+                initial_transform = np.linalg.inv(initial_transform)
+            except np.linalg.LinAlgError as error:
+                raise ValueError("initial_transform must be nonsingular.") from error
         initial = _initial_parameters(initial_transform, plane, moving.sizes["time"])
         if implicit_fixed:
             if not np.allclose(initial[0], 0, rtol=0, atol=1e-12):
@@ -583,8 +651,14 @@ def register(
             if device == "cuda":
                 torch.cuda.synchronize()
             start = perf_counter()
-            images = torch.tensor(fit[first:last], device=device)
-            target_tensor = torch.tensor(target, device=device)
+            if reverse:
+                images = torch.tensor(target[None], device=device).expand(
+                    last - first, *target.shape
+                )
+                target_tensor = torch.tensor(fit[first:last], device=device)
+            else:
+                images = torch.tensor(fit[first:last], device=device)
+                target_tensor = torch.tensor(target, device=device)
             reference = torch.zeros(last - first, dtype=torch.bool, device=device)
             if implicit_fixed and first == 0:
                 reference[0] = True
@@ -614,12 +688,22 @@ def register(
             start = perf_counter()
             with torch.no_grad():
                 original = torch.tensor(
-                    raw[first:last].astype(resampling_dtype, copy=False),
+                    np.ascontiguousarray(raw[first:last], dtype=resampling_dtype),
                     device=device,
                 )
-                sampled, valid = sample_rigid(
-                    original, physical, plane, interpolation=interpolation
-                )
+                if reverse:
+                    sampled, valid = sample_inverse_slice(
+                        original,
+                        physical,
+                        plane,
+                        fixed,
+                        moving,
+                        interpolation=interpolation,
+                    )
+                else:
+                    sampled, valid = sample_rigid(
+                        original, physical, plane, interpolation=interpolation
+                    )
                 fills = original.amin(dim=spatial_axes)[reference_shape]
                 sampled = torch.where(valid, sampled, fills)
                 if implicit_fixed:
@@ -641,13 +725,39 @@ def register(
                 clocks.append(steps.cpu().numpy())
                 statuses.append(status.cpu().numpy())
                 objectives.append(loss.cpu().numpy())
-                overlaps.append(valid.float().mean(dim=spatial_axes).cpu().numpy())
+                overlaps.append(
+                    (fit_valid if reverse else valid)
+                    .float()
+                    .mean(dim=spatial_axes)
+                    .cpu()
+                    .numpy()
+                )
             timings["resample_download"] += perf_counter() - start
             if progress is True:
                 advance(last - first)
             elif callable(progress):
                 progress(last, len(raw))
     params = np.concatenate(parameters)
+    matrices = world_matrices(params, plane)
+    if reverse:
+        matrices = np.linalg.inv(matrices)
+    diagnostic_params, diagnostic_plane = params, plane
+    mixed = isinstance(plane, SpatialGrid) and plane.slice_basis is not None
+    if reverse or (mixed and transform == "affine"):
+        shifts = matrices[:, :3, 3] + np.einsum(
+            "bij,j->bi", matrices[:, :3, :3] - np.eye(3), plane.center
+        )
+        if transform == "affine":
+            diagnostic_params = np.column_stack(
+                ((matrices[:, :3, :3] - np.eye(3)).reshape(-1, 9), shifts)
+            )
+            diagnostic_plane = replace(
+                plane, slice_basis=None, resident_slice_basis=None
+            )
+        elif transform == "rigid":
+            diagnostic_params = np.column_stack((-params[:, :3], shifts))
+        else:
+            diagnostic_params = shifts
     labels = np.array(
         [
             "running",
@@ -666,12 +776,12 @@ def register(
             {
                 "angle": (
                     "time",
-                    params[:, 0],
+                    diagnostic_params[:, 0],
                     {"units": "rad", "basis": "intrinsic i/j plane"},
                 ),
                 "translation_i": (
                     "time",
-                    params[:, 1],
+                    diagnostic_params[:, 1],
                     {
                         "units": "mm",
                         "meaning": "center displacement along intrinsic unit i",
@@ -679,7 +789,7 @@ def register(
                 ),
                 "translation_j": (
                     "time",
-                    params[:, 2],
+                    diagnostic_params[:, 2],
                     {
                         "units": "mm",
                         "meaning": "center displacement along orthogonalized intrinsic j",
@@ -690,7 +800,7 @@ def register(
             else {
                 name: (
                     "time",
-                    params[:, column],
+                    diagnostic_params[:, column],
                     {"units": "rad" if column < 3 else "mm", "basis": "world z/y/x"},
                 )
                 for column, name in enumerate(
@@ -707,7 +817,7 @@ def register(
         )
     )
     if transform != "rigid":
-        motion = linear_diagnostics(params, plane)
+        motion = linear_diagnostics(diagnostic_params, diagnostic_plane)
     diagnostics = xr.Dataset(
         {
             "objective": ("time", np.concatenate(objectives)),
@@ -734,9 +844,34 @@ def register(
             ),
         },
     )
+    if isinstance(plane, SpatialGrid) and plane.slice_basis is not None:
+        diagnostics.attrs.update(
+            metric_domain="moving_slice" if reverse else "fixed_slice",
+            parameter_convention="fixed-world-to-moving-world centered map; fitted on native slice",
+            optimized_parameters=len(plane.parameter_scale),
+            rotation_center_zyx_mm=plane.center.tolist(),
+        )
+        if reverse:
+            diagnostics["output_valid_fraction"] = (
+                "time",
+                np.concatenate(masks).reshape(len(raw), -1).mean(axis=1),
+            )
+            if np.any(
+                (diagnostics.output_valid_fraction.values == 0)
+                & np.isfinite(diagnostics.objective.values)
+            ):
+                warnings.warn(
+                    "No fixed-grid sample centers lie on the fitted zero-thickness slice for some frames. Fitting used the native slice domain; use the inverse returned transform to sample the volume onto the native slice grid for visualization.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+    if isinstance(plane, SpatialGrid) and plane.plane_rotation is not None:
+        diagnostics.attrs["plane_alignment"] = (
+            "fixed-to-moving plane geometry; only in-plane motion optimized"
+        )
     axes = ["z", "y", "x", "1"]
     transforms = xr.DataArray(
-        world_matrices(params, plane),
+        matrices,
         dims=("time", "world_out", "world_in"),
         coords={"time": moving.time, "world_out": axes, "world_in": axes},
         attrs={"convention": "fixed-world-to-moving-world pull", "spatial_units": "mm"},

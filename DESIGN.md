@@ -78,14 +78,16 @@ from ITK's physical-shift estimator.
 Coplanar k=1 pairs retain fixed-plane 3-DOF constraints, now with independent
 in-plane grids. The identical-grid slice sampling kernel retains its qualified
 arithmetic; preprocessing, NCC, optimizer, convergence, failure guards and dtype
-handling are shared. Non-coplanar slices, other singleton configurations and
-slice-to-volume registration are explicit errors, not unconstrained 6-DOF fits.
+handling are shared. The subsequent slice-geometry extension accepts compatible
+plane seeds/explicit align_planes and samples mixed pairs on their native slice.
+Other singleton configurations remain errors; no slice is replicated into a volume.
 
 Initialization defaults to identity world motion; explicit rigid seeds now use
 the optimized ITK InitialTransform model described below. No fixed coverage
 percentage is required; fewer than two valid sample centers is insufficient overlap.
-Automatic geometry/moments centering is described below. Plane alignment, masks,
-pyramids and other metrics remain deferred. Initial 3D synthetic qualification and
+Automatic geometry/moments centering is described below. Explicit plane alignment
+and mixed-domain fitting are described in [research/slice-geometry/README.md](research/slice-geometry/README.md).
+Masks, pyramids and other metrics remain deferred. Initial 3D synthetic qualification and
 bitwise slice regression evidence are in [research/geometry/README.md](research/geometry/README.md).
 The subsequent [shared pair/series benchmark](research/registration/README.md)
 provides bounded ITK/FireANTs 3D time/memory comparisons, with independent physical
@@ -125,7 +127,8 @@ not pre-apply dB/log/sqrt/power transforms. Pre-scaled nonnegative inputs cannot
 reliably detected, so this is also a documented caller responsibility. Geometry
 centering or an explicit matrix remains available for signed images. The API does
 not infer the original units, invert display transforms, estimate rotation, align
-non-coplanar planes, or infer a reliable match from a small overlap.
+plane tilt (use explicit align_planes or a compatible seed for two slices), or
+infer a reliable match from a small overlap.
 
 ## Initial-transform model
 

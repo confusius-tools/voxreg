@@ -1,0 +1,496 @@
+{
+  "cpu": {
+    "device": "cpu",
+    "threads": 8,
+    "iterations": 100,
+    "inputs": [
+      {
+        "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220523/susi/sub-rat75_ses-20220523_acq-slice32_rec-minframe2d_pwd.nii.gz",
+        "sha256": "bfc059b22695ed6e7f5cf8b1927b0978d291a0f9d2f7bddae4ccd69f674d3049",
+        "sidecar_sha256": "324693cb1f9c93e767c75816ec78bb171bf4c8cf173d63b3e9ca459e8dbb402c",
+        "shape": [
+          1,
+          112,
+          128
+        ],
+        "dtype": "float64",
+        "raw_range": [
+          20.989732573125544,
+          6766.365013732707
+        ],
+        "position_to_world": [
+          [
+            0.3999999761581421,
+            -1.9172617353978458e-34,
+            -1.388833351185086e-33,
+            1.7763568394002505e-15
+          ],
+          [
+            1.7463359889231874e-34,
+            0.09855999797582625,
+            -6.364600602585139e-19,
+            5.000000000000002
+          ],
+          [
+            -8.711952302508758e-34,
+            -2.2372464514507346e-19,
+            0.10999999940395355,
+            -6.984999656677246
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220524/susi/sub-rat75_ses-20220524_acq-slice32_rec-minframe2d_pwd.nii.gz",
+        "sha256": "f97e329ed71aec0427dd0a1f44e9694712c76905a3a5004c3981f9d30cb75f91",
+        "sidecar_sha256": "7604bae724589b16188bbecce2fcca8f71e3a70aacbe5fca0fba4e998e83f560",
+        "shape": [
+          1,
+          112,
+          128
+        ],
+        "dtype": "float64",
+        "raw_range": [
+          37.04333990704922,
+          25065.500206656092
+        ],
+        "position_to_world": [
+          [
+            0.3999999761581421,
+            3.98012486173997e-34,
+            -2.7660057984100148e-33,
+            1.7763568394002505e-15
+          ],
+          [
+            -4.549644814859601e-34,
+            0.09855999797582628,
+            -8.449405938948477e-19,
+            4.999999999999998
+          ],
+          [
+            2.5388249847242993e-33,
+            1.2080067083566224e-18,
+            0.10999999940395354,
+            -6.984999656677246
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "warm_calls": [
+      {
+        "wall_seconds": 0.07398982000086107,
+        "stages": {
+          "prepare": 0.0023753330006002216,
+          "upload": 2.160300027753692e-05,
+          "optimize": 0.06991818100050295,
+          "resample_download": 0.0005233530000623432
+        }
+      },
+      {
+        "wall_seconds": 0.07355745199947705,
+        "stages": {
+          "prepare": 0.002197443999648385,
+          "upload": 2.0094999854336493e-05,
+          "optimize": 0.06973083400043834,
+          "resample_download": 0.0005154210002729087
+        }
+      },
+      {
+        "wall_seconds": 0.07341064899992489,
+        "stages": {
+          "prepare": 0.002179907999561692,
+          "upload": 1.9981000150437467e-05,
+          "optimize": 0.06960884100044495,
+          "resample_download": 0.0005077550003989018
+        }
+      }
+    ],
+    "resident_optimizer_seconds": [
+      0.07002896799986047,
+      0.06917109599999094,
+      0.06918824900003528
+    ],
+    "trace": {
+      "kernel_count": 0,
+      "kernel_sum_ms": 0.0,
+      "kernel_union_ms": 0.0,
+      "kernel_span_ms": 0.0,
+      "kernel_busy_fraction": null,
+      "median_kernel_us": null,
+      "launch_call_count": 0,
+      "launch_host_ms": 0.0,
+      "synchronize_call_count": 0,
+      "synchronize_host_ms": 0.0,
+      "memcpy_event_count": 0
+    },
+    "operators": [
+      {
+        "name": "voxreg::backward",
+        "count": 5,
+        "self_cpu_us": 780.92600000001,
+        "self_device_us": 0
+      },
+      {
+        "name": "ProfilerStep*",
+        "count": 5,
+        "self_cpu_us": 549.1210000000083,
+        "self_device_us": 0
+      },
+      {
+        "name": "voxreg::sample",
+        "count": 5,
+        "self_cpu_us": 306.69200000000455,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::mul",
+        "count": 175,
+        "self_cpu_us": 287.18699999999535,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::sum",
+        "count": 95,
+        "self_cpu_us": 248.66199999999378,
+        "self_device_us": 0
+      },
+      {
+        "name": "voxreg::ncc",
+        "count": 5,
+        "self_cpu_us": 237.93500000000415,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::copy_",
+        "count": 155,
+        "self_cpu_us": 169.75500000000744,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::all",
+        "count": 10,
+        "self_cpu_us": 149.22200000000026,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::where",
+        "count": 110,
+        "self_cpu_us": 132.0810000000008,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::le",
+        "count": 5,
+        "self_cpu_us": 128.15499999999946,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::add",
+        "count": 65,
+        "self_cpu_us": 124.69800000000072,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::ge",
+        "count": 5,
+        "self_cpu_us": 123.87799999999879,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::select",
+        "count": 150,
+        "self_cpu_us": 113.40200000000625,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::cat",
+        "count": 10,
+        "self_cpu_us": 110.99900000000133,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::pow",
+        "count": 50,
+        "self_cpu_us": 101.87299999999311,
+        "self_device_us": 0
+      }
+    ],
+    "source_sha256": {
+      "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/research/performance/profile_pair.py": "2ec5bb6b6bd5cfcff9016ffcd2a7f2f21d977354cd451f9bcd73e40a92a1a17a",
+      "src/voxreg/transforms.py": "85232c3ddf8557d48d9a25d5b5df9f7a2d7c2d778515dacaabc9b855a9a36c5a",
+      "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+      "src/voxreg/rigid.py": "f3bde3f22f01554582cf893a7269ee505c371ef0c29c52bcdf2a8afadf4bf83d",
+      "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+      "src/voxreg/sampling.py": "7daa3571df392fbc6f84830ddfa20373ff1321cc4d86a4ec4dfa8b09a1d78045",
+      "src/voxreg/geometry.py": "ca7dce3ae6b15d7fb220f585ed86b70be4aac6636174f03ea1ea4ed15e3c94bc"
+    }
+  },
+  "cuda": {
+    "device": "cuda",
+    "threads": 1,
+    "iterations": 100,
+    "inputs": [
+      {
+        "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220523/susi/sub-rat75_ses-20220523_acq-slice32_rec-minframe2d_pwd.nii.gz",
+        "sha256": "bfc059b22695ed6e7f5cf8b1927b0978d291a0f9d2f7bddae4ccd69f674d3049",
+        "sidecar_sha256": "324693cb1f9c93e767c75816ec78bb171bf4c8cf173d63b3e9ca459e8dbb402c",
+        "shape": [
+          1,
+          112,
+          128
+        ],
+        "dtype": "float64",
+        "raw_range": [
+          20.989732573125544,
+          6766.365013732707
+        ],
+        "position_to_world": [
+          [
+            0.3999999761581421,
+            -1.9172617353978458e-34,
+            -1.388833351185086e-33,
+            1.7763568394002505e-15
+          ],
+          [
+            1.7463359889231874e-34,
+            0.09855999797582625,
+            -6.364600602585139e-19,
+            5.000000000000002
+          ],
+          [
+            -8.711952302508758e-34,
+            -2.2372464514507346e-19,
+            0.10999999940395355,
+            -6.984999656677246
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220524/susi/sub-rat75_ses-20220524_acq-slice32_rec-minframe2d_pwd.nii.gz",
+        "sha256": "f97e329ed71aec0427dd0a1f44e9694712c76905a3a5004c3981f9d30cb75f91",
+        "sidecar_sha256": "7604bae724589b16188bbecce2fcca8f71e3a70aacbe5fca0fba4e998e83f560",
+        "shape": [
+          1,
+          112,
+          128
+        ],
+        "dtype": "float64",
+        "raw_range": [
+          37.04333990704922,
+          25065.500206656092
+        ],
+        "position_to_world": [
+          [
+            0.3999999761581421,
+            3.98012486173997e-34,
+            -2.7660057984100148e-33,
+            1.7763568394002505e-15
+          ],
+          [
+            -4.549644814859601e-34,
+            0.09855999797582628,
+            -8.449405938948477e-19,
+            4.999999999999998
+          ],
+          [
+            2.5388249847242993e-33,
+            1.2080067083566224e-18,
+            0.10999999940395354,
+            -6.984999656677246
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "warm_calls": [
+      {
+        "wall_seconds": 0.20410609600003227,
+        "stages": {
+          "prepare": 0.0026936679996651947,
+          "upload": 8.01799997134367e-05,
+          "optimize": 0.19927925299998606,
+          "resample_download": 0.0007262469998750021
+        }
+      },
+      {
+        "wall_seconds": 0.20298546599951806,
+        "stages": {
+          "prepare": 0.002484881999407662,
+          "upload": 6.48219993308885e-05,
+          "optimize": 0.1984570469994651,
+          "resample_download": 0.0007184380001490354
+        }
+      },
+      {
+        "wall_seconds": 0.20282443300038722,
+        "stages": {
+          "prepare": 0.0023346789994320716,
+          "upload": 6.371099971147487e-05,
+          "optimize": 0.19847431699963636,
+          "resample_download": 0.0007167100002334337
+        }
+      }
+    ],
+    "resident_optimizer_seconds": [
+      0.19812442800048302,
+      0.1979035299991665,
+      0.19760609899913106
+    ],
+    "trace": {
+      "kernel_count": 1045,
+      "kernel_sum_ms": 1.9605439999999998,
+      "kernel_union_ms": 1.960546142578125,
+      "kernel_span_ms": 17.824796142578126,
+      "kernel_busy_fraction": 0.1099898213082485,
+      "median_kernel_us": 1.312,
+      "launch_call_count": 1045,
+      "launch_host_ms": 2.981477,
+      "synchronize_call_count": 1,
+      "synchronize_host_ms": 0.006636,
+      "memcpy_event_count": 150
+    },
+    "operators": [
+      {
+        "name": "voxreg::backward",
+        "count": 5,
+        "self_cpu_us": 10302.050000000001,
+        "self_device_us": 0.0
+      },
+      {
+        "name": "cudaLaunchKernel",
+        "count": 1015,
+        "self_cpu_us": 2887.233000000004,
+        "self_device_us": 0
+      },
+      {
+        "name": "ProfilerStep*",
+        "count": 5,
+        "self_cpu_us": 995.8770000000013,
+        "self_device_us": 0.0
+      },
+      {
+        "name": "aten::mul",
+        "count": 175,
+        "self_cpu_us": 735.5029999999987,
+        "self_device_us": 224.25900000000638
+      },
+      {
+        "name": "aten::sum",
+        "count": 95,
+        "self_cpu_us": 537.7709999999997,
+        "self_device_us": 421.7279999999927
+      },
+      {
+        "name": "voxreg::sample",
+        "count": 5,
+        "self_cpu_us": 499.2930000000111,
+        "self_device_us": 0.0
+      },
+      {
+        "name": "aten::empty",
+        "count": 210,
+        "self_cpu_us": 446.3929999999899,
+        "self_device_us": 0
+      },
+      {
+        "name": "aten::where",
+        "count": 110,
+        "self_cpu_us": 410.68300000001216,
+        "self_device_us": 94.17899999999622
+      },
+      {
+        "name": "cudaMemcpyAsync",
+        "count": 75,
+        "self_cpu_us": 400.8130000000019,
+        "self_device_us": 0
+      },
+      {
+        "name": "voxreg::ncc",
+        "count": 5,
+        "self_cpu_us": 361.55100000001516,
+        "self_device_us": 0.0
+      },
+      {
+        "name": "aten::fill_",
+        "count": 130,
+        "self_cpu_us": 326.51600000000735,
+        "self_device_us": 129.09099999998875
+      },
+      {
+        "name": "aten::bmm",
+        "count": 10,
+        "self_cpu_us": 320.5459999999962,
+        "self_device_us": 50.07899999999853
+      },
+      {
+        "name": "aten::copy_",
+        "count": 115,
+        "self_cpu_us": 278.12200000000723,
+        "self_device_us": 169.2800000000002
+      },
+      {
+        "name": "aten::select",
+        "count": 150,
+        "self_cpu_us": 250.78999999998945,
+        "self_device_us": 0
+      },
+      {
+        "name": "autograd::engine::evaluate_function: SelectBackward0",
+        "count": 60,
+        "self_cpu_us": 238.0719999999808,
+        "self_device_us": 0.0
+      }
+    ],
+    "source_sha256": {
+      "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/research/performance/profile_pair.py": "2ec5bb6b6bd5cfcff9016ffcd2a7f2f21d977354cd451f9bcd73e40a92a1a17a",
+      "src/voxreg/transforms.py": "85232c3ddf8557d48d9a25d5b5df9f7a2d7c2d778515dacaabc9b855a9a36c5a",
+      "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+      "src/voxreg/rigid.py": "f3bde3f22f01554582cf893a7269ee505c371ef0c29c52bcdf2a8afadf4bf83d",
+      "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+      "src/voxreg/sampling.py": "7daa3571df392fbc6f84830ddfa20373ff1321cc4d86a4ec4dfa8b09a1d78045",
+      "src/voxreg/geometry.py": "ca7dce3ae6b15d7fb220f585ed86b70be4aac6636174f03ea1ea4ed15e3c94bc"
+    },
+    "graph_diagnostic": {
+      "replay_seconds": [
+        0.04385166100018978,
+        0.04184704599992983,
+        0.04220176999933756
+      ],
+      "outputs_bitwise_equal": true,
+      "scope": "100 resident optimizer steps only; static graph construction cost excluded, not a product feature or end-to-end timing"
+    }
+  },
+  "protocol": {
+    "utc_window": "2026-10-26T11:17:37Z/2026-10-26T11:17:50Z",
+    "power": "AC online; battery Full; platform performance",
+    "machine_activity": "No external test/benchmark workers in process snapshot. Desktop left untouched; initial GPU utilization 19%, ending 0%; not an isolated performance rerun.",
+    "warm_calls_per_device": 3,
+    "processes": "CPU then CUDA in sequential fresh processes; CPU8/CUDA1 host threads; synchronized",
+    "workload": "Original float64 cached same-subject pair, rigid, center_geometry, 100 updates, convergence window101 (stopping disabled).",
+    "profiler": "Five steps after 20 wait + 2 warmup. Profiler timings/busy fraction are instrumented, not benchmark timings.",
+    "graph": "Diagnostic only: 100 resident steps replayed, construction cost excluded. All optimizer output tensors bitwise equal; no engine graph implementation.",
+    "source_boundary": "Profiled working-tree source hashes are preserved. Subsequent changes extend and stabilize plane-seed normal-orientation handling and clarify docstrings; resident single-pair optimizer/sampler arithmetic is unchanged. Trace interval analysis additionally handles nested kernel intervals; measured summaries are unchanged. No new timing collected under later notebook activity."
+  }
+}

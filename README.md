@@ -144,14 +144,71 @@ the default rigid model).
 Recordings `(time, k, j, i)` use the same volume engine in batches. Choose a small
 `batch_size` for 3D series: the default 32 was sized for slices. Single-pair
 3D memory is benchmarked at the documented sizes; large 3D batches are not. Spatial-only input requires an explicit fixed image. Coplanar `k=1` slice pairs instead fit
-three identifiable in-plane parameters with the default rigid model;
-tilted-plane/slice-to-volume registration
-is rejected, not silently approximated.
+three identifiable in-plane parameters with the default rigid model.
 
-The metric is evaluated on fixed-grid points, sampling moving array positions as
+For slice pairs and volume pairs, the metric is evaluated on fixed-grid points, sampling moving array positions as
 `inverse(A_moving) @ T @ A_fixed`, where each `A` includes native crop/stride
 coordinates. Thus **identity world motion can resample unequal grids** without
 estimating their known geometry as motion.
+
+### Slice placement and slice-to-volume fitting
+
+All geometry remains in physical 3D space. Registration selects the observable
+parameters and metric domain from the input geometry:
+
+| Inputs | Translation / rigid / affine parameters | Metric domain |
+| --- | --- | --- |
+| Two slices | 2 / 3 / 6 | Fixed slice, constrained plane-to-plane map |
+| Two volumes | 3 / 6 / 12 | Fixed volume |
+| One slice, one volume | 3 / 6 / 9 | Native slice; sample the full supplied volume |
+
+**Noncoplanar slice pairs** need a physical seed mapping the fixed plane into the
+moving plane, or an explicit `initialization="align_planes"`. This new initializer
+aligns geometric centers and chooses the shortest unoriented-normal rotation,
+then image content refines the in-plane pose. It assumes corresponding anatomical
+sections, not two genuinely different sections. Ordinary center initialization
+can align parallel displaced planes but cannot fix tilt. A translation-only model
+cannot align nonparallel planes: use rigid or affine.
+
+```python
+result = voxreg.register(
+    moving_slice, fixed_slice, initialization="align_planes",
+    intensity_scaling="none",
+)
+
+# The entire supplied 3D reference is available as the slice moves and tilts.
+# This direction directly returns the template sampled onto the recording slice.
+atlas_on_slice = voxreg.register(
+    atlas_volume, recording_slice, transform="affine",
+    initialization=slice_world_to_atlas_world,
+    intensity_scaling="none",
+)
+```
+
+Mixed fitting uses the **same optimizer**, in either argument order. Affine fits
+six entries of a 3×2 tangent map plus three world translations: unobservable normal
+scale/shear is not optimized. Export uses a unit orthogonal, orientation-preserving
+normal completion; incompatible full-affine seeds are rejected explicitly. Rigid
+allows all six spatial pose parameters. Mixed modes use the geometric slice pivot;
+`center_moments` still aligns intensity centroids for its seed, without changing
+that shared pivot. Batch seeds and frame failures remain independent.
+
+**The returned pull always maps the original fixed world into the original moving
+world**, and images retain the original moving dtype on the original fixed grid.
+If moving is the slice and fixed the volume, there may be **no volume-grid sample
+centers exactly on the fitted slice**. `valid` then is empty and output is fill;
+a warning explains this. Fitting can still succeed because it uses actual slice
+pixels, not those output-grid points. No thickness or new volume data is invented.
+For a useful atlas overlay, prefer the volume-as-moving call above, or sample the
+volume onto the slice with the inverse of the slice-as-moving result matrix.
+`diagnostics.valid_fraction` describes slice-domain metric support;
+`output_valid_fraction` separately describes reverse-direction output coverage.
+Diagnostic pose parameters, like the exported matrix, describe the requested
+fixed-to-moving direction. Mixed affine diagnostics report the completed 3×3
+matrix; only its nine identifiable slice-fitting parameters are optimized.
+
+The [slice-geometry qualification](research/slice-geometry/README.md) records
+synthetic truth/CPU–CUDA checks and the real ConfUSIus atlas retry.
 
 ### Explicit initial transforms
 
@@ -266,8 +323,9 @@ or silent inverse scaling. The current fitting options remain `"none"` and `"db"
 Bright artifacts, background, different crops and incomplete anatomy can still bias
 linear-intensity moments; neither centering mode is an anatomical alignment guarantee.
 
-Automatic modes do not estimate rotation, infer non-coplanar slice alignment, or
-search for an initial pose. Separate fixed/moving pre-transform chains and pyramids
+Centering modes do not estimate rotation or search for an initial pose.
+`align_planes` is a separate, explicit geometry alignment assumption, not an
+image-based out-of-plane pose search for two slices. Separate fixed/moving pre-transform chains and pyramids
 remain unsupported. See [VALIDATION.md](VALIDATION.md).
 
 ### Convergence
@@ -360,8 +418,10 @@ result = voxreg.register(pwd, device="cuda", batch_size=120)
 Inputs and registered/valid outputs use the same geometry class, including
 ConfUSIus's world-coordinate lookup. Voxreg still enforces its registration subset:
 NumPy-backed arrays, integer native voxel indices, uniform spatial steps and mm.
-Slice pairs must be coplanar; full volumes require all spatial axes >= 2. It does
-not modify source values or geometry.
+Slices retain the orthogonal-axis requirement, with k=1 and j/i >= 2;
+full volumes require all axes >= 2. Noncoplanar
+slice pairs need a compatible initialization. It does not modify source values
+or geometry.
 Start with `pwd.isel(time=slice(0, 120))` before processing a long recording.
 The default device is CPU; select CUDA explicitly when available.
 
@@ -548,10 +608,12 @@ fresh float64 same-subject and motion-correction inputs with ConfUSIus 0.8.0:
 actual call times, common-support scores and inspected overlays. It retains a
 fixed100 motion-control CPU/CUDA precision failure (0.001965 px versus the unchanged
 0.001-pixel limit); native-stopping motion correction passes that screen. Atlas
-slice-to-volume and B-spline stages have no voxreg counterpart and were not timed.
+slice-to-volume and B-spline stages had no counterpart at that benchmark boundary
+and were not timed; the new slice-to-volume retry is documented separately.
 
-- Translation, rigid and affine: volumes or constrained coplanar slices only.
-  No deformable, multi-pose, slice-to-volume or non-coplanar slice registration.
+- Translation, rigid and affine: slice pairs, volume pairs and mixed slice/volume
+  fitting. No deformable, multi-pose or unconstrained 12-parameter slice affine.
+  Noncoplanar slice pairs require an explicit alignment assumption or seed.
 - Independent fixed/moving grids, but uniform native coordinates, mm and finite
   NumPy-backed real input with supported dtype/range remain required. No masks,
   Dask or multiresolution fitting.

@@ -11,6 +11,15 @@ see [BENCHMARK.md](BENCHMARK.md) for fresh production time/memory comparisons,
 source hashes and regression gates. Historical prototype timings are retained
 here rather than presented as current benchmark results.
 
+## Single-pair GPU follow-up
+
+[Measured diagnosis](research/performance/SINGLE-PAIR.md): a small real pair remains
+faster on CPU, with CUDA launching 209 tiny kernels per sampled fitting step.
+Resident replay that removes repeated host dispatch preserves optimizer outputs
+bitwise and substantially reduces device time; this is a static-graph diagnostic,
+not a shipped optimization or an end-to-end speed claim. Bulk image uploads are a
+small fraction of the observed warm call. Dtype and stopping policies are unchanged.
+
 ## Current dtype and eager NCC result
 
 [DTYPE.md](research/performance/DTYPE.md) records the dtype-preserving output

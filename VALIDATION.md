@@ -5,6 +5,26 @@ performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.m
 Throughput measurements cover the documented pair/series controls, not general
 registration accuracy or performance.
 
+## Slice geometry extension
+
+[Qualification](research/slice-geometry/README.md) and
+[bounded results](research/slice-geometry/results.json): explicit noncoplanar plane
+placement, native slice↔volume fitting in either argument order, and identifiable
+nine-parameter slice affine, all in the shared engine. Six mixed synthetic truth
+checks and three CPU/CUDA precision checks pass unchanged gates. Previous six
+native controls pass all 18 truth/six precision checks; four frozen real-series
+controls remain bitwise identical. Full-suite and build checks are recorded there.
+
+The actual cached atlas example now runs. Common native-slice NCC² improves from
+0.04890 manual to 0.11826 ConfUSIus and 0.15326 voxreg CPU/CUDA; scores are low and
+**do not validate anatomical atlas placement**. Empty reverse-direction volume-grid
+output is distinguished from native-slice fitting support; no thickness is invented.
+Prior float64-motion fixed100 and default3D precision failures remain retained.
+
+The [single-pair GPU diagnosis](research/performance/SINGLE-PAIR.md) separately
+identifies many tiny dispatches, not bulk input transfer, as the dominant measured
+pattern. No production graph/fusion optimization was introduced.
+
 ## Public-API example comparison (b75fc85 engine)
 
 [Benchmark report](research/confusius-examples/BENCHMARK.md) and
@@ -21,7 +41,8 @@ maximum CPU/CUDA disagreement at source frame258, exceeding the unchanged
 passes (worst4.75e-8 px), as do all pair checks. No biological truth gate is claimed.
 Neither product code nor numerical gates changed. Three new harness tests pass;
 the prior373-test engine qualification is reused, not reported as a fresh full run.
-B-spline and slice-to-volume atlas stages remain unsupported/not compared.
+At that benchmark boundary, B-spline and slice-to-volume atlas stages were
+unsupported/not compared; the subsequent atlas retry is documented above.
 
 ## Coverage cutoff removed (b75fc85)
 

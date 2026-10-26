@@ -1,5 +1,6 @@
 """Keep the tracked research commands usable without historical artifacts."""
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -11,6 +12,31 @@ import pytest
 from numpy.testing import assert_allclose
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "research/performance"
+
+
+def test_single_pair_trace_summary_counts_union_not_overlapping_kernel_sum():
+    spec = importlib.util.spec_from_file_location(
+        "pair_profile", SCRIPTS / "profile_pair.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    events = [
+        {"cat": "kernel", "ts": start, "dur": duration}
+        for start, duration in [(0, 4), (2, 4), (10, 2)]
+    ]
+    events += [
+        {"cat": "cuda_runtime", "name": "cudaLaunchKernel", "dur": 3},
+        {"cat": "cuda_runtime", "name": "cudaStreamSynchronize", "dur": 5},
+    ]
+    result = module.trace_summary(events)
+    assert result["kernel_count"] == 3
+    assert result["kernel_union_ms"] == 0.008
+    assert result["kernel_sum_ms"] == 0.010
+    assert result["kernel_busy_fraction"] == 2 / 3
+    assert result["launch_call_count"] == result["synchronize_call_count"] == 1
+    nested = module.trace_summary([events[0], {"cat": "kernel", "ts": 1, "dur": 1}])
+    assert nested["kernel_span_ms"] == nested["kernel_union_ms"] == 0.004
+    assert nested["kernel_busy_fraction"] == 1
 
 
 @pytest.mark.parametrize(

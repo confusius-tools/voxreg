@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 import xarray as xr
 
-from voxreg.geometry import position_to_world
+from voxreg.geometry import _plane_alignment, position_to_world
 from voxreg.transforms import (
     initial_linear_parameters,
     intrinsic_linear,
@@ -154,6 +154,12 @@ class SpatialGrid:
     center: npt.NDArray[np.float64]
     parameter_scale: torch.Tensor
     planar: bool
+    slice_basis: npt.NDArray[np.float64] | None = None
+    resident_slice_basis: torch.Tensor | None = None
+    plane_rotation: npt.NDArray[np.float64] | None = None
+    plane_shift: npt.NDArray[np.float64] | None = None
+    resident_rotation: torch.Tensor | None = None
+    resident_shift: torch.Tensor | None = None
     rotation_offset: torch.Tensor | None = None
     transform: str = "rigid"
 
@@ -165,33 +171,55 @@ def make_grid(
     device: str = "cpu",
     dtype: torch.dtype = torch.float64,
     center: npt.NDArray[np.float64] | None = None,
+    plane_seed: npt.ArrayLike | None = None,
 ) -> Plane | SpatialGrid:
     """Build fixed-domain sampling geometry without conflating voxel spacing with motion.
 
-    Slice pairs must be coplanar. Volume pairs require at least two samples on
-    each axis. Optional center sets the physical world z/y/x pivot and lever-arm
-    scales without changing the sampled fixed domain. Plane alignment and
-    slice-to-volume registration are not inferred.
+    Slice pairs require a plane-compatible seed when not initially coplanar.
+    A fixed slice against a moving volume uses its full 3D pose and samples only
+    the slice domain. Optional center controls the pivot and physical scales.
     """
     fs = np.array([fixed.sizes[d] for d in ("k", "j", "i")])
     ms = np.array([moving.sizes[d] for d in ("k", "j", "i")])
     planar = fs[0] == ms[0] == 1
-    if (planar and min(*fs[1:], *ms[1:]) < 2) or (not planar and min(*fs, *ms) < 2):
-        raise ValueError("Use coplanar k=1 slices or 3D volumes with all axes >= 2.")
-    if planar and fixed.xindexes["z"].equals(moving.xindexes["z"]):
-        # Retain the qualified same-grid 2D arithmetic and kernel exactly.
-        return make_plane(fixed, device=device, dtype=dtype, center=center)
+    slice_volume = fs[0] == 1 and min(*ms) >= 2
+    if min(*fs[1:], *ms[1:]) < 2 or (
+        not planar and not slice_volume and min(*fs, *ms) < 2
+    ):
+        raise ValueError(
+            "Use k=1 slices or 3D volumes with all axes >= 2; fit mixed grids on the slice domain."
+        )
     af, am = position_to_world(fixed), position_to_world(moving)
     lf, lm = af[:3, :3], am[:3, :3]
+    seeds, reversed_normal = None, False
+    if planar and plane_seed is not None:
+        seeds = validate_matrices(plane_seed, moving.sizes.get("time", 1))
+        normal = np.cross(lf[:, 2], lf[:, 1])
+        reversed_normal = (seeds[0, :3, :3] @ normal) @ normal < 0
+    if (
+        planar
+        and not reversed_normal
+        and fixed.xindexes["z"].equals(moving.xindexes["z"])
+    ):
+        # Retain the qualified same-grid 2D arithmetic and kernel exactly.
+        return make_plane(fixed, device=device, dtype=dtype, center=center)
     hf, hm = (fs - 1) / 2, (ms - 1) / 2
     geometric_center = af[:3, 3] + lf @ hf
     origin_difference = af[:3, 3] - am[:3, 3]
+    plane_rotation = plane_shift = None
     if planar:
         native = np.linalg.solve(lm, lf)
         offset = np.linalg.solve(lm, origin_difference)
-        if abs(offset[0]) + np.abs(native[0] * (fs - 1)).sum() > 1e-5:
-            raise ValueError(
-                "Slice planes must be coplanar; plane initialization is not supported yet."
+        if (
+            reversed_normal
+            or abs(offset[0]) + np.abs(native[0] * (fs - 1)).sum() > 1e-5
+        ):
+            if plane_seed is None:
+                raise ValueError(
+                    "Noncoplanar slices need a plane-compatible initial_transform or initialization='align_planes'; centering alone cannot correct tilt."
+                )
+            plane_rotation, plane_shift = _plane_alignment(
+                fixed, moving, seeds[0, :3, :3] @ normal
             )
         plane = make_plane(fixed, device=device, dtype=dtype, center=center)
         basis, scales = plane.basis, plane.parameter_scale
@@ -222,6 +250,9 @@ def make_grid(
         coordinates.append(coordinate.reshape(shape))
     options = {"device": device, "dtype": dtype}
     tolerance = 1e-5 / half
+    slice_basis = (
+        make_plane(fixed, device=device, dtype=dtype).basis if slice_volume else None
+    )
     return SpatialGrid(
         world_to_normalized=torch.tensor(world_to_normalized, **options),
         normalized_to_world=torch.tensor(normalized_to_world, **options),
@@ -237,6 +268,18 @@ def make_grid(
         center=geometric_center if center is None else center,
         parameter_scale=scales,
         planar=bool(planar),
+        slice_basis=slice_basis,
+        resident_slice_basis=torch.tensor(slice_basis, **options)
+        if slice_basis is not None
+        else None,
+        plane_rotation=plane_rotation,
+        plane_shift=plane_shift,
+        resident_rotation=torch.tensor(plane_rotation, **options)
+        if plane_rotation is not None
+        else None,
+        resident_shift=torch.tensor(plane_shift, **options)
+        if plane_shift is not None
+        else None,
         rotation_offset=(
             torch.tensor(geometric_center - center, **options)
             if center is not None
@@ -257,7 +300,7 @@ def rotation_vectors(vectors: torch.Tensor) -> torch.Tensor:
     return (identity + a * skew + b * (skew @ skew)).flip((-2, -1))
 
 
-def _physical_transform(
+def _model_physical_transform(
     parameters: torch.Tensor, grid: SpatialGrid
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if grid.transform != "rigid":
@@ -281,6 +324,14 @@ def _physical_transform(
     else:
         rotation, translation = rotation_vectors(parameters[:, :3]), parameters[:, 3:]
     return rotation, translation
+
+
+def _physical_transform(parameters, grid):
+    linear, translation = _model_physical_transform(parameters, grid)
+    if grid.resident_rotation is not None:
+        linear = grid.resident_rotation @ linear
+        translation = translation @ grid.resident_rotation.T + grid.resident_shift
+    return linear, translation
 
 
 def _sample_grid(
@@ -464,6 +515,17 @@ def _initial_parameters(
 ) -> npt.NDArray[np.float64]:
     """Validate world pull seeds and recover the optimized centered parameters."""
     values = validate_matrices(transforms, count)
+    if isinstance(plane, SpatialGrid) and plane.plane_rotation is not None:
+        values = values.copy()
+        displacement = (
+            np.einsum("bij,j->bi", values[:, :3, :3] - np.eye(3), plane.center)
+            + values[:, :3, 3]
+        )
+        values[:, :3, :3] = plane.plane_rotation.T @ values[:, :3, :3]
+        displacement = (displacement - plane.plane_shift) @ plane.plane_rotation
+        values[:, :3, 3] = displacement - np.einsum(
+            "bij,j->bi", values[:, :3, :3] - np.eye(3), plane.center
+        )
     if plane.transform != "rigid":
         return initial_linear_parameters(values, plane)
     rotations = values[:, :3, :3]
@@ -493,7 +555,7 @@ def _initial_parameters(
             translations, in_plane @ basis.T, rtol=0, atol=tolerance
         ):
             raise ValueError(
-                "Slice initial_transform must preserve the fixed plane; out-of-plane motion is unsupported."
+                "Slice initial_transform must preserve the fixed plane after accounting for seeded plane placement; use align_planes when centering cannot correct tilt."
             )
         angles = np.arctan2(
             intrinsic[:, 1, 0] - intrinsic[:, 0, 1],
@@ -535,7 +597,7 @@ def _initial_parameters(
     return np.column_stack((vectors, translations))
 
 
-def world_matrices(
+def _model_world_matrices(
     parameters: npt.ArrayLike, plane: Plane | SpatialGrid
 ) -> npt.NDArray[np.float64]:
     """Embed centered model transforms in homogeneous world z/y/x coordinates.
@@ -577,3 +639,59 @@ def world_matrices(
     )
     matrices[~values.any(axis=1)] = np.eye(4)
     return matrices
+
+
+def world_matrices(parameters, plane):
+    """Export the complete fixed-world-to-moving-world pull, including plane placement."""
+    matrices = _model_world_matrices(parameters, plane)
+    if isinstance(plane, SpatialGrid) and plane.plane_rotation is not None:
+        displacement = (
+            np.einsum("bij,j->bi", matrices[:, :3, :3] - np.eye(3), plane.center)
+            + matrices[:, :3, 3]
+        )
+        matrices[:, :3, :3] = plane.plane_rotation @ matrices[:, :3, :3]
+        displacement = displacement @ plane.plane_rotation.T + plane.plane_shift
+        matrices[:, :3, 3] = displacement - np.einsum(
+            "bij,j->bi", matrices[:, :3, :3] - np.eye(3), plane.center
+        )
+    return matrices
+
+
+def sample_inverse_slice(images, parameters, grid, fixed, moving, *, interpolation):
+    """Resample a moving slice on a fixed volume using the inverse fitting map.
+
+    No thickness is invented: only sample centers on the slice are valid. A
+    successful slice-domain fit can therefore have an empty volume-grid mask.
+    """
+    linear, shift = _physical_transform(parameters, grid)
+    inverse = torch.linalg.inv(linear)
+    shift = -(inverse @ shift[..., None])[..., 0]
+    af, am = position_to_world(fixed), position_to_world(moving)
+    options = {"device": parameters.device, "dtype": parameters.dtype}
+    source_inverse = torch.tensor(np.linalg.inv(am[:3, :3]), **options)
+    local = torch.tensor(af[:3, 3] - grid.center, **options)
+    origin = torch.tensor(af[:3, 3] - am[:3, 3], **options)
+    offset = (
+        origin + (inverse - torch.eye(3, **options)) @ local + shift
+    ) @ source_inverse.T
+    lattice = source_inverse @ inverse @ torch.tensor(af[:3, :3], **options)
+    sizes = np.array([moving.sizes[d] for d in ("k", "j", "i")])
+    bounds = torch.tensor(sizes - 1, **options)
+    half = torch.tensor(np.where(sizes > 1, (sizes - 1) / 2, 1), **options)
+    coordinates = torch.meshgrid(
+        *(torch.arange(fixed.sizes[d], **options) for d in ("k", "j", "i")),
+        indexing="ij",
+    )
+    mapped = offset[:, None, None, None, :]
+    for axis, coordinate in enumerate(coordinates):
+        mapped = mapped + lattice[:, None, None, None, :, axis] * coordinate[..., None]
+    valid = ((mapped >= -1e-5) & (mapped <= bounds + 1e-5)).all(dim=-1)
+    normalized = mapped / half - (bounds > 0).to(parameters.dtype)
+    sampled = F.grid_sample(
+        images[:, None],
+        normalized.flip(-1).to(images.dtype),
+        mode={"linear": "bilinear", "nearest": "nearest"}[interpolation],
+        padding_mode="border",
+        align_corners=True,
+    )[:, 0]
+    return sampled, valid
