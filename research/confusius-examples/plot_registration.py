@@ -101,7 +101,8 @@ def register_with_plot(
     Display uses supplied intensities, defaulting to -30..0 dB. Pass display_range
     for other units. show=False collects the trace and renders only the final pose.
     metric_interval controls observation cadence; redraw_interval throttles GUI work.
-    The raw trial curve can worsen; the final image/star use the returned best pose.
+    The raw trial curve can worsen; the final image uses the returned best pose.
+    A vertical line marks its update without implying a sampled metric point.
     Tiny trial-parameter tensors stay on-device until the returned pose is matched.
     """
     from time import monotonic
@@ -221,14 +222,11 @@ def register_with_plot(
             result = engine.register(moving, fixed, metric_callback=report, **kwargs)
         value = result.diagnostics.objective.item()
         if np.isfinite(value):
-            metric_ax.plot(
-                [best_update],
-                [value],
-                marker="*",
-                markersize=13,
-                linestyle="none",
+            metric_ax.axvline(
+                best_update,
+                linestyle="--",
                 color="white",
-                label="Returned best",
+                label="Returned best update",
             )
         metric_ax.legend(frameon=False, labelcolor="white")
         matrix = np.asarray(result.transforms).reshape(-1, 4, 4)[0]

@@ -74,10 +74,10 @@ def test_plot_preserves_outputs_and_displays_returned_pose(
     assert all(ax.get_facecolor() == (0, 0, 0, 1) for ax in fig.axes)
     assert fig.axes[1].lines[0].get_color() == "red"
     assert fig.axes[1].xaxis.label.get_color() == "white"
-    assert fig.axes[1].lines[1].get_marker() == "*"
-    assert fig.axes[1].lines[1].get_linestyle() == "None"
+    assert fig.axes[1].lines[1].get_marker() == "None"
+    assert fig.axes[1].lines[1].get_linestyle() == "--"
     assert_array_equal(
-        fig.axes[1].lines[1].get_xdata(), [np.nanargmin([x[2][0] for x in seen])]
+        fig.axes[1].lines[1].get_xdata(), [np.nanargmin([x[2][0] for x in seen])] * 2
     )
     public = np.asarray(result.transforms)
     matrix = np.linalg.inv(public) if moving_slice else public
@@ -89,15 +89,11 @@ def test_plot_preserves_outputs_and_displays_returned_pose(
         atol=0,
     )
     assert_array_equal(fig.axes[1].lines[0].get_xdata(), [0, 1, 2, 3])
-    assert_allclose(
-        fig.axes[1].lines[1].get_ydata(),
-        result.diagnostics.objective.item(),
-        rtol=0,
-        atol=0,
-    )
+    assert_array_equal(fig.axes[1].lines[1].get_ydata(), [0, 1])
+    assert fig.axes[1].lines[1].get_transform() is fig.axes[1].get_xaxis_transform()
 
 
-def test_best_star_can_identify_an_unobserved_metric_step(plotting, pair):
+def test_best_update_line_preserves_sparse_metric_trace(plotting, pair):
     volume, plane = pair
     seed = np.eye(4)
     seed[1, 3] = 0.08
@@ -121,8 +117,9 @@ def test_best_star_can_identify_an_unobserved_metric_step(plotting, pair):
     )
     update = int(np.nanargmin(full))
     assert update not in fig.axes[1].lines[0].get_xdata()
-    assert_array_equal(fig.axes[1].lines[1].get_xdata(), [update])
-    assert_allclose(fig.axes[1].lines[1].get_ydata(), [full[update]], rtol=0, atol=0)
+    assert_array_equal(fig.axes[1].lines[0].get_xdata(), [0, 20])
+    assert_array_equal(fig.axes[1].lines[1].get_xdata(), [update, update])
+    assert_array_equal(fig.axes[1].lines[1].get_ydata(), [0, 1])
 
 
 def test_live_preview_uses_matching_initial_pose_and_throttles(
