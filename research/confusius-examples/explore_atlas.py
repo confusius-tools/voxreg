@@ -70,6 +70,9 @@ def main():
         "steps": int(result.diagnostics.n_iterations.item()),
         "status": result.diagnostics.status.item(),
         "returned_objective": objective if np.isfinite(objective) else None,
+        "returned_best_update": int(figure.axes[1].lines[1].get_xdata()[0])
+        if np.isfinite(objective)
+        else None,
         "metric_interval": 10,
         "expanded_data": False,
         "plot_enabled_not_a_benchmark": True,

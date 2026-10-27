@@ -16,8 +16,10 @@ uv run python research/confusius-examples/explore_atlas.py \
 ```
 
 The destination must not exist. A live composite and raw metric curve update
-during fitting; the final image and dashed metric line show the **returned best**
-result, not necessarily the last trial. The window stays open after completion.
+during fitting on a ConfUSIus-style black background, with a red metric curve and
+white labels. The final image and white star show the **returned best** result,
+not necessarily the last trial. The star marks the actual returned pose's update,
+even when its metric was between callback observations. The window stays open after completion.
 Use `--moving template` to fit the opposite caller-fixed objective, or
 `--transform rigid` for a genuine rigid fit. These are independent fits, not
 expected to return inverse-equivalent poses.
@@ -67,8 +69,10 @@ figure.savefig("registration.png")
   success or exception. **Do not run concurrent fits in the same Python process**
   while observing. No runtime API or optimizer default changed.
 - Raw trial scores are not an acceptance history and can include rejected poses.
-  The final horizontal line identifies the returned best valid score; no exact
-  best-iteration clock is inferred from a subsampled trace.
+  The final star identifies the returned best valid score and update. The update
+  is matched against the actual returned optimizer parameters, not inferred from
+  the minimum of a subsampled metric trace. Tiny trial-parameter tensors are kept
+  on-device until completion; this adds no per-step host transfer.
 
 ## Manual rigid→affine staging
 

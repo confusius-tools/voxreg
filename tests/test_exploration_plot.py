@@ -70,6 +70,15 @@ def test_plot_preserves_outputs_and_displays_returned_pose(
     assert [int(x[1][0]) for x in seen] == [0, 1, 2, 3]
     assert len(fig.axes) == 2 and "support" not in fig.axes[0].get_title().lower()
     assert fig.axes[0].get_aspect() == pytest.approx(0.3 / 0.4)
+    assert fig.get_facecolor() == (0, 0, 0, 1)
+    assert all(ax.get_facecolor() == (0, 0, 0, 1) for ax in fig.axes)
+    assert fig.axes[1].lines[0].get_color() == "red"
+    assert fig.axes[1].xaxis.label.get_color() == "white"
+    assert fig.axes[1].lines[1].get_marker() == "*"
+    assert fig.axes[1].lines[1].get_linestyle() == "None"
+    assert_array_equal(
+        fig.axes[1].lines[1].get_xdata(), [np.nanargmin([x[2][0] for x in seen])]
+    )
     public = np.asarray(result.transforms)
     matrix = np.linalg.inv(public) if moving_slice else public
     values, _, _ = plotting.display_sample(matrix, plane, volume)
@@ -86,6 +95,34 @@ def test_plot_preserves_outputs_and_displays_returned_pose(
         rtol=0,
         atol=0,
     )
+
+
+def test_best_star_can_identify_an_unobserved_metric_step(plotting, pair):
+    volume, plane = pair
+    seed = np.eye(4)
+    seed[1, 3] = 0.08
+    options = {
+        "transform": "translation",
+        "initialization": seed,
+        "intensity_scaling": "none",
+        "max_iterations": 20,
+        "progress": False,
+    }
+    full = []
+    register(
+        volume,
+        plane,
+        metric_interval=1,
+        metric_callback=lambda i, s, m: full.append(float(m[0])),
+        **options,
+    )
+    _, fig = plotting.register_with_plot(
+        volume, plane, show=False, metric_interval=100, **options
+    )
+    update = int(np.nanargmin(full))
+    assert update not in fig.axes[1].lines[0].get_xdata()
+    assert_array_equal(fig.axes[1].lines[1].get_xdata(), [update])
+    assert_allclose(fig.axes[1].lines[1].get_ydata(), [full[update]], rtol=0, atol=0)
 
 
 def test_live_preview_uses_matching_initial_pose_and_throttles(
@@ -253,6 +290,7 @@ def test_atlas_cli_retains_unusable_result_and_refuses_overwrite(
     explore_atlas.main()
     record = json.loads((output / "results.json").read_text())
     assert record["returned_objective"] is None
+    assert record["returned_best_update"] is None
     assert (output / "registration.png").is_file() and (output / "arrays.npz").is_file()
     original = (output / "results.json").read_bytes()
     with pytest.raises(FileExistsError):

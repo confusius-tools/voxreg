@@ -47,23 +47,29 @@ def supported_composites(reference, images, title, *, reference_is_red=False):
 
     assert not reference_is_red
     fig, axes = plt.subplots(
-        1, len(images), figsize=(5 * len(images), 5), constrained_layout=True
+        1,
+        len(images),
+        figsize=(5 * len(images), 5),
+        constrained_layout=True,
+        facecolor="black",
     )
     for ax, (name, values) in zip(np.atleast_1d(axes), images.items(), strict=True):
         ax.imshow(
             composite_rgb(np.asarray(reference)[0], np.asarray(values)[0]),
             interpolation="nearest",
         )
-        ax.set_title(name)
+        ax.set_facecolor("black")
+        ax.set_title(name, color="white")
         ax.set_axis_off()
     fig.suptitle(
         title
-        + " — template red / recording cyan; unsupported pixels gray; shared −30…0dB"
+        + " — template red / recording cyan; unsupported pixels gray; shared −30…0dB",
+        color="white",
     )
 
 
 @contextmanager
-def observe_optimizer(on_sample):
+def observe_optimizer(on_sample, *, on_return=None):
     """Scoped research observer; not for concurrent fits in the same Python process."""
     from voxreg import rigid as engine
 
@@ -75,7 +81,10 @@ def observe_optimizer(on_sample):
             return original_sample(images, parameters, geometry, **sampling_options)
 
         with patch.object(engine, "sample_rigid", observe):
-            return original_optimize(images, target, grid, *args, **options)
+            result = original_optimize(images, target, grid, *args, **options)
+        if on_return is not None:
+            on_return(result[0], grid)
+        return result
 
     with patch.object(engine, "_optimize", optimize):
         yield
@@ -92,11 +101,13 @@ def register_with_plot(
     Display uses supplied intensities, defaulting to -30..0 dB. Pass display_range
     for other units. show=False collects the trace and renders only the final pose.
     metric_interval controls observation cadence; redraw_interval throttles GUI work.
-    The raw trial curve can worsen; the final image/line use the returned best pose.
+    The raw trial curve can worsen; the final image/star use the returned best pose.
+    Tiny trial-parameter tensors stay on-device until the returned pose is matched.
     """
     from time import monotonic
 
     import matplotlib.pyplot as plt
+    import torch
 
     from voxreg import rigid as engine
 
@@ -124,7 +135,7 @@ def register_with_plot(
         middle = reference.sizes["k"] // 2
         reference = reference.isel(k=slice(middle, middle + 1))
     fig, (image_ax, metric_ax) = plt.subplots(
-        1, 2, figsize=(10, 5), constrained_layout=True
+        1, 2, figsize=(10, 5), constrained_layout=True, facecolor="black"
     )
     basis = position_to_world(reference)[:3, :3]
     unsupported = np.full((*reference.shape[1:], 3), 0.25)
@@ -134,13 +145,24 @@ def register_with_plot(
         aspect=np.linalg.norm(basis[:, 1]) / np.linalg.norm(basis[:, 2]),
     )
     image_ax.set_axis_off()
-    (line,) = metric_ax.plot([], [], label="Raw trial")
+    image_ax.set_facecolor("black")
+    metric_ax.set_facecolor("black")
+    (line,) = metric_ax.plot([], [], label="Raw trial", color="red")
     metric_ax.set(xlabel="Optimizer updates", ylabel="Negative NCC² (lower is better)")
+    metric_ax.set_title("Registration metric", color="white")
+    metric_ax.xaxis.label.set_color("white")
+    metric_ax.yaxis.label.set_color("white")
+    metric_ax.tick_params(colors="white")
+    for spine in metric_ax.spines.values():
+        spine.set_edgecolor("white")
     fig.suptitle(
         "Reference cyan / sampled image red; unsupported pixels gray"
-        + (" — fixed central k slice" if central else "")
+        + (" — fixed central k slice" if central else ""),
+        color="white",
     )
     clocks, metrics = [], []
+    trials = []
+    best_update = None
     state = None
     last_redraw = -float("inf")
 
@@ -157,7 +179,7 @@ def register_with_plot(
             else:
                 rgb = composite_rgb(reference.values[0], values[0], limits)
         artist.set_data(rgb)
-        image_ax.set_title(title)
+        image_ax.set_title(title, color="white")
         line.set_data(clocks, metrics)
         metric_ax.relim()
         metric_ax.autoscale_view()
@@ -168,6 +190,16 @@ def register_with_plot(
     def observe(images, target, parameters, grid):
         nonlocal state
         state = (parameters.detach(), grid)
+        trials.append(state[0])
+
+    def returned(parameters, grid):
+        nonlocal best_update
+        # Match the actual returned state, including trials skipped by metric_interval.
+        matches = (
+            (torch.cat(trials, dim=0) == parameters).all(dim=1).nonzero().flatten()
+        )
+        best_update = int(matches[0].item())
+        trials.clear()
 
     def report(indices, steps, objective):
         nonlocal last_redraw
@@ -185,14 +217,20 @@ def register_with_plot(
     try:
         if show:
             plt.show(block=False)
-        with observe_optimizer(observe):
+        with observe_optimizer(observe, on_return=returned):
             result = engine.register(moving, fixed, metric_callback=report, **kwargs)
         value = result.diagnostics.objective.item()
         if np.isfinite(value):
-            metric_ax.axhline(
-                value, linestyle="--", color="black", label="Returned best"
+            metric_ax.plot(
+                [best_update],
+                [value],
+                marker="*",
+                markersize=13,
+                linestyle="none",
+                color="white",
+                label="Returned best",
             )
-        metric_ax.legend()
+        metric_ax.legend(frameon=False, labelcolor="white")
         matrix = np.asarray(result.transforms).reshape(-1, 4, 4)[0]
         redraw(
             matrix,
