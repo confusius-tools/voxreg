@@ -8,7 +8,7 @@ from numpy.testing import assert_allclose, assert_array_equal
 from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world
-from voxreg.sampling import _initial_parameters, make_grid, sample_inverse_slice
+from voxreg.sampling import _initial_parameters, make_grid, sample_rigid
 from voxreg.transforms import configure_transform
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
@@ -44,15 +44,13 @@ def test_singleton_slab_matches_cf_without_replicating_pixels(
         voxel_to_world=target_affine,
     )
     grid = configure_transform(
-        make_grid(source, target, device=device), source, "affine"
+        make_grid(target, source, device=device), target, "affine"
     )
-    parameters = _initial_parameters(np.linalg.inv(pull), grid, 1)
-    sampled, valid = sample_inverse_slice(
+    parameters = _initial_parameters(pull, grid, 1)
+    sampled, valid = sample_rigid(
         torch.tensor(np.ascontiguousarray(source.values[None]), device=device),
         torch.tensor(parameters, device=device),
         grid,
-        target,
-        source,
         interpolation=interpolation,
     )
     fill = float(source.min())

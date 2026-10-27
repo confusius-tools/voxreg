@@ -19,7 +19,7 @@ import itk
 import matplotlib
 import numpy as np
 import torch
-from scipy.ndimage import map_coordinates
+from plot_registration import sample
 
 from voxreg import position_to_world, register
 
@@ -63,22 +63,6 @@ def load_inputs():
             }
         )
     return *images, provenance
-
-
-def sample(matrix, fixed, moving):
-    af, am = position_to_world(fixed), position_to_world(moving)
-    points = af @ np.vstack(
-        (np.indices(fixed.shape).reshape(3, -1), np.ones((1, fixed.size)))
-    )
-    coordinates = (np.linalg.inv(am) @ matrix @ points)[:3]
-    valid = (
-        (coordinates >= -1e-5)
-        & (coordinates <= np.array(moving.shape)[:, None] - 1 + 1e-5)
-    ).all(axis=0)
-    values = map_coordinates(
-        moving.values, coordinates, order=1, mode="nearest", prefilter=False
-    )
-    return values.reshape(fixed.shape), valid.reshape(fixed.shape), coordinates
 
 
 def ncc(x, y, mask):

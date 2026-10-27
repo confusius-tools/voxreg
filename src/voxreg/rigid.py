@@ -758,13 +758,10 @@ def register(
         shifts = matrices[:, :3, 3] + np.einsum(
             "bij,j->bi", matrices[:, :3, :3] - np.eye(3), plane.center
         )
-        if transform == "affine":
-            diagnostic_params = np.column_stack(
-                ((matrices[:, :3, :3] - np.eye(3)).reshape(-1, 9), shifts)
-            )
-            diagnostic_plane = replace(
-                plane, slice_basis=None, resident_slice_basis=None
-            )
+        diagnostic_params = np.column_stack(
+            ((matrices[:, :3, :3] - np.eye(3)).reshape(-1, 9), shifts)
+        )
+        diagnostic_plane = replace(plane, slice_basis=None, resident_slice_basis=None)
     labels = np.array(
         [
             "running",
