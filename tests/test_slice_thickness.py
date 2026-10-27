@@ -1,0 +1,91 @@
+"""A singleton voxel occupies its affine-defined cell, not a zero-width plane."""
+
+import confusius as cf
+import numpy as np
+import pytest
+import torch
+from numpy.testing import assert_allclose, assert_array_equal
+from scipy.spatial.transform import Rotation
+
+from voxreg import position_to_world
+from voxreg.sampling import _initial_parameters, make_grid, sample_inverse_slice
+from voxreg.transforms import configure_transform
+
+DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+@pytest.mark.parametrize("interpolation", ["linear", "nearest"])
+@pytest.mark.parametrize("oblique", [False, True])
+def test_singleton_slab_matches_cf_without_replicating_pixels(
+    device, dtype, interpolation, oblique
+):
+    affine = np.diag([0.5, 0.25, 0.125, 1.0])
+    values = np.arange(1, 31, dtype=dtype).reshape(1, 5, 6)
+    if oblique:
+        affine[:3, :3] = Rotation.from_rotvec([0.2, -0.1, 0.3]).as_matrix() @ np.diag(
+            [0.8, 0.25, 0.125]
+        )
+        affine[:3, 3] = [3.0, -2.0, 4.0]
+    source = cf.create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=affine)
+    pull = np.eye(4)
+    if oblique:
+        source = source.isel(j=slice(None, None, -1), i=slice(None, None, 2))
+        pull[:3, :3] = Rotation.from_rotvec([-0.15, 0.1, 0.05]).as_matrix()
+        pull[:3, 3] = [0.3, -0.2, 0.1]
+    # Axis-aligned samples include both exact faces: -.5 is inside, +.5 outside.
+    index = np.eye(4)
+    index[0, 0], index[0, 3] = (0.2, -0.6) if oblique else (0.25, -0.75)
+    target_affine = np.linalg.inv(pull) @ position_to_world(source) @ index
+    target = cf.create_voxeldata(
+        np.ones((7, *source.shape[1:]), dtype=dtype),
+        dims=("k", "j", "i"),
+        voxel_to_world=target_affine,
+    )
+    grid = configure_transform(
+        make_grid(source, target, device=device), source, "affine"
+    )
+    parameters = _initial_parameters(np.linalg.inv(pull), grid, 1)
+    sampled, valid = sample_inverse_slice(
+        torch.tensor(np.ascontiguousarray(source.values[None]), device=device),
+        torch.tensor(parameters, device=device),
+        grid,
+        target,
+        source,
+        interpolation=interpolation,
+    )
+    fill = float(source.min())
+    actual = torch.where(valid, sampled, fill).cpu().numpy()[0]
+    reference = cf.registration.resample_like(
+        source,
+        target,
+        pull,
+        interpolation=interpolation,
+        fill_value=fill,
+        sitk_threads=1,
+    )
+    ones = source.copy(data=np.ones(source.shape))
+    expected_valid = (
+        cf.registration.resample_like(
+            ones,
+            target,
+            pull,
+            interpolation=interpolation,
+            fill_value=0.0,
+            sitk_threads=1,
+        ).values
+        > 0.5
+    )
+    assert_array_equal(valid.cpu().numpy()[0], expected_valid)
+    assert_allclose(
+        actual, reference.values, atol=1e-5 if dtype == np.float32 else 1e-12, rtol=0
+    )
+    assert actual.dtype == dtype
+    assert valid.any()
+    assert not valid.all()
+    if not oblique:
+        assert_array_equal(
+            expected_valid.any(axis=(1, 2)),
+            [False, True, True, True, True, False, False],
+        )

@@ -1,0 +1,142 @@
+{
+  "rows": [
+    {
+      "method": "CF",
+      "iterations": 27,
+      "stop": "GradientDescentOptimizerv4Template: Convergence checker passed at iteration 27.",
+      "common_NCC2": 0.7928790258459449,
+      "reference_RMS_px": 0.0,
+      "reference_max_px": 0.0,
+      "reference_gate_pass": true
+    },
+    {
+      "method": "voxreg LR 0.1",
+      "iterations": 100,
+      "stop": "max_iterations",
+      "common_NCC2": 0.5446851540895864,
+      "reference_RMS_px": 4.3560180213841395,
+      "reference_max_px": 4.744573639443769,
+      "reference_gate_pass": false
+    },
+    {
+      "method": "voxreg LR 0.3",
+      "iterations": 100,
+      "stop": "max_iterations",
+      "common_NCC2": 0.8276443826857756,
+      "reference_RMS_px": 0.6884618303609717,
+      "reference_max_px": 0.9515671931486321,
+      "reference_gate_pass": false
+    },
+    {
+      "method": "voxreg LR 1.0",
+      "iterations": 100,
+      "stop": "max_iterations",
+      "common_NCC2": 0.8276808915881153,
+      "reference_RMS_px": 0.7176281872907828,
+      "reference_max_px": 1.0464615817755745,
+      "reference_gate_pass": false
+    }
+  ],
+  "common_support": 0.8692103794642857,
+  "inputs": [
+    {
+      "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220523/susi/sub-rat75_ses-20220523_acq-slice32_rec-minframe2d_pwd.nii.gz",
+      "sha256": "bfc059b22695ed6e7f5cf8b1927b0978d291a0f9d2f7bddae4ccd69f674d3049",
+      "sidecar_sha256": "324693cb1f9c93e767c75816ec78bb171bf4c8cf173d63b3e9ca459e8dbb402c",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "dtype": "float64",
+      "raw_range": [
+        20.989732573125544,
+        6766.365013732707
+      ],
+      "position_to_world": [
+        [
+          0.3999999761581421,
+          -1.9172617353978458e-34,
+          -1.388833351185086e-33,
+          1.7763568394002505e-15
+        ],
+        [
+          1.7463359889231874e-34,
+          0.09855999797582625,
+          -6.364600602585139e-19,
+          5.000000000000002
+        ],
+        [
+          -8.711952302508758e-34,
+          -2.2372464514507346e-19,
+          0.10999999940395355,
+          -6.984999656677246
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220524/susi/sub-rat75_ses-20220524_acq-slice32_rec-minframe2d_pwd.nii.gz",
+      "sha256": "f97e329ed71aec0427dd0a1f44e9694712c76905a3a5004c3981f9d30cb75f91",
+      "sidecar_sha256": "7604bae724589b16188bbecce2fcca8f71e3a70aacbe5fca0fba4e998e83f560",
+      "shape": [
+        1,
+        112,
+        128
+      ],
+      "dtype": "float64",
+      "raw_range": [
+        37.04333990704922,
+        25065.500206656092
+      ],
+      "position_to_world": [
+        [
+          0.3999999761581421,
+          3.98012486173997e-34,
+          -2.7660057984100148e-33,
+          1.7763568394002505e-15
+        ],
+        [
+          -4.549644814859601e-34,
+          0.09855999797582628,
+          -8.449405938948477e-19,
+          4.999999999999998
+        ],
+        [
+          2.5388249847242993e-33,
+          1.2080067083566224e-18,
+          0.10999999940395354,
+          -6.984999656677246
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  ],
+  "device": "cuda",
+  "versions": {
+    "confusius": "0.8.0",
+    "torch": "2.14.1+cu130"
+  },
+  "sources": {
+    "research/confusius-examples/pair_learning_rate.py": "eeda3e2f2a58966588c16323699c4d685ee1d89aaa4e84791bf20aaebdca95d1",
+    "research/confusius-examples/render_notebooks.py": "60f02335f213792df8870e5563047796d863a09eec505ba9f842d4a810d71071",
+    "research/confusius-examples/compare_same_subject.py": "03bb4fa10d66b65947ae76af576744e6d2d72ae1f3029462298b438c6ecc25ef",
+    "research/confusius-examples/rigid_affine_atlas.py": "f50b7179aeee7297ece6028fd15f0bc19208fa60ec46f4488d025692daa61b30",
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "e159cf80d2a2d2ebd7d99388bafc3dc8945565ebefe976426b846ba95d072a14",
+    "src/voxreg/sampling.py": "f1ac3828d50369548099c7c46cf761a81917dd7a29890ec39322fd301093b07e",
+    "src/voxreg/transforms.py": "85232c3ddf8557d48d9a25d5b5df9f7a2d7c2d778515dacaabc9b855a9a36c5a"
+  }
+}

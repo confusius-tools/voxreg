@@ -1,5 +1,12 @@
 # Rigid → affine atlas comparison against ConfUSIus ground truth
 
+**Subsequent transform-family audit:** the [executed notebooks](NOTEBOOKS.md)
+show that installed CF uses an AffineTransform for matrix initialization even
+when rigid is requested. Its first-stage matrix contains scale/shear. “CF rigid”
+below therefore means the **requested stage**, not a genuine six-DOF result.
+The frozen measurements/reference failures remain unchanged, but this is not a
+like-family rigid-optimizer comparison. CF itself was not modified.
+
 **Result: fail against the designated ground truth.** Both libraries accept their
 own rigid result as the affine initializer, but voxreg's final placement remains
 about **0.370 mm / 7.65 native pixels RMS** from ConfUSIus. The unchanged truth
@@ -131,8 +138,10 @@ cache export is performed.
 
 ## Next diagnostic, not an implemented fix
 
-The disagreement already appears in rigid fitting; chaining affine does not close
-it. Next isolate capture/stopping from objective differences using the **CF rigid
-pose as a controlled starting point** and explicit objective evaluation at the
-reference pose. Do not tune for a higher native-slice NCC and call that agreement.
-This experiment does not establish the cause, and changes no production behavior.
+The disagreement already appears at the first requested stage; chaining affine
+does not close it. The subsequent transform-family audit above must be accounted
+for before the previously proposed controlled-CF-seed diagnostic: CF's returned
+matrix is not a valid genuine rigid initializer, and mixed-affine normal-completion
+compatibility also needs checking. Do not attribute the gap to rigid capture/stopping
+alone or tune for a higher native-slice NCC and call that agreement. This experiment
+does not establish the cause and changes no production behavior.

@@ -26,7 +26,6 @@ from voxreg.sampling import (
     _initial_parameters,
     global_ncc,
     make_grid,
-    sample_inverse_slice,
     sample_rigid,
     world_matrices,
 )
@@ -34,7 +33,6 @@ from voxreg.transforms import (
     affine_properties,
     configure_transform,
     linear_diagnostics,
-    validate_matrices,
 )
 
 
@@ -77,6 +75,8 @@ def _optimize(
     convergence_minimum_value: float = 1e-6,
     *,
     initial_parameters: torch.Tensor | None = None,
+    metric_callback: Callable[[torch.Tensor, torch.Tensor], None] | None = None,
+    metric_interval: int = 10,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run masked batched Adam with bounded whole-batch stopping checks.
 
@@ -138,6 +138,10 @@ def _optimize(
     for iteration in range(max_iterations):
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         loss, meaningful = global_ncc(moved, fixed, valid)
+        if metric_callback is not None and iteration % metric_interval == 0:
+            metric_callback(
+                steps, torch.where(meaningful & ~constant, loss.detach(), torch.nan)
+            )
         overlap = valid.sum(dim=spatial_axes) > 1
         good = overlap & meaningful & torch.isfinite(loss)
         active = status == 0
@@ -194,6 +198,8 @@ def _optimize(
     with torch.no_grad():
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         loss, meaningful = global_ncc(moved, fixed, valid)
+        if metric_callback is not None:
+            metric_callback(steps, torch.where(meaningful & ~constant, loss, torch.nan))
         overlap = valid.sum(dim=spatial_axes) > 1
         good = overlap & meaningful & torch.isfinite(loss)
         eligible = (status == 0) | (status == 1)
@@ -231,6 +237,11 @@ def register(
     convergence_minimum_value: float = 1e-6,
     device: Literal["cpu", "cuda"] = "cpu",
     progress: Literal["auto"] | bool | Callable[[int, int], None] | None = "auto",
+    metric_callback: Callable[
+        [npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[np.float64]], None
+    ]
+    | None = None,
+    metric_interval: int = 10,
 ) -> RegistrationResult:
     """Register a volume or independent frames onto a fixed physical VoxelData grid.
 
@@ -245,7 +256,7 @@ def register(
         orientation. Required for spatial-only moving input. For recordings,
         omission uses the first frame and preserves that reference exactly.
         Noncoplanar slice pairs require a plane-compatible seed or align_planes.
-        Mixed slice/volume inputs fit on the native slice, sampling the 3D volume.
+        Mixed slice/volume inputs sample the moving image on the native fixed grid.
     transform : {"translation", "rigid", "affine"}, default: "rigid"
         Translation/rigid/affine use 2/3/6 in-plane parameters for slice pairs,
         3/6/12 for volume pairs, and 3/6/9 for mixed slice/volume inputs.
@@ -314,6 +325,20 @@ def register(
         reach the CPU, on either device. Counts include reference and failed frames,
         not optimizer updates. No preparation/final-assembly events are emitted.
         Callback exceptions propagate; reporting updates are outside stage timings.
+    metric_callback : callable, optional
+        Live optimizer reporting, independent of frame progress. Receives owned
+        NumPy arrays ``(frame_indices, n_iterations, objective)`` for each chunk;
+        indices follow moving frame order, clocks count each frame's updates.
+        Reports the initial trial, every metric_interval optimizer rounds, and
+        the final trial. Stopped rows may repeat. Objective is raw negative NCC²,
+        NaN for unusable variance/support; lower is better. The returned best
+        valid pose can differ from the final trial. No history is retained unless
+        the callback stores it. Exceptions propagate. CPU copies and CUDA
+        synchronization are opt-in and included in optimization timing.
+    metric_interval : int, default: 10
+        Positive optimizer-round reporting cadence when metric_callback is set.
+        Set to 1 for a diagnostic trace; throttle plot redraws separately.
+        With no metric callback, no per-round host transfers are added.
 
     Returns
     -------
@@ -346,17 +371,19 @@ def register(
     align_planes explicitly assumes corresponding sections: align centers and
     unoriented plane normals, then refine in-plane. Centering alone corrects
     parallel-plane offsets, not tilt. Translation cannot align nonparallel planes.
-    Mixed slice/volume fitting samples the volume along the transformed native
-    slice, in either argument order; rigid has six identifiable pose parameters,
-    affine nine tangent/translation parameters with unit orthogonal normal
-    completion. Unidentifiable affine normal scale/shear seeds are rejected.
-    Mixed fits use the geometric slice pivot; moments changes the seed, not that
-    pivot. valid_fraction describes metric-domain overlap. For a moving slice
-    against a fixed volume, returned intensities still use the fixed volume grid
-    and only centers lying on the zero-thickness slice are valid; an empty mask
-    warns rather than inventing thickness. Use the inverse returned pull to view
-    the volume on the native slice. Diagnostics name the fitting domain; exported
-    transforms always retain the original fixed-world-to-moving-world convention.
+    Mixed slice/volume fitting always uses the caller's native fixed grid, without
+    reversing roles or replicating slices. Rigid has six pose parameters. Affine
+    retains nine tangent/translation parameters: unit orthogonal normal completion
+    constrains the physical slice-to-volume map, inverted when moving is the slice.
+    Unidentifiable affine normal scale/shear seeds are rejected. Mixed fits use the
+    geometric fixed-image pivot; moments changes the seed, not that pivot.
+    Mixed source support is half-open [-0.5, size-0.5) on every voxel axis, with
+    border-clamped interpolation. A singleton axis has constant intensity over its
+    finite voxel extent, not measured through-plane variation. An empty moving-slice
+    support mask warns. valid_fraction and output_valid_fraction (when present)
+    describe the same fixed-grid domain, not confidence or anatomical correctness.
+    Swapping inputs changes the fitting problem and need not return inverse poses.
+    Exported transforms retain the fixed-world-to-moving-world pull convention.
     Separate ITK-style fixed/moving pre-transform chains remain unsupported.
     Fewer than two valid sample centers flags insufficient overlap; zero/invalid
     variance flags an invalid metric. No fixed coverage percentage is required.
@@ -465,11 +492,12 @@ def register(
         raise TypeError(
             "progress must be True, False, None, 'auto', or a callable accepting (completed, total)."
         )
+    if metric_callback is not None and not callable(metric_callback):
+        raise TypeError("metric_callback must be callable or None.")
+    if type(metric_interval) is not int or metric_interval < 1:
+        raise ValueError("metric_interval must be a positive integer.")
     if isinstance(progress, str):
         progress = moving.sizes["time"] > 1
-    reverse = moving.sizes["k"] == 1 and fixed.sizes["k"] > 1
-    fit_fixed = moving.isel(time=0, drop=True) if reverse else fixed
-    fit_moving = fixed if reverse else moving
     if initialization is not None and initial_transform is not None:
         raise ValueError("Use initialization or initial_transform, not both.")
     if initialization is not None:
@@ -512,14 +540,14 @@ def register(
             initial_transform[:, :3, 3] -= (rotation - np.eye(3)) @ (
                 af[:3, 3] + fixed_offset
             )
-        if initialization == "center_moments" and not (
-            fit_fixed.sizes["k"] == 1 and fit_moving.sizes["k"] > 1
+        if initialization == "center_moments" and (
+            (fixed.sizes["k"] == 1) == (moving.sizes["k"] == 1)
         ):
             center = af[:3, 3] + fixed_offset
     # Double physical geometry/state keeps gradient reductions stable across chunk sizes.
     plane = make_grid(
-        fit_fixed,
-        fit_moving,
+        fixed,
+        moving,
         device=device,
         dtype=torch.float64,
         center=center,
@@ -534,7 +562,7 @@ def register(
         raise ValueError(
             "Translation cannot align nonparallel slice planes; choose rigid or affine."
         )
-    plane = configure_transform(plane, fit_fixed, transform)
+    plane = configure_transform(plane, fixed, transform)
     initial = None
     if initial_transform is not None:
         if isinstance(initial_transform, xr.DataArray):
@@ -569,14 +597,6 @@ def register(
                     and initial_transform.attrs[key] != expected
                 ):
                     raise ValueError(f"initial_transform {key} must be {expected!r}.")
-        if reverse:
-            initial_transform = validate_matrices(
-                initial_transform, moving.sizes["time"]
-            )
-            try:
-                initial_transform = np.linalg.inv(initial_transform)
-            except np.linalg.LinAlgError as error:
-                raise ValueError("initial_transform must be nonsingular.") from error
         initial = _initial_parameters(initial_transform, plane, moving.sizes["time"])
         if implicit_fixed:
             if not np.allclose(initial[0], 0, rtol=0, atol=1e-12):
@@ -651,14 +671,8 @@ def register(
             if device == "cuda":
                 torch.cuda.synchronize()
             start = perf_counter()
-            if reverse:
-                images = torch.tensor(target[None], device=device).expand(
-                    last - first, *target.shape
-                )
-                target_tensor = torch.tensor(fit[first:last], device=device)
-            else:
-                images = torch.tensor(fit[first:last], device=device)
-                target_tensor = torch.tensor(target, device=device)
+            images = torch.tensor(fit[first:last], device=device)
+            target_tensor = torch.tensor(target, device=device)
             reference = torch.zeros(last - first, dtype=torch.bool, device=device)
             if implicit_fixed and first == 0:
                 reference[0] = True
@@ -671,6 +685,20 @@ def register(
                 torch.cuda.synchronize()
             timings["upload"] += perf_counter() - start
             start = perf_counter()
+            metric_options = {}
+            if metric_callback is not None:
+
+                def report_metrics(clocks, objective, first=first, last=last):
+                    metric_callback(
+                        np.arange(first, last, dtype=np.int64),
+                        clocks.detach().cpu().numpy().copy(),
+                        objective.detach().cpu().numpy().copy(),
+                    )
+
+                metric_options = {
+                    "metric_callback": report_metrics,
+                    "metric_interval": metric_interval,
+                }
             physical, steps, status = _optimize(
                 images,
                 target_tensor,
@@ -681,6 +709,7 @@ def register(
                 convergence_window_size=convergence_window_size,
                 convergence_minimum_value=convergence_minimum_value,
                 initial_parameters=initial_tensor,
+                **metric_options,
             )
             if device == "cuda":
                 torch.cuda.synchronize()
@@ -691,19 +720,9 @@ def register(
                     np.ascontiguousarray(raw[first:last], dtype=resampling_dtype),
                     device=device,
                 )
-                if reverse:
-                    sampled, valid = sample_inverse_slice(
-                        original,
-                        physical,
-                        plane,
-                        fixed,
-                        moving,
-                        interpolation=interpolation,
-                    )
-                else:
-                    sampled, valid = sample_rigid(
-                        original, physical, plane, interpolation=interpolation
-                    )
+                sampled, valid = sample_rigid(
+                    original, physical, plane, interpolation=interpolation
+                )
                 fills = original.amin(dim=spatial_axes)[reference_shape]
                 sampled = torch.where(valid, sampled, fills)
                 if implicit_fixed:
@@ -725,13 +744,7 @@ def register(
                 clocks.append(steps.cpu().numpy())
                 statuses.append(status.cpu().numpy())
                 objectives.append(loss.cpu().numpy())
-                overlaps.append(
-                    (fit_valid if reverse else valid)
-                    .float()
-                    .mean(dim=spatial_axes)
-                    .cpu()
-                    .numpy()
-                )
+                overlaps.append(valid.float().mean(dim=spatial_axes).cpu().numpy())
             timings["resample_download"] += perf_counter() - start
             if progress is True:
                 advance(last - first)
@@ -739,11 +752,9 @@ def register(
                 progress(last, len(raw))
     params = np.concatenate(parameters)
     matrices = world_matrices(params, plane)
-    if reverse:
-        matrices = np.linalg.inv(matrices)
     diagnostic_params, diagnostic_plane = params, plane
     mixed = isinstance(plane, SpatialGrid) and plane.slice_basis is not None
-    if reverse or (mixed and transform == "affine"):
+    if mixed and transform == "affine":
         shifts = matrices[:, :3, 3] + np.einsum(
             "bij,j->bi", matrices[:, :3, :3] - np.eye(3), plane.center
         )
@@ -754,10 +765,6 @@ def register(
             diagnostic_plane = replace(
                 plane, slice_basis=None, resident_slice_basis=None
             )
-        elif transform == "rigid":
-            diagnostic_params = np.column_stack((-params[:, :3], shifts))
-        else:
-            diagnostic_params = shifts
     labels = np.array(
         [
             "running",
@@ -846,22 +853,19 @@ def register(
     )
     if isinstance(plane, SpatialGrid) and plane.slice_basis is not None:
         diagnostics.attrs.update(
-            metric_domain="moving_slice" if reverse else "fixed_slice",
-            parameter_convention="fixed-world-to-moving-world centered map; fitted on native slice",
+            metric_domain="fixed_slice" if fixed.sizes["k"] == 1 else "fixed_volume",
+            parameter_convention="fixed-world-to-moving-world centered map; sampled on native fixed grid",
             optimized_parameters=len(plane.parameter_scale),
             rotation_center_zyx_mm=plane.center.tolist(),
         )
-        if reverse:
+        if moving.sizes["k"] == 1:
             diagnostics["output_valid_fraction"] = (
                 "time",
                 np.concatenate(masks).reshape(len(raw), -1).mean(axis=1),
             )
-            if np.any(
-                (diagnostics.output_valid_fraction.values == 0)
-                & np.isfinite(diagnostics.objective.values)
-            ):
+            if np.any(diagnostics.output_valid_fraction.values == 0):
                 warnings.warn(
-                    "No fixed-grid sample centers lie on the fitted zero-thickness slice for some frames. Fitting used the native slice domain; use the inverse returned transform to sample the volume onto the native slice grid for visualization.",
+                    "No fixed-grid sample centers lie within the transformed slice's voxel extent for some frames. Fitting uses the native fixed grid; try a better initialization or choose the slice as fixed.",
                     UserWarning,
                     stacklevel=2,
                 )

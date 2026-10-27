@@ -3,19 +3,117 @@
 Status: **numerical and real-data quality checks pass; isolated ITK/FireANTs
 performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.md).
 Throughput measurements cover the documented pair/series controls, not general
-registration accuracy or performance.
+registration accuracy or performance. Atlas reference acceptance remains failed;
+see the current mixed-pair results below.
+
+## Current mixed-pair policy: native caller-fixed sampling
+
+[Native fixed-grid implementation and proof](research/slice-geometry/NATIVE-FIXED.md):
+no replicated slab, no internal role reversal. The9-parameter mixed affine preserves
+its physical slice-to-volume unit-normal constraint in either requested direction.
+531 tests pass; all four frozen120-frame controls are bitwise unchanged. Eight
+fresh native atlas fits pass CPU/CUDA precision (worst4.89e-6px), but **all fail the
+unchanged.25px CF reference gate**. This is a sampling-policy correction, not an
+accepted anatomical registration or a new performance qualification. Historical
+invariance/slab results below retain their original meaning and source snapshots.
+
+## FireANTs atlas and sampling-fidelity ablation
+
+[Actual FireANTs controls](research/confusius-examples/ATLAS-FIREANTS.md) fail the
+.25px reference gate in8 single-scale local/global-NCC fits. Native singleton
+input fails its3D adapter; CF-equivalent expansion is explicit. Some apparent
+metric optima have no native overlap or compress normal thickness; an all-zero
+prediction matches one returned local-CC score. Four unchanged-engine voxreg slab
+controls restore caller-fixed sampling. Recording-moving affine disagreement drops
+from6.22 to.889px, still a gate failure: the native-domain/model choice materially
+changes the comparison. Product and installed sources are unchanged. No tuned
+multi-resolution FireANTs workflow, atlas CPU/CUDA precision or performance claim.
+
+## Late CF overshoot and voxreg centering audit
+
+[Continuation and fresh bidirectional controls](research/confusius-examples/ATLAS-CENTERED-FOLLOWUP.md)
+demonstrate finite-step overshoot and hard-support changes. CF rigid/unit-normal
+fits recover higher metrics over1000 updates, but coverage drops to28%/20% and
+reference agreement worsens. Updated figures mask unsupported pixels instead of
+showing nearest-edge extrapolation. Voxreg already preserves its centered pivot
+with matrix seeds;8 CPU/CUDA runs reproduce the previous affine matrices bitwise
+and confirm direction invariance. Its best-valid return policy does not establish
+anatomical success: rigid/affine remain7.71/6.22px from the good original CF.
+**26 focused tests pass**; product/installed CF sources are unchanged. No fresh
+full suite or optimizer-policy change.
+
+## Centered CF with a physically constrained normal
+
+[True rigid and unit-normal affine controls](research/confusius-examples/ATLAS-RIGID-CENTERED.md)
+permit tilt without through-plane collapse. A9-DOF recording-fixed CF arm preserves
+unit perpendicular normal throughout, but still moves to6.604mm depth/6.415° tilt;
+its returned/best poses differ13.72/12.10px from the original good CF affine.
+Thus preventing collapse does not by itself fix reverse-direction placement.
+**13 focused tests pass**; production and installed CF sources are unchanged.
+These use scoped research transform setup, not a new public CF model. No fresh
+full suite, tuned-rate or no-stop controls were run for this investigation.
+
+## Direct ITK atlas alignment investigation
+
+[Independent ITKv4 controls](research/confusius-examples/ATLAS-ALIGNMENT-INVESTIGATION.md)
+reproduce original CF within2.27e-14px RMS (direct SimpleITK is bitwise identical).
+Native ITK derivatives show that CF's replicated-moving-slice affine fit cannot
+update its first transform row: manual plane depth/tilt stay fixed. Voxreg allows
+those changes; freezing them in a research-only control reduces CF discrepancy
+from6.22 to3.04px. Warm starting at an equivalent CF-native pose reduces it to
+0.44px with the plane frozen, still above0.25px. CF's own correlation metric also
+scores the voxreg candidates higher, so metric maximization does not validate
+anatomy or imply reference parity. Local finite-difference checks support correct
+sampler/backpropagation arithmetic; gradient construction/capture remain factors.
+**24 focused tests pass**; production sources are unchanged. FireANTs and a fresh
+full suite were not run for this research-only investigation.
+
+## Opt-in metric reporting and atlas convergence diagnosis
+
+[Actual metric traces](research/confusius-examples/ATLAS-CONVERGENCE.md) show that
+the native atlas fit stops at91 updates but returns its best trial from56;
+fixed500/1000 runs retain a higher-metric pose at151 that is farther from CF.
+A3.836° rigid correction and0.237mm centroid shift explain84.63% of squared
+CF pose disagreement, leaving affine residuals. No stopping/optimizer policy was
+changed. Optional owned-array metric callbacks report per-frame clocks at a
+configurable cadence, with host synchronization only when enabled. **470 full
+tests pass**; four frozen motion controls and observed native atlas matrices
+remain bitwise unchanged. Reference-placement acceptance still fails.
+
+## Finite singleton voxel extent
+
+The [thickness correction](research/slice-geometry/THICKNESS.md) replaces the
+incorrect zero-width moving-slice output mask with affine-defined `[-0.5, 0.5)`
+voxel support. **453 full tests pass**, including16 new CF interpolation/support
+regressions on CPU/CUDA. Four frozen motion controls remain bitwise unchanged;
+six mixed truth and three precision gates pass. The real seed now gives16472
+valid volume samples rather than zero. Active-axis borders and the native-center
+fitting metric remain unchanged; the atlas reference-placement gate still fails.
 
 ## Rigid→affine atlas reference comparison
 
 [Report](research/confusius-examples/RIGID-AFFINE-ATLAS.md): current installed
-ConfUSIus is designated ground truth by the operator. Each library's own rigid
-matrix directly initializes its affine fit. Voxreg fails the unchanged 0.25-px
+ConfUSIus is designated ground truth by the operator. Each library's own requested
+rigid-stage matrix directly initializes its affine fit. Voxreg fails the unchanged 0.25-px
 RMS truth gate: rigid **7.710 px**, affine **7.654 px** (about **0.370 mm** final
 RMS). Foreground atlas-label agreement is only **45.40%** after affine; a higher
 native-slice correlation does not override this failure. Both CPU/CUDA precision
 checks pass, worst **2.94e-6 px**. No engine, optimizer or default change was made.
 Five new harness tests and 49 focused tests pass; the prior full422 engine run is
 reused, not presented as a fresh full427 run. Failed reference arms are retained.
+
+The [subsequent executed notebooks](research/confusius-examples/NOTEBOOKS.md)
+recreate all three public examples with22 actual figures and official Allen RGB
+overlays (18 executed cells;55 focused tests pass). Their transform audit shows
+CF's matrix-seeded requested-rigid call actually returns scale/shear, so the older
+first-stage comparison is not six-DOF-versus-six-DOF. Reference failures remain
+unchanged; CF and voxreg engines are untouched.
+
+The pre-fix [zero-update seed control](research/confusius-examples/ATLAS-SEED-CONTROL.md)
+then verifies exact manual-matrix preservation on CPU/CUDA and agreement to6.04e-14dB
+on9600 common native centers. It also exposes real support differences before any
+optimization:80 native border pixels and16936-versus-zero supported centers on the
+original volume grid. This is not whole-output CF parity or a fitted-pose pass.
 
 ## Slice geometry extension
 
@@ -30,7 +128,10 @@ controls remain bitwise identical. Full-suite and build checks are recorded ther
 The actual cached atlas example now runs. Common native-slice NCC² improves from
 0.04890 manual to 0.11826 ConfUSIus and 0.15326 voxreg CPU/CUDA; scores are low and
 **do not validate anatomical atlas placement**. Empty reverse-direction volume-grid
-output is distinguished from native-slice fitting support; no thickness is invented.
+output is distinguished from native-slice fitting support. The subsequent
+[singleton-extent correction](research/slice-geometry/THICKNESS.md) replaces the
+original zero-thickness output assumption with affine-defined voxel extent; the
+native-center fitting domain remains unchanged.
 Prior float64-motion fixed100 and default3D precision failures remain retained.
 
 The [single-pair GPU diagnosis](research/performance/SINGLE-PAIR.md) separately

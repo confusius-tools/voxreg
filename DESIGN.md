@@ -79,8 +79,13 @@ Coplanar k=1 pairs retain fixed-plane 3-DOF constraints, now with independent
 in-plane grids. The identical-grid slice sampling kernel retains its qualified
 arithmetic; preprocessing, NCC, optimizer, convergence, failure guards and dtype
 handling are shared. The subsequent slice-geometry extension accepts compatible
-plane seeds/explicit align_planes and samples mixed pairs on their native slice.
+plane seeds/explicit align_planes. Mixed pairs now sample the caller's native fixed
+grid without role reversal. The nine-parameter mixed affine constrains the physical
+slice-to-volume map; its inverse is used when the slice is moving, with translation
+centered on the fixed image. Mixed support uses half-open half-voxel bounds on all
+source axes and border-clamped interpolation; a singleton remains one finite cell.
 Other singleton configurations remain errors; no slice is replicated into a volume.
+See [native fixed-grid validation](research/slice-geometry/NATIVE-FIXED.md).
 
 Initialization defaults to identity world motion; explicit rigid seeds now use
 the optimized ITK InitialTransform model described below. No fixed coverage

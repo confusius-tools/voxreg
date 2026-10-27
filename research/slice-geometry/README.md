@@ -1,5 +1,10 @@
 # Slice geometry extension
 
+**Historical native-slice-domain report.** Current mixed registration samples the
+caller's native fixed grid without role reversal or replicated data; see
+[NATIVE-FIXED.md](NATIVE-FIXED.md). The older protocol/results below are retained,
+not silently rewritten as validation of the new domain.
+
 **Subsequent reference acceptance test:** the
 [rigid→affine atlas comparison](../confusius-examples/RIGID-AFFINE-ATLAS.md) treats
 installed ConfUSIus as ground truth by operator instruction. Voxreg fails the
@@ -39,16 +44,22 @@ motion parameters **always describe the original fixed-world → moving-world ma
 Mixed affine diagnostics describe its completed 3×3 matrix, not twelve optimized
 parameters. Geometry remains world z/y/x, mm; original moving dtype is retained.
 
-A zero-thickness moving slice generally misses every fixed-volume voxel center.
-Then output is fill with an empty validity mask, **not a failed slice-domain
-metric**. A warning explains how to view the volume on the native slice instead.
+A moving slice has finite voxel extent from its affine, even with k=1. Its
+singleton-axis support is `[-0.5, 0.5)` in source voxel coordinates, with constant
+intensity along that axis. This corrects the original zero-thickness error; see
+[THICKNESS.md](THICKNESS.md). Active-axis center bounds and native-center fitting
+remain unchanged. If that finite extent misses all output centers, the output
+mask is empty and a warning explains the distinction from fitting support.
 `valid_fraction` describes fitting-domain support; `output_valid_fraction` describes
-reverse-direction output support. Numerical on-plane tolerance is retained, not a
-new slice-thickness model. Original values are not changed. Reversed NumPy views
+reverse-direction output support. Original values are not changed. Reversed NumPy views
 are now made contiguous at the shared final tensor-upload boundary; this also
 fixes an existing negative-stride final-resampling error without changing values.
 
 ## Qualification
+
+The measurements below and `results.json` are frozen at the original `ce8636f`
+boundary, before the singleton-extent correction. The current behavior and fresh
+qualification are recorded separately in [THICKNESS.md](THICKNESS.md).
 
 Run from the repository root:
 
@@ -121,8 +132,10 @@ and mesh downloads, atlas-cache export and B-spline stages were not run.
 ## Boundaries retained
 
 Slice lattices keep the pre-existing orthogonal-axis requirement. Other singleton
-configurations remain unsupported. No masks, pyramids, finite slice-thickness
-model, deformable transform or new convergence tuning was introduced. Geometry
+configurations remain unsupported. No masks, pyramids, acquisition-specific slice
+point-spread function, deformable transform or new convergence tuning is introduced.
+Finite singleton voxel extent is used for resampling, not a new volumetric fitting
+objective or extra optimized affine parameters. Geometry
 alignment cannot create missing anatomy in genuinely different sections.
 
 The earlier default3D stopping precision failure and original-float64 motion

@@ -1,0 +1,338 @@
+{
+  "python": "3.14.8 (main, Oct  2 2026, 10:23:31) [GCC 16.2.1 20260810]",
+  "sources": {
+    "research/confusius-examples/render_notebooks.py": "60f02335f213792df8870e5563047796d863a09eec505ba9f842d4a810d71071",
+    "research/confusius-examples/compare_atlas.py": "8c0bfc430f1fd73138f8d727a6dc3926493c58c3c3a792ddcf429ce35ae613e6",
+    "research/confusius-examples/compare_same_subject.py": "03bb4fa10d66b65947ae76af576744e6d2d72ae1f3029462298b438c6ecc25ef",
+    "research/confusius-examples/rigid_affine_atlas.py": "f50b7179aeee7297ece6028fd15f0bc19208fa60ec46f4488d025692daa61b30",
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "e159cf80d2a2d2ebd7d99388bafc3dc8945565ebefe976426b846ba95d072a14",
+    "src/voxreg/sampling.py": "f1ac3828d50369548099c7c46cf761a81917dd7a29890ec39322fd301093b07e",
+    "src/voxreg/transforms.py": "85232c3ddf8557d48d9a25d5b5df9f7a2d7c2d778515dacaabc9b855a9a36c5a"
+  },
+  "notebooks": [
+    {
+      "stem": "01-same-subject",
+      "title": "Same-subject registration: ConfUSIus vs voxreg",
+      "code_cells": 6,
+      "figures": 6,
+      "summary": {
+        "rigid": [
+          {
+            "method": "Before",
+            "iterations": 0,
+            "common_NCC2": 0.18785049572819293,
+            "stop": "identity"
+          },
+          {
+            "method": "ConfUSIus rigid",
+            "iterations": 27,
+            "common_NCC2": 0.7920759066137101,
+            "stop": "GradientDescentOptimizerv4Template: Convergence checker passed at iteration 27."
+          },
+          {
+            "method": "voxreg rigid",
+            "iterations": 100,
+            "common_NCC2": 0.5441490193571723,
+            "stop": "max_iterations"
+          }
+        ],
+        "common_support": 0.8712332589285714,
+        "cf_bspline_iterations": 45,
+        "voxreg_bspline": "unsupported"
+      },
+      "inputs": [
+        {
+          "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220523/susi/sub-rat75_ses-20220523_acq-slice32_rec-minframe2d_pwd.nii.gz",
+          "sha256": "bfc059b22695ed6e7f5cf8b1927b0978d291a0f9d2f7bddae4ccd69f674d3049",
+          "sidecar_sha256": "324693cb1f9c93e767c75816ec78bb171bf4c8cf173d63b3e9ca459e8dbb402c",
+          "shape": [
+            1,
+            112,
+            128
+          ],
+          "dtype": "float64",
+          "raw_range": [
+            20.989732573125544,
+            6766.365013732707
+          ],
+          "position_to_world": [
+            [
+              0.3999999761581421,
+              -1.9172617353978458e-34,
+              -1.388833351185086e-33,
+              1.7763568394002505e-15
+            ],
+            [
+              1.7463359889231874e-34,
+              0.09855999797582625,
+              -6.364600602585139e-19,
+              5.000000000000002
+            ],
+            [
+              -8.711952302508758e-34,
+              -2.2372464514507346e-19,
+              0.10999999940395355,
+              -6.984999656677246
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ]
+        },
+        {
+          "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220524/susi/sub-rat75_ses-20220524_acq-slice32_rec-minframe2d_pwd.nii.gz",
+          "sha256": "f97e329ed71aec0427dd0a1f44e9694712c76905a3a5004c3981f9d30cb75f91",
+          "sidecar_sha256": "7604bae724589b16188bbecce2fcca8f71e3a70aacbe5fca0fba4e998e83f560",
+          "shape": [
+            1,
+            112,
+            128
+          ],
+          "dtype": "float64",
+          "raw_range": [
+            37.04333990704922,
+            25065.500206656092
+          ],
+          "position_to_world": [
+            [
+              0.3999999761581421,
+              3.98012486173997e-34,
+              -2.7660057984100148e-33,
+              1.7763568394002505e-15
+            ],
+            [
+              -4.549644814859601e-34,
+              0.09855999797582628,
+              -8.449405938948477e-19,
+              4.999999999999998
+            ],
+            [
+              2.5388249847242993e-33,
+              1.2080067083566224e-18,
+              0.10999999940395354,
+              -6.984999656677246
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ]
+        }
+      ],
+      "device": "cuda",
+      "versions": {
+        "confusius": "0.8.0",
+        "torch": "2.14.1+cu130",
+        "numpy": "2.5.4"
+      }
+    },
+    {
+      "stem": "02-motion-correction",
+      "title": "Motion correction: ConfUSIus vs voxreg",
+      "code_cells": 5,
+      "figures": 7,
+      "summary": {
+        "frames": 120,
+        "window": [
+          220,
+          340
+        ],
+        "selected_frames": [
+          296,
+          335
+        ],
+        "median_ncc2_excluding_reference": {
+          "Before": 0.939937325286192,
+          "CF": 0.960029459420773,
+          "voxreg": 0.9608366211770069
+        },
+        "cf_median_iterations": 57.0,
+        "voxreg_median_iterations": 79.0
+      },
+      "inputs": [
+        {
+          "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220523/fusi/sub-rat75_ses-20220523_task-openfield_acq-slice32_pwd.nii.gz",
+          "sha256": "f2d0a5e4daa10afc979b47d926af4e1ba3b2368c1384e32944ef9d3d8687e9b3",
+          "sidecar_sha256": "d582135c35ccb870d57c83630d017bac4aed266f58cf0e6a556e0ed003e3e1c7"
+        }
+      ],
+      "device": "cuda",
+      "versions": {
+        "confusius": "0.8.0",
+        "torch": "2.14.1+cu130",
+        "numpy": "2.5.4"
+      }
+    },
+    {
+      "stem": "03-allen-atlas",
+      "title": "Allen atlas overlays: ConfUSIus vs voxreg",
+      "code_cells": 7,
+      "figures": 9,
+      "summary": {
+        "quality": [
+          {
+            "method": "CF original affine",
+            "common_NCC2": 0.10887727242631788,
+            "reference_RMS_mm": 0.0,
+            "reference_RMS_px": 0.0,
+            "reference_gate_0.25px": true
+          },
+          {
+            "method": "voxreg original affine",
+            "common_NCC2": 0.14172831081901333,
+            "reference_RMS_mm": 0.3004298415518842,
+            "reference_RMS_px": 6.217505111132904,
+            "reference_gate_0.25px": false
+          },
+          {
+            "method": "CF chained rigid",
+            "common_NCC2": 0.10887727242631788,
+            "reference_RMS_mm": 0.0,
+            "reference_RMS_px": 0.0,
+            "reference_gate_0.25px": true
+          },
+          {
+            "method": "CF chained affine",
+            "common_NCC2": 0.11025628178896078,
+            "reference_RMS_mm": 0.0,
+            "reference_RMS_px": 0.0,
+            "reference_gate_0.25px": true
+          },
+          {
+            "method": "voxreg chained rigid",
+            "common_NCC2": 0.05980361491768445,
+            "reference_RMS_mm": 0.37255356551462016,
+            "reference_RMS_px": 7.710131875690864,
+            "reference_gate_0.25px": false
+          },
+          {
+            "method": "voxreg chained affine",
+            "common_NCC2": 0.15540577717787601,
+            "reference_RMS_mm": 0.3698501117411337,
+            "reference_RMS_px": 7.654182914137853,
+            "reference_gate_0.25px": false
+          }
+        ],
+        "requested_rigid_audit": [
+          {
+            "requested_stage": "CF chained rigid",
+            "orthogonality_error": 0.1987265664618158,
+            "singular_values": [
+              1.0005204088431456,
+              0.9833212114368276,
+              0.8966876182345651
+            ],
+            "rigid_matrix": false
+          },
+          {
+            "requested_stage": "voxreg chained rigid",
+            "orthogonality_error": 3.686521971479333e-17,
+            "singular_values": [
+              1.0000000000000002,
+              1.0,
+              1.0
+            ],
+            "rigid_matrix": true
+          }
+        ],
+        "label_agreement": [
+          {
+            "method": "voxreg original affine",
+            "agreement_fraction": 0.5642,
+            "foreground_label_agreement": 0.45654071579997507,
+            "macro_region_dice": 0.22541248733003083
+          },
+          {
+            "method": "voxreg chained rigid",
+            "agreement_fraction": 0.4754,
+            "foreground_label_agreement": 0.346537120079721,
+            "macro_region_dice": 0.2171077520866925
+          },
+          {
+            "method": "voxreg chained affine",
+            "agreement_fraction": 0.5622,
+            "foreground_label_agreement": 0.4539785482664006,
+            "macro_region_dice": 0.2178106981531367
+          }
+        ],
+        "common_support": 0.9102,
+        "annotation": {
+          "manifest": "/home/sdiebolt/.brainglobe/brainglobe-atlasapi/atlases/allen_mouse_100um/3_1/manifest.json",
+          "manifest_sha256": "f0d1357460d38d27d3c1d990d694b3641c79c58800b31341743ec092e6b415a0",
+          "store": "/home/sdiebolt/.brainglobe/brainglobe-atlasapi/annotation-sets/allen_mouse-annotation/3_1/annotations_compressed.ome.zarr/s3",
+          "array_sha256": "8dc0525dff348ddc0390776cb2dd46d9eeed9d6feb752e30e95f1b759fb4ccb5",
+          "position_to_world": [
+            [
+              0.1,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.1,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.1,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "loader": "Cached compressed label array; geometry matches current ConfUSIus _build_dataset_from_brainglobe. No structures, meshes or network loading."
+        }
+      },
+      "inputs": [
+        {
+          "path": "/home/sdiebolt/.cache/confusius/pepe-mariani-2026-template/1.0.0/pepe-mariani-2026-fusi-template.nii.gz",
+          "sha256": "a1c1c6d8231d3e133eed8e58c1700d1eb687b682147fd6f0604a4a0159b25171"
+        },
+        {
+          "path": "/home/sdiebolt/.cache/confusius/nunez-elizalde-2022-bids/1.0.0/sub-CR022/ses-20201007/fusi/sub-CR022_ses-20201007_task-spontaneous_acq-slice02_pwd.nii.gz",
+          "sha256": "2208e26f66fb8b9dcd0e04b94632fb908e72c43c97bc66b36dc0e4c4cd973b03"
+        },
+        {
+          "path": "/home/sdiebolt/.brainglobe/brainglobe-atlasapi/terminologies/allen_mouse-terminology/3_1/terminology.csv",
+          "sha256": "f9c0c094ad29b788dbb4a01e5843f4362ab6325d2092117f3c875ab423e7ff00"
+        }
+      ],
+      "device": "cuda",
+      "versions": {
+        "confusius": "0.8.0",
+        "torch": "2.14.1+cu130",
+        "numpy": "2.5.4"
+      }
+    }
+  ],
+  "scope": "Executed quality/visual comparison, no timing claims. Unsupported voxreg B-spline and full Atlas export limitations are explicit.",
+  "confusius_source_sha256": {
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/__init__.py": "6f4aa41c5f0ad6562141c37fe0df2c2cef6cf87b01145c314aed490a620372c1",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/_utils.py": "b05c1eaa0c36cffa873ed14951dd6be0c3ac82833143c3be23ff61d0a1d53390",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/affines.py": "abb93a3204abce5122f8e3e847ddbc9b10c1851fb9fa64c65b1fd5030caeca09",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/bspline.py": "677057af194c33261699badd022bd8d75362162f0bcd39d0603c63617d57e5b8",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/diagnostics.py": "6bedfc87b85ce736ffaab78e5a5eda12fd3874beede76303eeca3a17d4a7d6f2",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/motion.py": "cf0a1232cb1c7bdd6a3f8e113ea9bf1a649cb9135483206e88245325df0446c8",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/progress.py": "ec988086a08b85dfea61860f6abae48a0f1ad74a8197b8114dc38cf5637d70a7",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/resampling.py": "0604073a496a851415f3b417261919a996232988a81fef824da4365350809758",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/volume.py": "72de9672f313b1849e63ede8d581378ef86e1d26377a37d9f1adb3fa4f6fb2f0",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/volumewise.py": "0d418a77e11f7be5aed3d692af865e5c31c75afddb31856a79550f28f6cefe04",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/volumewise_progress.py": "66a4ac63e3f0f2be55d8a69f02b038864b22e17d1ddf215b7a1fa84cb1038d1b",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/datasets/_brainglobe.py": "831a02a01f0ac9b50b276a728735734216ba1deee3058f1ebc1910a268b2d8fd"
+  }
+}

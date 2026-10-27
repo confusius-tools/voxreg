@@ -182,7 +182,7 @@ def run(output):
         },
         "limitations": [
             "Native slice-domain NCC, not biological truth or CF expanded-slab loss.",
-            "Slice output has no invented thickness; reverse-direction volume-grid output may be all fill.",
+            "Slice output uses affine-defined singleton voxel extent; fitting remains on native slice centers.",
             "No speed claim: elapsed includes unlike cold setup and reverse verification.",
             "Atlas annotation/mesh fetch and cache export not run.",
         ],

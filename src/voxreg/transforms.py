@@ -52,6 +52,9 @@ def intrinsic_linear(parameters, grid):
             (basis, torch.linalg.cross(basis[:, 0], basis[:, 1])[:, None]), dim=1
         )
         linear = torch.cat((tangents, normal[:, :, None]), dim=-1) @ frame.T
+        if grid.inverse_slice_affine:
+            # Constrain the slice-to-volume map, even when the requested pull is its inverse.
+            linear = torch.linalg.inv_ex(linear).inverse
         return linear, parameters[:, -3:]
     identity = torch.eye(dimensions, dtype=parameters.dtype, device=parameters.device)
     linear = identity.expand(len(parameters), -1, -1)
@@ -117,7 +120,16 @@ def initial_linear_parameters(values, grid):
     local_translation = translation @ grid.basis
     if grid.transform == "affine" and getattr(grid, "slice_basis", None) is not None:
         basis = grid.slice_basis
-        tangents = linear @ basis
+        if grid.inverse_slice_affine:
+            try:
+                tangent_linear = np.linalg.inv(linear)
+            except np.linalg.LinAlgError as error:
+                raise ValueError(
+                    "Slice-to-volume affine seed must be nonsingular."
+                ) from error
+        else:
+            tangent_linear = linear
+        tangents = tangent_linear @ basis
         parameters = np.column_stack(
             ((tangents - basis).reshape(len(values), -1), translation)
         )

@@ -146,7 +146,7 @@ Recordings `(time, k, j, i)` use the same volume engine in batches. Choose a sma
 3D memory is benchmarked at the documented sizes; large 3D batches are not. Spatial-only input requires an explicit fixed image. Coplanar `k=1` slice pairs instead fit
 three identifiable in-plane parameters with the default rigid model.
 
-For slice pairs and volume pairs, the metric is evaluated on fixed-grid points, sampling moving array positions as
+For all supported pairs, the metric is evaluated on the caller's native fixed-grid points, sampling moving array positions as
 `inverse(A_moving) @ T @ A_fixed`, where each `A` includes native crop/stride
 coordinates. Thus **identity world motion can resample unequal grids** without
 estimating their known geometry as motion.
@@ -160,7 +160,7 @@ parameters and metric domain from the input geometry:
 | --- | --- | --- |
 | Two slices | 2 / 3 / 6 | Fixed slice, constrained plane-to-plane map |
 | Two volumes | 3 / 6 / 12 | Fixed volume |
-| One slice, one volume | 3 / 6 / 9 | Native slice; sample the full supplied volume |
+| One slice, one volume | 3 / 6 / 9 | Caller’s fixed grid; no role reversal or replicated slab |
 
 **Noncoplanar slice pairs** need a physical seed mapping the fixed plane into the
 moving plane, or an explicit `initialization="align_planes"`. This new initializer
@@ -185,27 +185,46 @@ atlas_on_slice = voxreg.register(
 )
 ```
 
-Mixed fitting uses the **same optimizer**, in either argument order. Affine fits
-six entries of a 3×2 tangent map plus three world translations: unobservable normal
-scale/shear is not optimized. Export uses a unit orthogonal, orientation-preserving
-normal completion; incompatible full-affine seeds are rejected explicitly. Rigid
-allows all six spatial pose parameters. Mixed modes use the geometric slice pivot;
-`center_moments` still aligns intensity centroids for its seed, without changing
-that shared pivot. Batch seeds and frame failures remain independent.
+Mixed fitting uses the **same optimizer**, with the caller's roles unchanged.
+To fit the recording on the template grid, use `register(recording_slice,
+atlas_volume, ...)`; this is a genuinely different objective from the example
+above, not a hidden inverse fit. There is no direction flag or replicated slab.
+
+Affine fits six entries of a 3×2 tangent map plus three world translations. The
+physical **slice-to-volume map** retains a unit orthogonal, orientation-preserving
+normal completion in both directions; when the slice is moving, its inverse is
+used for the requested pull. Unobservable normal scale/shear seeds are rejected.
+Rigid allows all six spatial pose parameters. Mixed modes use the geometric
+**fixed-image pivot**; `center_moments` aligns intensity centroids for the seed
+without changing this pivot. Batch seeds and frame failures remain independent.
 
 **The returned pull always maps the original fixed world into the original moving
 world**, and images retain the original moving dtype on the original fixed grid.
-If moving is the slice and fixed the volume, there may be **no volume-grid sample
-centers exactly on the fitted slice**. `valid` then is empty and output is fill;
-a warning explains this. Fitting can still succeed because it uses actual slice
-pixels, not those output-grid points. No thickness or new volume data is invented.
+If moving is the slice and fixed the volume, samples within its **finite voxel
+extent** are valid: the singleton axis occupies `[-0.5, 0.5)` in source voxel
+coordinates, mapped through the full affine. Its intensity is constant through
+that extent; no independent measurements are replicated. Mixed pairs use ITK-style
+half-voxel support `[-0.5, size-0.5)` on **all source axes**, with border-clamped
+interpolation. Fitting uses the original fixed-grid centers, including when fixed
+is the volume. If none falls inside the transformed slice extent, fitting reports
+insufficient overlap and a warning; it does not silently switch domains.
 For a useful atlas overlay, prefer the volume-as-moving call above, or sample the
 volume onto the slice with the inverse of the slice-as-moving result matrix.
-`diagnostics.valid_fraction` describes slice-domain metric support;
-`output_valid_fraction` separately describes reverse-direction output coverage.
+`diagnostics.valid_fraction` describes native fixed-grid metric support;
+`output_valid_fraction`, retained for moving-slice calls, now describes that same
+domain. Coverage is not confidence.
 Diagnostic pose parameters, like the exported matrix, describe the requested
 fixed-to-moving direction. Mixed affine diagnostics report the completed 3×3
 matrix; only its nine identifiable slice-fitting parameters are optimized.
+
+Swapped mixed calls no longer coincide by construction. They use different fixed
+samples and moving intensities/gradients, so inverse poses are not guaranteed.
+This follows the caller-fixed sampling convention, **not CF's historical four-slice
+expansion**. Our constrained affine, autograd derivatives and Adam optimizer still
+differ from generic ITK affine/GD; sampling agreement is not full algorithmic parity.
+See the [native fixed-grid validation](research/slice-geometry/NATIVE-FIXED.md).
+The [FireANTs/slab experiments](research/confusius-examples/ATLAS-FIREANTS.md) remain
+historical diagnostics, not the implementation target.
 
 The [slice-geometry qualification](research/slice-geometry/README.md) records
 synthetic truth/CPU–CUDA checks and the real ConfUSIus atlas retry.
@@ -468,7 +487,36 @@ synchronization. Preparation and final output assembly do not emit events; small
 batches give more frequent updates but may reduce throughput. Reporting updates
 are outside stage timings; callback exceptions propagate and the built-in display
 is closed on errors. Timed/profiling harnesses explicitly use `progress=False`.
-No extra dependency or per-iteration GPU polling is added.
+Frame progress alone adds no extra dependency or per-iteration GPU polling.
+
+### Live optimizer metrics (opt-in)
+
+Use a separate metric callback to print, collect a history, or feed a live plot:
+
+```python
+def report_metric(frame_indices, updates, objective):
+    for frame, step, loss in zip(frame_indices, updates, objective, strict=True):
+        print(f"Frame {frame}, update {step}: trial NCC²={-loss:.6f}")
+
+
+result = voxreg.register(
+    moving, fixed,
+    metric_callback=report_metric,
+    metric_interval=10,  # Optimizer rounds; use 1 for a diagnostic trace.
+)
+```
+
+The callback receives owned NumPy arrays: global moving-frame indices, per-frame
+update counts, and raw negative NCC² (lower is better; invalid metrics are NaN).
+Initial and final trials are always reported; stopped rows can repeat. The
+returned result retains the **best valid pose**, not necessarily the final trial,
+so read its final metric from `result.diagnostics.objective`.
+
+No history is stored automatically and no plotting dependency is added. CUDA
+reporting transfers small arrays and synchronizes **only when opted in**; throttle
+plot redraws separately (for example, a few times per second). Metric-callback
+work is included in optimization timing and exceptions propagate. With no metric
+callback, numerical execution and default frame progress are unchanged.
 
 ## Reproduce the real motion-correction example
 

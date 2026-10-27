@@ -1,0 +1,126 @@
+{
+  "records": [
+    {
+      "case": "template_on_native_recording",
+      "device": "cpu",
+      "optimizer_updates": 0,
+      "source_dtype": "float64",
+      "output_dtype": "float64",
+      "max_world_mapping_error_mm": 0.0,
+      "max_source_pixel_mapping_error": 0.0,
+      "matrix_max_abs": 0.0,
+      "common_centers": 9600,
+      "cf_valid_centers": 9680,
+      "voxreg_valid_centers": 9600,
+      "support_disagreement_centers": 80,
+      "common_max_abs": 6.039613253960852e-14,
+      "common_rms": 8.969065131244814e-15,
+      "whole_output_max_abs": 7.165775685318334,
+      "voxreg_vs_scipy_common_max_abs": 4.529709940470639e-14,
+      "warnings": []
+    },
+    {
+      "case": "template_on_native_recording",
+      "device": "cuda",
+      "optimizer_updates": 0,
+      "source_dtype": "float64",
+      "output_dtype": "float64",
+      "max_world_mapping_error_mm": 0.0,
+      "max_source_pixel_mapping_error": 0.0,
+      "matrix_max_abs": 0.0,
+      "common_centers": 9600,
+      "cf_valid_centers": 9680,
+      "voxreg_valid_centers": 9600,
+      "support_disagreement_centers": 80,
+      "common_max_abs": 6.039613253960852e-14,
+      "common_rms": 9.186185461388574e-15,
+      "whole_output_max_abs": 7.165775685318334,
+      "voxreg_vs_scipy_common_max_abs": 4.529709940470639e-14,
+      "warnings": []
+    },
+    {
+      "case": "recording_on_template_grid",
+      "device": "cpu",
+      "optimizer_updates": 0,
+      "source_dtype": "float32",
+      "output_dtype": "float32",
+      "max_world_mapping_error_mm": 0.0,
+      "max_source_pixel_mapping_error": 0.0,
+      "matrix_max_abs": 0.0,
+      "common_centers": 0,
+      "cf_valid_centers": 16936,
+      "voxreg_valid_centers": 0,
+      "support_disagreement_centers": 16936,
+      "common_max_abs": null,
+      "common_rms": null,
+      "whole_output_max_abs": 17.88397127389908,
+      "voxreg_vs_scipy_common_max_abs": null,
+      "warnings": [
+        "No fixed-grid sample centers lie on the fitted zero-thickness slice for some frames. Fitting used the native slice domain; use the inverse returned transform to sample the volume onto the native slice grid for visualization."
+      ]
+    },
+    {
+      "case": "recording_on_template_grid",
+      "device": "cuda",
+      "optimizer_updates": 0,
+      "source_dtype": "float32",
+      "output_dtype": "float32",
+      "max_world_mapping_error_mm": 0.0,
+      "max_source_pixel_mapping_error": 0.0,
+      "matrix_max_abs": 0.0,
+      "common_centers": 0,
+      "cf_valid_centers": 16936,
+      "voxreg_valid_centers": 0,
+      "support_disagreement_centers": 16936,
+      "common_max_abs": null,
+      "common_rms": null,
+      "whole_output_max_abs": 17.88397127389908,
+      "voxreg_vs_scipy_common_max_abs": null,
+      "warnings": [
+        "No fixed-grid sample centers lie on the fitted zero-thickness slice for some frames. Fitting used the native slice domain; use the inverse returned transform to sample the volume onto the native slice grid for visualization."
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "path": "/home/sdiebolt/.cache/confusius/pepe-mariani-2026-template/1.0.0/pepe-mariani-2026-fusi-template.nii.gz",
+      "sha256": "a1c1c6d8231d3e133eed8e58c1700d1eb687b682147fd6f0604a4a0159b25171"
+    },
+    {
+      "path": "/home/sdiebolt/.cache/confusius/nunez-elizalde-2022-bids/1.0.0/sub-CR022/ses-20201007/fusi/sub-CR022_ses-20201007_task-spontaneous_acq-slice02_pwd.nii.gz",
+      "sha256": "2208e26f66fb8b9dcd0e04b94632fb908e72c43c97bc66b36dc0e4c4cd973b03"
+    }
+  ],
+  "versions": {
+    "confusius": "0.8.0",
+    "torch": "2.14.1+cu130",
+    "numpy": "2.5.4"
+  },
+  "placed_plane_z_mm": 5.994638662390876,
+  "nearest_template_z_mm": 6.029563054442406,
+  "sources": {
+    "research/confusius-examples/atlas_seed_control.py": "295aaf1742ec5608a541ac9a519341cd957097a6022a52f08278ba50ab5a4d3b",
+    "research/confusius-examples/render_notebooks.py": "60f02335f213792df8870e5563047796d863a09eec505ba9f842d4a810d71071",
+    "research/confusius-examples/compare_atlas.py": "8c0bfc430f1fd73138f8d727a6dc3926493c58c3c3a792ddcf429ce35ae613e6",
+    "research/confusius-examples/compare_same_subject.py": "03bb4fa10d66b65947ae76af576744e6d2d72ae1f3029462298b438c6ecc25ef",
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "e159cf80d2a2d2ebd7d99388bafc3dc8945565ebefe976426b846ba95d072a14",
+    "src/voxreg/sampling.py": "f1ac3828d50369548099c7c46cf761a81917dd7a29890ec39322fd301093b07e",
+    "src/voxreg/transforms.py": "85232c3ddf8557d48d9a25d5b5df9f7a2d7c2d778515dacaabc9b855a9a36c5a"
+  },
+  "confusius_sources": {
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/__init__.py": "6f4aa41c5f0ad6562141c37fe0df2c2cef6cf87b01145c314aed490a620372c1",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/_utils.py": "b05c1eaa0c36cffa873ed14951dd6be0c3ac82833143c3be23ff61d0a1d53390",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/affines.py": "abb93a3204abce5122f8e3e847ddbc9b10c1851fb9fa64c65b1fd5030caeca09",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/bspline.py": "677057af194c33261699badd022bd8d75362162f0bcd39d0603c63617d57e5b8",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/diagnostics.py": "6bedfc87b85ce736ffaab78e5a5eda12fd3874beede76303eeca3a17d4a7d6f2",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/motion.py": "cf0a1232cb1c7bdd6a3f8e113ea9bf1a649cb9135483206e88245325df0446c8",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/progress.py": "ec988086a08b85dfea61860f6abae48a0f1ad74a8197b8114dc38cf5637d70a7",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/resampling.py": "0604073a496a851415f3b417261919a996232988a81fef824da4365350809758",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/volume.py": "72de9672f313b1849e63ede8d581378ef86e1d26377a37d9f1adb3fa4f6fb2f0",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/volumewise.py": "0d418a77e11f7be5aed3d692af865e5c31c75afddb31856a79550f28f6cefe04",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/.venv/lib/python3.14/site-packages/confusius/registration/volumewise_progress.py": "66a4ac63e3f0f2be55d8a69f02b038864b22e17d1ddf215b7a1fa84cb1038d1b"
+  }
+}

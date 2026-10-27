@@ -1,5 +1,56 @@
 # ConfUSIus examples: real-data validation (original guarded baseline)
 
+**Current mixed-pair protocol:** [native fixed-grid sampling](../slice-geometry/NATIVE-FIXED.md),
+with `atlas_native_fixed.py`: no role reversal or replicated slab. Eight fresh
+native fits pass CPU/CUDA precision but still fail the atlas reference gate.
+Older direction-invariance reports below describe the retired sampling policy.
+
+For **FireANTs atlas results and explicit sampling-fidelity controls**, see
+[ATLAS-FIREANTS.md](ATLAS-FIREANTS.md):8 actual FireANTs fits,4 caller-fixed/slab
+voxreg controls, support-masked overlays and background-score checks. The native
+slice-domain model was not inherited from FireANTs and is not literal CF sampling.
+
+For **late overshoot,1000-step CF continuation and a fresh voxreg centering audit**, see
+[ATLAS-CENTERED-FOLLOWUP.md](ATLAS-CENTERED-FOLLOWUP.md). Metric recovery can hide
+coverage loss; updated overlays mark unsupported pixels gray. Voxreg was already
+centered, and its two directions still coincide without a production change.
+
+For **fits that allow tilt but prevent normal collapse**, see
+[ATLAS-RIGID-CENTERED.md](ATLAS-RIGID-CENTERED.md): true rigid in both directions,
+and a9-DOF tilt/in-plane-affine control with verified unit perpendicular normal.
+Compression is eliminated, but reverse plane-depth/orientation drift remains.
+
+For **centered versus origin-pivot fits in both directions**, see
+[ATLAS-CENTERING.md](ATLAS-CENTERING.md): same initial mapping and fitting settings,
+with actual metric traces and2×2 overlays. Centering changes the trajectory but
+does not fix the reverse fit; it exposes strong through-plane affine compression.
+
+For **why the atlas poses differ**, see
+[the direct ITK / matched-freedom investigation](ATLAS-ALIGNMENT-INVESTIGATION.md):
+CF's original affine fit preserves manual plane depth/tilt, while voxreg refines
+those coordinates; gradient construction and capture also matter.
+
+For **actual atlas metric histories, longer-run controls and rotation/translation
+diagnosis**, see [ATLAS-CONVERGENCE.md](ATLAS-CONVERGENCE.md). Native stopping is
+not proof of a settled affine solution; the new optional metric callback supports
+live CPU/CUDA reporting without changing default numerical execution.
+
+For **affine atlas registration in both argument directions**, see
+[ATLAS-DIRECTIONS.md](ATLAS-DIRECTIONS.md): voxreg is direction-invariant here;
+CF changes by17.23 native pixels RMS. Both direction-matched CF acceptance checks
+still fail. Actual template and official Allen-colored overlays are retained.
+
+The **[finite singleton-extent correction](../slice-geometry/THICKNESS.md)** fixes
+the zero-thickness mask discovered by the [pre-fix initial-placement control](ATLAS-SEED-CONTROL.md).
+The fresh zero-update report now has nonempty volume output; active-axis borders
+and the fitted atlas-pose disagreement remain separate, unresolved differences.
+The original affine panels already ran registration, not just manual placement.
+
+For **all three executed notebook/HTML comparisons with actual plots and official
+Allen-colored overlays**, see [NOTEBOOKS.md](NOTEBOOKS.md). It also audits the
+installed CF matrix-seeded requested-rigid stage, which returns an affine-valued
+matrix; the earlier chain is not a six-DOF-versus-six-DOF comparison.
+
 For **rigid→affine atlas comparison with current installed ConfUSIus designated
 as ground truth**, see [RIGID-AFFINE-ATLAS.md](RIGID-AFFINE-ATLAS.md). Voxreg fails
 the reference-placement gate despite passing CPU/CUDA agreement; results and

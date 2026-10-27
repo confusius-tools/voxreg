@@ -154,6 +154,7 @@ class SpatialGrid:
     center: npt.NDArray[np.float64]
     parameter_scale: torch.Tensor
     planar: bool
+    inverse_slice_affine: bool = False
     slice_basis: npt.NDArray[np.float64] | None = None
     resident_slice_basis: torch.Tensor | None = None
     plane_rotation: npt.NDArray[np.float64] | None = None
@@ -183,12 +184,10 @@ def make_grid(
     ms = np.array([moving.sizes[d] for d in ("k", "j", "i")])
     planar = fs[0] == ms[0] == 1
     slice_volume = fs[0] == 1 and min(*ms) >= 2
-    if min(*fs[1:], *ms[1:]) < 2 or (
-        not planar and not slice_volume and min(*fs, *ms) < 2
-    ):
-        raise ValueError(
-            "Use k=1 slices or 3D volumes with all axes >= 2; fit mixed grids on the slice domain."
-        )
+    volume_slice = ms[0] == 1 and min(*fs) >= 2
+    mixed = slice_volume or volume_slice
+    if min(*fs[1:], *ms[1:]) < 2 or (not planar and not mixed and min(*fs, *ms) < 2):
+        raise ValueError("Use k=1 slices or 3D volumes with all axes >= 2.")
     af, am = position_to_world(fixed), position_to_world(moving)
     lf, lm = af[:3, :3], am[:3, :3]
     seeds, reversed_normal = None, False
@@ -234,7 +233,7 @@ def make_grid(
         scales = torch.tensor(np.r_[ell / radii, [ell] * 3], device=device, dtype=dtype)
     half = np.where(hm > 0, hm, 1)
     world_to_normalized = np.linalg.inv(lm) / half[:, None]
-    normalized_to_world = lf * hf
+    normalized_to_world = lf if mixed else lf * hf
     center_offset = origin_difference + lf @ hf
     normalized_center = np.where(hm > 0, 1, 0)
     dimensions = 2 if planar else 3
@@ -244,14 +243,20 @@ def make_grid(
         if not planar or axis > 0:
             shape[axis + (0 if planar else 1)] = int(size)
         coordinate = torch.arange(int(size), device=device, dtype=dtype)
-        coordinate = coordinate / (hf[axis] if hf[axis] > 0 else 1) - (
-            1 if size > 1 else 0
-        )
+        if mixed:
+            # Integer-centered indices avoid a normalize/denormalize roundoff at voxel faces.
+            coordinate = coordinate - hf[axis]
+        else:
+            coordinate = coordinate / (hf[axis] if hf[axis] > 0 else 1) - (
+                1 if size > 1 else 0
+            )
         coordinates.append(coordinate.reshape(shape))
     options = {"device": device, "dtype": dtype}
     tolerance = 1e-5 / half
     slice_basis = (
-        make_plane(fixed, device=device, dtype=dtype).basis if slice_volume else None
+        make_plane(fixed if slice_volume else moving, device=device, dtype=dtype).basis
+        if mixed
+        else None
     )
     return SpatialGrid(
         world_to_normalized=torch.tensor(world_to_normalized, **options),
@@ -261,13 +266,18 @@ def make_grid(
             world_to_normalized @ center_offset - normalized_center, **options
         ),
         coordinates=tuple(coordinates),
-        lower=torch.tensor(-normalized_center - tolerance, **options),
-        upper=torch.tensor(normalized_center + tolerance, **options),
+        lower=torch.tensor(
+            -normalized_center - (0.5 / half if mixed else tolerance), **options
+        ),
+        upper=torch.tensor(
+            normalized_center + (0.5 / half if mixed else tolerance), **options
+        ),
         resident_basis=torch.tensor(basis, **options),
         basis=basis,
         center=geometric_center if center is None else center,
         parameter_scale=scales,
         planar=bool(planar),
+        inverse_slice_affine=bool(volume_slice),
         slice_basis=slice_basis,
         resident_slice_basis=torch.tensor(slice_basis, **options)
         if slice_basis is not None
@@ -362,7 +372,10 @@ def _sample_grid(
             value = value + linear[:, axis, column][expand] * coordinates
         components.append(value)
     mapped = torch.stack(components, dim=-1)
-    valid = ((mapped >= grid.lower) & (mapped <= grid.upper)).all(dim=-1)
+    upper_valid = (
+        mapped < grid.upper if grid.slice_basis is not None else mapped <= grid.upper
+    )
+    valid = ((mapped >= grid.lower) & upper_valid).all(dim=-1)
     sampler_grid = mapped[..., [2, 1] if grid.planar else [2, 1, 0]]
     sampled = F.grid_sample(
         images[:, None],
@@ -658,10 +671,10 @@ def world_matrices(parameters, plane):
 
 
 def sample_inverse_slice(images, parameters, grid, fixed, moving, *, interpolation):
-    """Resample a moving slice on a fixed volume using the inverse fitting map.
+    """Resample the moving slice's finite voxel extent using the inverse fitting map.
 
-    No thickness is invented: only sample centers on the slice are valid. A
-    successful slice-domain fit can therefore have an empty volume-grid mask.
+    A singleton axis occupies [-0.5, 0.5) in source voxel coordinates, mapped
+    through its full affine. Border interpolation is constant along that axis.
     """
     linear, shift = _physical_transform(parameters, grid)
     inverse = torch.linalg.inv(linear)
@@ -685,7 +698,9 @@ def sample_inverse_slice(images, parameters, grid, fixed, moving, *, interpolati
     mapped = offset[:, None, None, None, :]
     for axis, coordinate in enumerate(coordinates):
         mapped = mapped + lattice[:, None, None, None, :, axis] * coordinate[..., None]
-    valid = ((mapped >= -1e-5) & (mapped <= bounds + 1e-5)).all(dim=-1)
+    within = (mapped >= -1e-5) & (mapped <= bounds + 1e-5)
+    within = torch.where(bounds == 0, (mapped >= -0.5) & (mapped < 0.5), within)
+    valid = within.all(dim=-1)
     normalized = mapped / half - (bounds > 0).to(parameters.dtype)
     sampled = F.grid_sample(
         images[:, None],

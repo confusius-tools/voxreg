@@ -1,4 +1,4 @@
-"""3D plane placement without inventing measured slice thickness."""
+"""3D slice placement with affine-defined singleton voxel extent."""
 
 import numpy as np
 import pytest
@@ -24,9 +24,9 @@ def sample(data, target, matrix):
         (np.indices(target.shape).reshape(3, -1), np.ones((1, target.size)))
     )
     native = (np.linalg.inv(position_to_world(data)) @ matrix @ points)[:3]
-    valid = (
-        (native >= -1e-5) & (native <= np.array(data.shape)[:, None] - 1 + 1e-5)
-    ).all(axis=0)
+    valid = ((native >= -0.5) & (native < np.array(data.shape)[:, None] - 0.5)).all(
+        axis=0
+    )
     values = map_coordinates(
         data.values, native, order=1, mode="nearest", prefilter=False
     )
@@ -74,7 +74,7 @@ def pair(model):
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
 @pytest.mark.parametrize("device", DEVICES)
-def test_slice_volume_both_directions_fit_the_same_slice(model, device):
+def test_slice_volume_directions_use_their_own_native_fixed_grid(model, device):
     target, volume, truth = pair(model)
     kwargs = {
         "transform": model,
@@ -85,18 +85,16 @@ def test_slice_volume_both_directions_fit_the_same_slice(model, device):
         "progress": False,
     }
     result = register(volume, target, **kwargs)
-    with pytest.warns(UserWarning, match="zero-thickness slice"):
-        reverse = register(target, volume, **kwargs)
+    reverse = register(target, volume, **kwargs)
     assert result.registered.shape == target.shape
     assert reverse.registered.shape == volume.shape
     assert result.registered.dtype == reverse.registered.dtype == np.float64
     assert result.diagnostics.valid_fraction > 0.95
-    assert_allclose(
-        reverse.transforms, np.linalg.inv(result.transforms), atol=1e-12, rtol=0
+    assert not np.allclose(
+        reverse.transforms, np.linalg.inv(result.transforms), atol=1e-6, rtol=0
     )
-    assert_allclose(
-        reverse.diagnostics.objective, result.diagnostics.objective, atol=1e-14
-    )
+    assert result.diagnostics.attrs["metric_domain"] == "fixed_slice"
+    assert reverse.diagnostics.attrs["metric_domain"] == "fixed_volume"
     points = position_to_world(target) @ np.vstack(
         (np.indices(target.shape).reshape(3, -1), np.ones((1, target.size)))
     )
@@ -115,7 +113,7 @@ def test_slice_volume_both_directions_fit_the_same_slice(model, device):
         reverse.registered.values[valid], expected[valid], atol=1e-12, rtol=0
     )
     assert np.all(reverse.registered.values[~valid] == target.values.min())
-    assert reverse.diagnostics.attrs["metric_domain"] == "moving_slice"
+    assert_allclose(reverse.diagnostics.valid_fraction, valid.mean(), atol=1e-8)
     for fitted in [result, reverse]:
         center = np.asarray(fitted.diagnostics.attrs["rotation_center_zyx_mm"])
         matrix = fitted.transforms.values
@@ -281,10 +279,8 @@ def test_batched_slice_targets_seeds_failures_and_chunk_independence(model, devi
         "device": device,
         "progress": False,
     }
-    with pytest.warns(UserWarning, match="zero-thickness slice"):
-        a = register(movie, volume, batch_size=1, **kwargs)
-    with pytest.warns(UserWarning, match="zero-thickness slice"):
-        b = register(movie, volume, batch_size=3, **kwargs)
+    a = register(movie, volume, batch_size=1, **kwargs)
+    b = register(movie, volume, batch_size=3, **kwargs)
     assert list(a.diagnostics.status.values) == [
         "max_iterations",
         "max_iterations",
@@ -299,7 +295,7 @@ def test_batched_slice_targets_seeds_failures_and_chunk_independence(model, devi
         rtol=0,
         equal_nan=True,
     )
-    assert_allclose(a.transforms.values, seeds, atol=1e-9, rtol=0)
+    assert_allclose(a.transforms.values[2], seeds[2], atol=1e-9, rtol=0)
     assert_array_equal(movie.values, original)
     assert_array_equal(seeds, np.linalg.inv(np.stack((truth, second, truth))))
 
@@ -451,7 +447,19 @@ def test_plane_initializer_scope_and_translation_rotation_validation():
 
 
 @pytest.mark.parametrize("mode", ["center_geometry", "center_moments"])
-def test_mixed_centering_seed_is_direction_consistent(mode):
+def test_mixed_centering_seed_is_direction_consistent(mode, monkeypatch):
+    from voxreg import rigid
+
+    def seed_only(
+        images, target, grid, reference, *args, initial_parameters=None, **kwargs
+    ):
+        return (
+            initial_parameters,
+            torch.zeros(len(images), dtype=torch.int64, device=images.device),
+            torch.full((len(images),), 5, dtype=torch.int64, device=images.device),
+        )
+
+    monkeypatch.setattr(rigid, "_optimize", seed_only)
     target, volume, _ = pair("rigid")
     kwargs = {
         "initialization": mode,
@@ -461,12 +469,11 @@ def test_mixed_centering_seed_is_direction_consistent(mode):
         "progress": False,
     }
     a = register(volume, target, **kwargs)
-    with pytest.warns(UserWarning, match="zero-thickness slice"):
-        b = register(target, volume, **kwargs)
+    b = register(target, volume, **kwargs)
     assert_allclose(a.transforms, np.linalg.inv(b.transforms), atol=1e-12, rtol=0)
 
 
-def test_coincident_volume_grid_centers_are_valid_without_adding_thickness():
+def test_volume_grid_centers_within_singleton_voxel_extent_are_valid():
     target, volume, _ = pair("translation")
     values, _ = sample(volume, target, np.eye(4))
     target = voxel(values, position_to_world(target))
