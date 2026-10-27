@@ -6,7 +6,7 @@ and comparators, not a requirement for identical trajectories or outputs.
 
 ## Remember, do not enable by default
 
-- **Multistart:** try several physical initial placements, especially for2D→3D
+- **Multistart:** try several physical initial placements, especially for 2D→3D
   section/depth ambiguity. Needs a defensible selection criterion: maximum NCC
   alone can select tiny-overlap or anatomically incorrect fits. No search policy
   or implementation chosen yet.
@@ -21,10 +21,12 @@ and comparators, not a requirement for identical trajectories or outputs.
 
 ## Exploration, not runtime
 
-A small shared Matplotlib helper should show a composite and raw metric history,
-mark the best state, throttle redraws, and work with headless figure export.
-Intermediate-pose observation belongs in research instrumentation for now. No
-plotting dependency, viewer framework or public plotting option in voxreg.
+Implemented in research-only `plot_registration.py`, with `explore_atlas.py` as
+its current example: composite and raw metric trace, throttled GUI redraws,
+returned-best display and headless export. See
+[usage and limitations](research/confusius-examples/EXPLORATION.md).
+Intermediate-pose observation stays in scoped research instrumentation. No added
+runtime plotting dependency, viewer framework or public plotting option in voxreg.
 
 ## Cleanup boundary
 

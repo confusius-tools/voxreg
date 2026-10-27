@@ -5,7 +5,6 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import numpy as np
 import SimpleITK as sitk
@@ -15,7 +14,7 @@ from atlas_centering import physical_center
 from atlas_rigid_centered import centered_rigid, centered_unit_normal, linear_matrix
 
 # Preserve historical imports while moving plotting out of experiment runners.
-from plot_registration import display_sample, supported_composites  # noqa: F401
+from plot_registration import display_sample, observe_optimizer, supported_composites  # noqa: F401
 from render_notebooks import ROOT, SETUP, Notebook, page
 
 import voxreg
@@ -113,28 +112,20 @@ def vox_trace(
         clocks.append(int(iterations[0]))
         losses.append(float(objective[0]))
 
-    def optimize(images, fixed, grid, *args, **kwargs):
-        domains.append({"moving": list(images.shape[1:]), "fixed": list(fixed.shape)})
-        pivots.append(grid.center.tolist())
-        decoded_seeds.append(
-            engine.world_matrices(
-                kwargs["initial_parameters"].detach().cpu().numpy(), grid
-            )[0].tolist()
-        )
-
-        def sample(images, parameters, geometry):
-            states.append(
-                engine.world_matrices(parameters.detach().cpu().numpy(), geometry)[
-                    0
-                ].copy()
+    def sample(images, fixed, parameters, grid):
+        matrix = engine.world_matrices(parameters.detach().cpu().numpy(), grid)[
+            0
+        ].copy()
+        if not states:
+            domains.append(
+                {"moving": list(images.shape[1:]), "fixed": list(fixed.shape)}
             )
-            return original_sampler(images, parameters, geometry)
-
-        with patch.object(engine, "sample_rigid", sample):
-            return original(images, fixed, grid, *args, **kwargs)
+            pivots.append(grid.center.tolist())
+            decoded_seeds.append(matrix.tolist())
+        states.append(matrix)
 
     torch.set_num_threads(8 if device == "cpu" else 1)
-    with patch.object(engine, "_optimize", optimize):
+    with observe_optimizer(sample):
         result = voxreg.register(
             source,
             target,

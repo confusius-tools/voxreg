@@ -16,6 +16,10 @@ phantoms and a real-template known-pose control—not a natural 3D session pair.
 
 See [DESIGN.md](DESIGN.md) for conventions and scope, and
 [VALIDATION.md](VALIDATION.md) for the measured quality checks and remaining gates.
+For a small research-only live composite/metric plot, see
+[native-pair exploration](research/confusius-examples/EXPLORATION.md).
+[ROADMAP.md](ROADMAP.md) records possible multistart/line-search work and existing
+manual rigid→affine staging; these do not change optimizer defaults.
 
 ## Install and test
 

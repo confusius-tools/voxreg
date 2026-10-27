@@ -1,4 +1,9 @@
-# ConfUSIus examples: real-data validation (original guarded baseline)
+# ConfUSIus examples: current exploration and historical validation
+
+**Start here:** [native-pair live/headless exploration](EXPLORATION.md), using
+`explore_atlas.py` and the reusable research-only `plot_registration.py` helper.
+Optimizer defaults are unchanged. Library comparisons below are diagnostics, not
+an ITK/FireANTs output-equivalence product requirement or anatomical ground truth.
 
 **Current mixed-pair protocol:** [native fixed-grid sampling](../slice-geometry/NATIVE-FIXED.md),
 with `atlas_native_fixed.py`: no role reversal or replicated slab. Eight fresh
@@ -13,7 +18,8 @@ slice-domain model was not inherited from FireANTs and is not literal CF samplin
 For **late overshoot,1000-step CF continuation and a fresh voxreg centering audit**, see
 [ATLAS-CENTERED-FOLLOWUP.md](ATLAS-CENTERED-FOLLOWUP.md). Metric recovery can hide
 coverage loss; updated overlays mark unsupported pixels gray. Voxreg was already
-centered, and its two directions still coincide without a production change.
+centered; direction equality in that historical report followed the now-retired
+sampling policy, not independent evidence of alignment accuracy.
 
 For **fits that allow tilt but prevent normal collapse**, see
 [ATLAS-RIGID-CENTERED.md](ATLAS-RIGID-CENTERED.md): true rigid in both directions,
