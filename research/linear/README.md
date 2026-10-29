@@ -1,5 +1,9 @@
 # Bounded linear-model qualification
 
+For the current package-first API/test audit and fresh ConfUSIus workflows, see
+[READINESS.md](READINESS.md). The measurements below retain their original
+protocol and source hashes; the readiness check does not rewrite them.
+
 This extends the rigid engine to translation and affine fitting. It is a
 **quality/precision check, not a performance benchmark or general capture-range
 claim**. Frozen rigid benchmark measurements are not reclassified as affine data.

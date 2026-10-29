@@ -1,18 +1,24 @@
-# Initial rigid validation
+# Registration validation
 
-Status: **numerical and real-data quality checks pass; isolated ITK/FireANTs
-performance/memory comparisons are now available** in [BENCHMARK.md](BENCHMARK.md).
-Throughput measurements cover the documented pair/series controls, not general
-registration accuracy or performance. Atlas reference acceptance remains failed;
-see the current mixed-pair results below.
+Current status: **585 linear-contract tests pass; real-workflow qualification has
+explicit limits.** See the [package-readiness check](research/linear/READINESS.md)
+for the shared fixtures, all-model 2D/3D contracts, 20 fresh pair/motion workflow
+arms and eight native atlas fits. The default pair budget still underfits the
+same-subject example, and the fixed-100 float64 motion stress control still fails
+the unchanged CPU/CUDA precision gate. Native atlas precision passes, but
+anatomical correctness is not established by CF agreement or a higher metric.
+
+Historical ITK/FireANTs performance/memory comparisons remain in
+[BENCHMARK.md](BENCHMARK.md). Their measurements cover the documented controls,
+not general registration accuracy or performance; they were not requalified here.
 
 ## Current mixed-pair policy: native caller-fixed sampling
 
 [Native fixed-grid implementation and proof](research/slice-geometry/NATIVE-FIXED.md):
 no replicated slab, no internal role reversal. The9-parameter mixed affine preserves
 its physical slice-to-volume unit-normal constraint in either requested direction.
-531 tests pass; all four frozen120-frame controls are bitwise unchanged. Eight
-fresh native atlas fits pass CPU/CUDA precision (worst4.89e-6px), but **all fail the
+At the original qualification, 531 tests passed and all four frozen120-frame
+controls were bitwise unchanged. Those eight native atlas fits pass CPU/CUDA precision (worst4.89e-6px), but **all fail the
 unchanged.25px CF reference gate**. This is a sampling-policy correction, not an
 accepted anatomical registration or a new performance qualification. Historical
 invariance/slab results below retain their original meaning and source snapshots.

@@ -4,6 +4,20 @@ Goal: the simplest correct, general GPU-accelerated registration engine for
 ConfUSIus, with room for other modalities. ITK, FireANTs and syntx provide ideas
 and comparators, not a requirement for identical trajectories or outputs.
 
+## Package-first priorities
+
+1. Verify translation/rigid/affine for 2D/single-slice and 3D VoxelData: shared
+   package-wide fixtures, independent truth/oracles and meaningful API contracts.
+2. Re-run the ConfUSIus pair, motion and native atlas workflows, without requiring
+   identical library trajectories or quietly substituting replicated slabs.
+3. Implement SyN after reviewing those checks and keeping unresolved limits explicit.
+
+The [linear-readiness check](research/linear/READINESS.md) records 585 passing tests
+and fresh workflow results, including the still-failing fixed-budget float64 motion
+precision control. [Test conventions](tests/README.md) describe fixture ownership.
+SyN is not implemented yet. Multistart, line search and broad capture-range studies
+are deferred, not prerequisites imposed ahead of these package priorities.
+
 ## Remember, do not enable by default
 
 - **Multistart:** try several physical initial placements, especially for 2D→3D

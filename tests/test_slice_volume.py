@@ -5,7 +5,8 @@ import pytest
 import torch
 from confusius import create_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
-from scipy.ndimage import map_coordinates
+from oracles import sample_mixed as sample
+from oracles import voxel
 from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
@@ -15,67 +16,12 @@ from voxreg.transforms import configure_transform
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
 
-def voxel(values, affine):
-    return create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=affine)
-
-
-def sample(data, target, matrix):
-    points = position_to_world(target) @ np.vstack(
-        (np.indices(target.shape).reshape(3, -1), np.ones((1, target.size)))
-    )
-    native = (np.linalg.inv(position_to_world(data)) @ matrix @ points)[:3]
-    valid = ((native >= -0.5) & (native < np.array(data.shape)[:, None] - 0.5)).all(
-        axis=0
-    )
-    values = map_coordinates(
-        data.values, native, order=1, mode="nearest", prefilter=False
-    )
-    return values.reshape(target.shape), valid.reshape(target.shape)
-
-
-def pair(model):
-    shape = (25, 27, 29)
-    affine = np.eye(4)
-    affine[:3, :3] *= 0.4
-    affine[:3, 3] = -(np.array(shape) - 1) * 0.2
-    coordinates = (
-        affine
-        @ np.vstack((np.indices(shape).reshape(3, -1), np.ones((1, np.prod(shape)))))
-    )[:3]
-    rng = np.random.default_rng(42)
-    values = np.ones(coordinates.shape[1]) * 0.02
-    for center, widths, weight in zip(
-        rng.uniform(-3, 3, (18, 3)),
-        rng.uniform(0.45, 1.2, (18, 3)),
-        rng.uniform(0.3, 2, 18),
-        strict=True,
-    ):
-        values += weight * np.exp(
-            -0.5
-            * (((coordinates - center[:, None]) / widths[:, None]) ** 2).sum(axis=0)
-        )
-    volume = voxel(values.reshape(shape), affine)
-    af = np.eye(4)
-    af[:3, :3] *= 0.35
-    af[:3, 3] = [0, -3.5, -3.85]
-    target = voxel(np.ones((1, 21, 23)), af)
-    grid = configure_transform(make_grid(target, volume), target, model)
-    parameters = np.zeros(len(grid.parameter_scale))
-    parameters[-3:] = [0.12, -0.08, 0.09]
-    if model == "rigid":
-        parameters[:3] = [0.025, -0.02, 0.03]
-    if model == "affine":
-        parameters[:6] = [0.015, -0.01, 0.008, 0.012, -0.012, 0.006]
-    truth = world_matrices(parameters[None], grid)[0]
-    sampled, valid = sample(volume, target, truth)
-    assert valid.all()
-    return voxel(sampled, af), volume, truth
-
-
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
 @pytest.mark.parametrize("device", DEVICES)
-def test_slice_volume_directions_use_their_own_native_fixed_grid(model, device):
-    target, volume, truth = pair(model)
+def test_slice_volume_directions_use_their_own_native_fixed_grid(
+    slice_volume_pair_factory, model, device
+):
+    target, volume, truth = slice_volume_pair_factory(model)
     kwargs = {
         "transform": model,
         "intensity_scaling": "none",
@@ -141,10 +87,12 @@ def test_slice_volume_directions_use_their_own_native_fixed_grid(model, device):
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
-def test_slice_volume_cpu_cuda_unchanged_precision_gate(model):
+def test_slice_volume_cpu_cuda_unchanged_precision_gate(
+    slice_volume_pair_factory, model
+):
     if not torch.cuda.is_available():
         pytest.skip("CUDA unavailable")
-    target, volume, _ = pair(model)
+    target, volume, _ = slice_volume_pair_factory(model)
     kwargs = {
         "transform": model,
         "intensity_scaling": "none",
@@ -166,8 +114,8 @@ def test_slice_volume_cpu_cuda_unchanged_precision_gate(model):
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
-def test_mixed_seed_roundtrip_and_sampler(model):
-    target, volume, truth = pair(model)
+def test_mixed_seed_roundtrip_and_sampler(slice_volume_pair_factory, model):
+    target, volume, truth = slice_volume_pair_factory(model)
     grid = configure_transform(make_grid(target, volume), target, model)
     parameters = _initial_parameters(truth, grid, 1)
     assert_allclose(world_matrices(parameters, grid)[0], truth, atol=1e-14, rtol=0)
@@ -195,8 +143,8 @@ def test_mixed_seed_roundtrip_and_sampler(model):
         assert_allclose(gradient[axis], (upper - lower) / 2e-7, atol=2e-6, rtol=1e-5)
 
 
-def test_affine_slice_has_nine_parameters_not_twelve():
-    target, volume, truth = pair("affine")
+def test_affine_slice_has_nine_parameters_not_twelve(slice_volume_pair_factory):
+    target, volume, truth = slice_volume_pair_factory("affine")
     grid = configure_transform(make_grid(target, volume), target, "affine")
     assert len(grid.parameter_scale) == 9
     bad = truth.copy()
@@ -257,8 +205,10 @@ def test_nonparallel_slice_planes_need_an_explicit_alignment_choice(model, mode)
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
 @pytest.mark.parametrize("device", DEVICES)
-def test_batched_slice_targets_seeds_failures_and_chunk_independence(model, device):
-    target, volume, truth = pair(model)
+def test_batched_slice_targets_seeds_failures_and_chunk_independence(
+    slice_volume_pair_factory, model, device
+):
+    target, volume, truth = slice_volume_pair_factory(model)
     second = truth.copy()
     second[:3, 3] += [0.03, 0.02, -0.01]
     values, _ = sample(volume, target, second)
@@ -301,8 +251,8 @@ def test_batched_slice_targets_seeds_failures_and_chunk_independence(model, devi
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
-def test_mixed_no_overlap_retains_public_seed(model):
-    target, volume, _ = pair(model)
+def test_mixed_no_overlap_retains_public_seed(slice_volume_pair_factory, model):
+    target, volume, _ = slice_volume_pair_factory(model)
     seed = np.eye(4)
     seed[0, 3] = 100
     for moving, fixed in [(volume, target), (target, volume)]:
@@ -323,8 +273,8 @@ def test_mixed_no_overlap_retains_public_seed(model):
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
-def test_reversed_strided_slice_and_volume_grids(model):
-    target, volume, truth = pair(model)
+def test_reversed_strided_slice_and_volume_grids(slice_volume_pair_factory, model):
+    target, volume, truth = slice_volume_pair_factory(model)
     target = target.isel(j=slice(None, None, 2), i=slice(None, None, -1))
     volume = volume.isel(k=slice(None, None, -1), j=slice(None, None, -1))
     result = register(
@@ -365,10 +315,12 @@ def test_plane_seed_can_select_the_opposite_normal_orientation(angle):
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
-def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(model):
+def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(
+    slice_volume_pair_factory, model
+):
     import itk
 
-    target, volume, truth = pair(model)
+    target, volume, truth = slice_volume_pair_factory(model)
     pose = np.eye(4)
     pose[:3, :3] = Rotation.from_rotvec([0.3, -0.25, 0.1]).as_matrix()
     pose[:3, 3] = [1000, -2000, 3000]
@@ -404,8 +356,10 @@ def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(model):
     assert result.diagnostics.objective < -0.999999
 
 
-def test_integer_mixed_output_retains_rounding_and_original_dtype():
-    target, volume, truth = pair("rigid")
+def test_integer_mixed_output_retains_rounding_and_original_dtype(
+    slice_volume_pair_factory,
+):
+    target, volume, truth = slice_volume_pair_factory("rigid")
     integer = voxel(
         np.rint(volume.values * 5000).astype(np.uint16), position_to_world(volume)
     )
@@ -428,8 +382,10 @@ def test_integer_mixed_output_retains_rounding_and_original_dtype():
     assert_array_equal(integer.values, original)
 
 
-def test_plane_initializer_scope_and_translation_rotation_validation():
-    target, volume, _ = pair("rigid")
+def test_plane_initializer_scope_and_translation_rotation_validation(
+    slice_volume_pair_factory,
+):
+    target, volume, _ = slice_volume_pair_factory("rigid")
     for moving, fixed in [(volume, target), (target, volume), (volume, volume)]:
         with pytest.raises(ValueError, match="two k=1"):
             register(moving, fixed, initialization="align_planes", progress=False)
@@ -447,7 +403,9 @@ def test_plane_initializer_scope_and_translation_rotation_validation():
 
 
 @pytest.mark.parametrize("mode", ["center_geometry", "center_moments"])
-def test_mixed_centering_seed_is_direction_consistent(mode, monkeypatch):
+def test_mixed_centering_seed_is_direction_consistent(
+    slice_volume_pair_factory, mode, monkeypatch
+):
     from voxreg import rigid
 
     def seed_only(
@@ -460,7 +418,7 @@ def test_mixed_centering_seed_is_direction_consistent(mode, monkeypatch):
         )
 
     monkeypatch.setattr(rigid, "_optimize", seed_only)
-    target, volume, _ = pair("rigid")
+    target, volume, _ = slice_volume_pair_factory("rigid")
     kwargs = {
         "initialization": mode,
         "intensity_scaling": "none",
@@ -473,8 +431,10 @@ def test_mixed_centering_seed_is_direction_consistent(mode, monkeypatch):
     assert_allclose(a.transforms, np.linalg.inv(b.transforms), atol=1e-12, rtol=0)
 
 
-def test_volume_grid_centers_within_singleton_voxel_extent_are_valid():
-    target, volume, _ = pair("translation")
+def test_volume_grid_centers_within_singleton_voxel_extent_are_valid(
+    slice_volume_pair_factory,
+):
+    target, volume, _ = slice_volume_pair_factory("translation")
     values, _ = sample(volume, target, np.eye(4))
     target = voxel(values, position_to_world(target))
     result = register(

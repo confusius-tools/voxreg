@@ -530,6 +530,7 @@ def finish(output, inputs, records):
     sources = list((ROOT / "src/voxreg").glob("*.py")) + [
         Path(__file__).resolve(),
         Path(__file__).with_name("compare_same_subject.py"),
+        Path(__file__).with_name("plot_registration.py"),
         ROOT / "examples/notebook_motion_correction.py",
         ROOT / "examples/benchmark_registration.py",
         ROOT / "uv.lock",
@@ -559,7 +560,9 @@ def finish(output, inputs, records):
         "quality": score(output, records),
         "unsupported": {
             "example01_bspline": "No voxreg deformable model; not run or timed.",
-            "example03_atlas": "Single-slice-to-volume atlas fitting is unsupported in voxreg; no substituted task, no head-to-head result.",
+        },
+        "separate_workflows": {
+            "example03_atlas": "Not part of this timing protocol. Native singleton/volume workflows are supported and checked separately with explore_atlas.py; CF expanded-slab fitting is a different objective.",
         },
     }
     (output / "results.json").write_text(

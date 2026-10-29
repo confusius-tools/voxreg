@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 import torch
+import xarray as xr
 from confusius import create_voxeldata
 from confusius.validation import validate_voxeldata
 from scipy.ndimage import map_coordinates
@@ -161,24 +162,27 @@ def test_rotation_vectors_use_physical_xyz_handedness():
 
 @pytest.mark.parametrize("dtype", [np.float64, np.uint16])
 @pytest.mark.parametrize("planar", [False, True])
+@pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
+@pytest.mark.parametrize("device", DEVICES)
 def test_single_pair_output_uses_fixed_grid_and_original_dtype(
-    monkeypatch, dtype, planar
+    linear_pair_factory, dtype, planar, model, device
 ):
-    from voxreg import rigid
-
-    fixed, moving = pair(planar)
+    fixed, moving, _ = linear_pair_factory(planar, model)
     moving = moving.copy(data=(moving.values * 50).astype(dtype))
-    untouched = moving.values.copy()
-
-    def identity(images, fixed, plane, reference, *args, **kwargs):
-        return (
-            plane.parameter_scale.new_zeros((len(images), len(plane.parameter_scale))),
-            torch.zeros(len(images), dtype=torch.int64),
-            torch.ones(len(images), dtype=torch.int64),
-        )
-
-    monkeypatch.setattr(rigid, "_optimize", identity)
-    r = register(moving, fixed, intensity_scaling="none", progress=False)
+    moving.name = "signal"
+    moving.attrs.update(units="power", subject="moving")
+    fixed.attrs["subject"] = "fixed"
+    untouched = moving.copy(deep=True)
+    fixed_original = fixed.copy(deep=True)
+    r = register(
+        moving,
+        fixed,
+        transform=model,
+        device=device,
+        intensity_scaling="none",
+        max_iterations=1,
+        progress=False,
+    )
     assert r.registered.dims == fixed.dims and r.registered.shape == fixed.shape
     assert r.registered.dtype == dtype
     assert r.registered.xindexes["z"].equals(fixed.xindexes["z"])
@@ -186,8 +190,14 @@ def test_single_pair_output_uses_fixed_grid_and_original_dtype(
     assert r.diagnostics.status.dims == ()
     validate_voxeldata(r.registered)
     validate_voxeldata(r.valid)
-    np.testing.assert_array_equal(moving, untouched)
-    coords, valid = reference_coordinates(moving, fixed, np.eye(4))
+    xr.testing.assert_identical(moving, untouched)
+    xr.testing.assert_identical(fixed, fixed_original)
+    assert r.registered.name == moving.name
+    assert (
+        r.registered.attrs["units"] == "power"
+        and r.registered.attrs["subject"] == "moving"
+    )
+    coords, valid = reference_coordinates(moving, fixed, r.transforms.values)
     expected = map_coordinates(
         moving.values.astype(float), coords, order=1, mode="nearest", prefilter=False
     )
@@ -195,7 +205,6 @@ def test_single_pair_output_uses_fixed_grid_and_original_dtype(
         expected = np.rint(expected).astype(dtype)
     np.testing.assert_allclose(r.registered, expected, atol=2e-12, rtol=0)
     np.testing.assert_array_equal(r.valid, valid)
-    np.testing.assert_array_equal(r.transforms, np.eye(4))
 
 
 def volume_phantom():
@@ -262,8 +271,9 @@ def test_3d_known_motion_recovery_on_independent_grids(device):
     )
 
 
-def test_3d_batch_and_cpu_cuda_independence():
-    fixed, moving, _ = volume_phantom()
+@pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
+def test_3d_batch_and_cpu_cuda_independence(linear_pair_factory, model):
+    fixed, moving, truth = linear_pair_factory(False, model)
     data = create_voxeldata(
         np.stack([moving.values, moving.values]),
         dims=("time", *moving.dims),
@@ -272,7 +282,12 @@ def test_3d_batch_and_cpu_cuda_independence():
         **{dim: moving[dim] for dim in moving.dims},
     )
     data = data.assign_coords(acquisition=("time", [70, 73]))
-    options = {"intensity_scaling": "none", "max_iterations": 120, "progress": False}
+    options = {
+        "transform": model,
+        "intensity_scaling": "none",
+        "max_iterations": 120,
+        "progress": False,
+    }
     together = register(data, fixed, batch_size=2, **options)
     alone = register(data, fixed, batch_size=1, **options)
     np.testing.assert_allclose(together.transforms, alone.transforms, atol=1e-8, rtol=0)
@@ -284,6 +299,14 @@ def test_3d_batch_and_cpu_cuda_independence():
     np.testing.assert_array_equal(together.registered.acquisition, data.acquisition)
     validate_voxeldata(together.registered)
     validate_voxeldata(together.valid)
+    points = position_to_world(fixed) @ np.vstack(
+        (np.indices(fixed.shape).reshape(3, -1), np.ones((1, fixed.size)))
+    )
+    ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
+    truth_error = np.einsum("tij,jp->tip", together.transforms.values - truth, points)[
+        :, :3
+    ]
+    assert np.sqrt(np.mean(np.sum(truth_error**2, axis=1))) / ell < 0.25
     if torch.cuda.is_available():
         cuda = register(data, fixed, device="cuda", **options)
         indices = np.indices(fixed.shape)
@@ -300,7 +323,8 @@ def test_3d_batch_and_cpu_cuda_independence():
         )
 
 
-def test_3d_reference_and_float64_detail_along_k_are_preserved():
+@pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
+def test_3d_reference_and_float64_detail_along_k_are_preserved(model):
     values = np.broadcast_to(
         2.0**30 + 1e-3 * np.arange(5)[:, None, None], (5, 6, 7)
     ).copy()
@@ -310,7 +334,13 @@ def test_3d_reference_and_float64_detail_along_k_are_preserved():
         dt=1,
         voxel_to_world=np.eye(4),
     )
-    r = register(data, intensity_scaling="none", max_iterations=1, progress=False)
+    r = register(
+        data,
+        transform=model,
+        intensity_scaling="none",
+        max_iterations=1,
+        progress=False,
+    )
     assert r.registered.dtype == np.float64
     np.testing.assert_array_equal(r.registered[0], data[0])
     np.testing.assert_array_equal(r.transforms[0], np.eye(4))

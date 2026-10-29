@@ -5,8 +5,8 @@ import pytest
 import SimpleITK as sitk
 import torch
 from numpy.testing import assert_allclose, assert_array_equal
+from oracles import voxel
 from scipy.spatial.transform import Rotation
-from test_slice_volume import pair, voxel
 
 from voxreg import position_to_world, register, rigid
 from voxreg.sampling import _initial_parameters, make_grid, sample_rigid, world_matrices
@@ -51,11 +51,11 @@ def observe_seed(monkeypatch, records):
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
 @pytest.mark.parametrize("moving_slice", [False, True])
 def test_native_domains_and_nonidentity_seed_match_sitk_value(
-    monkeypatch, device, model, moving_slice
+    slice_volume_pair_factory, monkeypatch, device, model, moving_slice
 ):
     from confusius.registration._utils import voxeldata_to_sitk_image
 
-    plane, volume, truth = pair(model)
+    plane, volume, truth = slice_volume_pair_factory(model)
     common = np.eye(4)
     common[:3, :3] = Rotation.from_rotvec([0.13, -0.2, 0.17]).as_matrix()
     common[:3, 3] = [11, -7, 19]
@@ -146,8 +146,10 @@ def test_singleton_and_active_axes_use_half_voxel_support(monkeypatch, device, m
 
 @pytest.mark.parametrize("moving_slice", [False, True])
 @pytest.mark.parametrize("device", DEVICES)
-def test_slice_affine_constraint_is_on_recording_to_volume_map(moving_slice, device):
-    plane, volume, _ = pair("affine")
+def test_slice_affine_constraint_is_on_recording_to_volume_map(
+    slice_volume_pair_factory, moving_slice, device
+):
+    plane, volume, _ = slice_volume_pair_factory("affine")
     moving, fixed = (plane, volume) if moving_slice else (volume, plane)
     grid = configure_transform(make_grid(fixed, moving, device=device), fixed, "affine")
     p = torch.tensor(

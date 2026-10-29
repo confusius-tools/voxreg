@@ -15,55 +15,6 @@ from voxreg.transforms import affine_properties, configure_transform
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
 
-def pair(planar, model="affine", same=False):
-    q = Rotation.from_rotvec([0.15, -0.2, 0.1]).as_matrix()
-    lattice = q @ np.diag([0.24, 0.21, 0.18])
-    basis = q[:, [2, 1]] if planar else np.eye(3)
-    center = np.array([10.0, -20.0, 30.0])
-    dimensions = 2 if planar else 3
-    linear = np.eye(dimensions)
-    if model == "affine":
-        linear += (
-            np.array([[0.04, 0.035], [-0.02, -0.03]])
-            if planar
-            else np.array(
-                [[0.04, 0.025, -0.015], [-0.01, -0.03, 0.02], [0.015, 0, 0.025]]
-            )
-        )
-    translation = np.array([0.10, -0.08]) if planar else np.array([0.10, -0.08, 0.06])
-    truth = np.eye(4)
-    truth[:3, :3] += basis @ (linear - np.eye(dimensions)) @ basis.T
-    truth[:3, 3] = basis @ translation - (truth[:3, :3] - np.eye(3)) @ center
-    rng = np.random.default_rng(871)
-    locations = rng.uniform(-1.4, 1.4, (16, dimensions))
-    widths = rng.uniform(0.3, 0.65, (16, dimensions))
-    amplitudes = rng.uniform(0.5, 2, 16)
-    fixed_shape = (1, 25, 29) if planar else (17, 19, 21)
-    moving_shape = fixed_shape if same else ((1, 33, 37) if planar else (25, 27, 29))
-    images = []
-    for shape, pose in [(fixed_shape, np.eye(4)), (moving_shape, truth)]:
-        af = np.eye(4)
-        af[:3, :3] = lattice
-        af[:3, 3] = center - lattice @ ((np.array(shape) - 1) / 2)
-        points = (
-            lattice
-            @ (np.indices(shape).reshape(3, -1) - (np.array(shape) - 1)[:, None] / 2)
-        ).T @ basis
-        values = 0.05 + np.sum(
-            amplitudes
-            * np.exp(
-                -0.5 * np.sum(((points[:, None] - locations) / widths) ** 2, axis=-1)
-            ),
-            axis=1,
-        )
-        images.append(
-            create_voxeldata(
-                values.reshape(shape), dims=("k", "j", "i"), voxel_to_world=pose @ af
-            )
-        )
-    return *images, truth
-
-
 def points(data):
     return position_to_world(data) @ np.vstack(
         (np.indices(data.shape).reshape(3, -1), np.ones((1, data.size)))
@@ -82,8 +33,10 @@ def error(a, b, data):
 
 @pytest.mark.parametrize("model", ["rigid", "affine"])
 @pytest.mark.parametrize("device", DEVICES)
-def test_nonparallel_planes_refine_image_motion_after_geometry_alignment(model, device):
-    fixed, moving, truth = pair(True, model)
+def test_nonparallel_planes_refine_image_motion_after_geometry_alignment(
+    linear_pair_factory, model, device
+):
+    fixed, moving, truth = linear_pair_factory(True, model)
     placement = np.eye(4)
     placement[:3, :3] = Rotation.from_rotvec([0, 0.3, 0]).as_matrix()
     placement[:3, 3] = [2, 1, -1]
@@ -115,11 +68,11 @@ def test_nonparallel_planes_refine_image_motion_after_geometry_alignment(model, 
 
 
 @pytest.mark.parametrize("planar", [False, True])
-@pytest.mark.parametrize("model", ["translation", "affine"])
-def test_seed_roundtrip_and_itk_oracle(planar, model):
+@pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
+def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
     import itk
 
-    fixed, moving, truth = pair(planar, model)
+    fixed, moving, truth = linear_pair_factory(planar, model)
     grid = configure_transform(make_grid(fixed, moving), fixed, model)
     parameters = _initial_parameters(truth, grid, 1)
     native = itk.AffineTransform[itk.D, 3].New()
@@ -156,8 +109,10 @@ def test_seed_roundtrip_and_itk_oracle(planar, model):
 @pytest.mark.parametrize("planar", [False, True])
 @pytest.mark.parametrize("model", ["translation", "affine"])
 @pytest.mark.parametrize("device", DEVICES)
-def test_seeded_sampling_scipy_and_gradients(planar, model, device):
-    fixed, moving, truth = pair(planar, model)
+def test_seeded_sampling_scipy_and_gradients(
+    linear_pair_factory, planar, model, device
+):
+    fixed, moving, truth = linear_pair_factory(planar, model)
     # Make the pivot visibly different from the geometric midpoint.
     pivot = position_to_world(fixed) @ np.r_[(np.array(fixed.shape) - 1) * 0.35, 1]
     grid = configure_transform(
@@ -207,9 +162,14 @@ def test_seeded_sampling_scipy_and_gradients(planar, model, device):
 
 
 @pytest.mark.parametrize("planar", [False, True])
-@pytest.mark.parametrize("model", ["translation", "affine"])
-def test_fitting_truth_and_cpu_cuda_precision(planar, model):
-    fixed, moving, truth = pair(planar, model)
+@pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
+def test_fitting_truth_and_cpu_cuda_precision(linear_pair_factory, planar, model):
+    fixed, moving, truth = linear_pair_factory(planar, model)
+    if model == "rigid":
+        # Even the best translation-only fit must fail this rotation control.
+        translation_only = np.eye(4)
+        translation_only[:3, 3] = ((truth - np.eye(4)) @ points(fixed))[:3].mean(axis=1)
+        assert np.sqrt(np.mean(error(translation_only, truth, fixed) ** 2)) > 0.25
     results = []
     for device in DEVICES:
         r = register(
@@ -309,15 +269,15 @@ def test_same_grid_slice_kernel_against_independent_path(recording_factory, mode
         np.ones((3, 3)),
     ],
 )
-def test_invalid_affine_seed(bad):
-    fixed, moving, _ = pair(False)
+def test_invalid_affine_seed(linear_pair_factory, bad):
+    fixed, moving, _ = linear_pair_factory(False)
     with pytest.raises(ValueError):
         register(moving, fixed, transform="affine", initialization=bad, progress=False)
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid"])
-def test_restricted_models_reject_nonmatching_seed(model):
-    fixed, moving, truth = pair(False)
+def test_restricted_models_reject_nonmatching_seed(linear_pair_factory, model):
+    fixed, moving, truth = linear_pair_factory(False)
     with pytest.raises(ValueError, match="identity linear|proper rigid"):
         register(moving, fixed, transform=model, initialization=truth, progress=False)
     with pytest.raises(ValueError, match="proper rigid"):
@@ -325,8 +285,10 @@ def test_restricted_models_reject_nonmatching_seed(model):
 
 
 @pytest.mark.parametrize("planar", [False, True])
-def test_affine_seed_is_refined_as_full_pose_not_frozen_prefix(planar):
-    fixed, moving, truth = pair(planar)
+def test_affine_seed_is_refined_as_full_pose_not_frozen_prefix(
+    linear_pair_factory, planar
+):
+    fixed, moving, truth = linear_pair_factory(planar)
     normal = position_to_world(fixed)[:3, 0]
     normal /= np.linalg.norm(normal)
     shift = np.array([20.0, -12.0, 8.0])
@@ -361,8 +323,10 @@ def test_affine_seed_is_refined_as_full_pose_not_frozen_prefix(planar):
 
 
 @pytest.mark.parametrize("planar", [False, True])
-def test_affine_final_interpolation_preserves_float64_detail(planar):
-    fixed, moving, truth = pair(planar)
+def test_affine_final_interpolation_preserves_float64_detail(
+    linear_pair_factory, planar
+):
+    fixed, moving, truth = linear_pair_factory(planar)
     fixed = fixed.copy(data=2.0**30 + fixed.values * 0.001)
     moving = moving.copy(data=2.0**30 + moving.values * 0.001)
     r = register(
@@ -385,8 +349,8 @@ def test_affine_final_interpolation_preserves_float64_detail(planar):
     np.testing.assert_allclose(r.registered, expected, atol=1e-6, rtol=0)
 
 
-def test_reflecting_affine_seed_is_preserved():
-    fixed, moving, truth = pair(False)
+def test_reflecting_affine_seed_is_preserved(linear_pair_factory):
+    fixed, moving, truth = linear_pair_factory(False)
     truth[:3, 0] *= -1
     failed = moving.copy(data=np.ones(moving.shape))
     r = register(
@@ -402,8 +366,8 @@ def test_reflecting_affine_seed_is_preserved():
 
 
 @pytest.mark.parametrize("model", ["translation", "affine"])
-def test_planar_seed_cannot_change_unidentifiable_normal(model):
-    fixed, moving, _ = pair(True)
+def test_planar_seed_cannot_change_unidentifiable_normal(linear_pair_factory, model):
+    fixed, moving, _ = linear_pair_factory(True)
     af = position_to_world(fixed)
     normal = af[:3, 0] / np.linalg.norm(af[:3, 0])
     bad = np.eye(4)
@@ -412,10 +376,12 @@ def test_planar_seed_cannot_change_unidentifiable_normal(model):
         register(moving, fixed, transform=model, initialization=bad, progress=False)
 
 
-def test_affine_candidate_guard_is_per_frame_and_keeps_best(monkeypatch):
+def test_affine_candidate_guard_is_per_frame_and_keeps_best(
+    linear_pair_factory, monkeypatch
+):
     from voxreg import rigid
 
-    fixed, moving, _ = pair(False)
+    fixed, moving, _ = linear_pair_factory(False)
     series = xr.concat([moving, moving], dim=xr.IndexVariable("time", [0, 1]))
     original = rigid.sample_rigid
     seen = []
@@ -454,10 +420,12 @@ def test_affine_candidate_guard_is_per_frame_and_keeps_best(monkeypatch):
     assert any((item.abs() > 1).any() for item in seen)
 
 
-def test_invalid_affine_frame_does_not_stop_companions(monkeypatch):
+def test_invalid_affine_frame_does_not_stop_companions(
+    linear_pair_factory, monkeypatch
+):
     from voxreg import rigid
 
-    fixed, moving, _ = pair(False)
+    fixed, moving, _ = linear_pair_factory(False)
     series = xr.concat([moving, moving], dim=xr.IndexVariable("time", [0, 1]))
     original = rigid.affine_properties
     calls = 0
