@@ -1,0 +1,325 @@
+{
+  "versions": {
+    "voxreg": "0.1.0",
+    "torch": "2.14.1",
+    "itk": "5.4.7",
+    "fireants": "1.5.1",
+    "numpy": "2.5.4"
+  },
+  "python": "3.14.8",
+  "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "fireants_fused": false,
+  "iterations": 120,
+  "repeats": 2,
+  "cpu_threads": 1,
+  "cases": {
+    "2d-medium": {
+      "shape": [
+        1,
+        64,
+        80
+      ],
+      "frames": 1,
+      "provenance": null,
+      "backends": {
+        "voxreg-cpu": {
+          "ncc_squared": [
+            0.9875392466889074
+          ],
+          "min_residual_jacobian": [
+            0.884419241635
+          ],
+          "truth_rms_px": [
+            0.07618181238716897
+          ],
+          "truth_max_px": [
+            0.18958253752575593
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 0.4210773029917618,
+          "warm_seconds": [
+            0.4099639850028325,
+            0.4154077179991873
+          ],
+          "warm_median_seconds": 0.4126858515010099,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.07627468016325477
+          ]
+        },
+        "fireants-cpu": {
+          "ncc_squared": [
+            0.9868803883270852
+          ],
+          "min_residual_jacobian": [
+            0.8443472001509645
+          ],
+          "truth_rms_px": [
+            0.08096138908544113
+          ],
+          "truth_max_px": [
+            0.2046769846355701
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 0.24243198899785057,
+          "warm_seconds": [
+            0.20413707599800546,
+            0.213818929012632
+          ],
+          "warm_median_seconds": 0.20897800250531873,
+          "repeat_max_world_mm": 0.0,
+          "finite": true
+        },
+        "itk": {
+          "ncc_squared": [
+            0.987928052875498
+          ],
+          "min_residual_jacobian": [
+            0.890310826698466
+          ],
+          "truth_rms_px": [
+            0.06641128815264681
+          ],
+          "truth_max_px": [
+            0.17484204458259187
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 6.72120702698885,
+          "warm_seconds": [
+            0.852031264003017,
+            0.8408826920058345
+          ],
+          "warm_median_seconds": 0.8464569780044258,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.0664804691841772
+          ]
+        }
+      }
+    },
+    "3d-medium": {
+      "shape": [
+        32,
+        40,
+        48
+      ],
+      "frames": 1,
+      "provenance": null,
+      "backends": {
+        "voxreg-cpu": {
+          "ncc_squared": [
+            0.9805606542407851
+          ],
+          "min_residual_jacobian": [
+            0.7566142716610494
+          ],
+          "truth_rms_px": [
+            0.10010629132114869
+          ],
+          "truth_max_px": [
+            0.4017639461065497
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 7.777445253988844,
+          "warm_seconds": [
+            7.738378393012681,
+            7.675870298000518
+          ],
+          "warm_median_seconds": 7.7071243455066,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.10044149656316752
+          ]
+        },
+        "fireants-cpu": {
+          "ncc_squared": [
+            0.9789656287890534
+          ],
+          "min_residual_jacobian": [
+            0.7710086074223511
+          ],
+          "truth_rms_px": [
+            0.1012686452416684
+          ],
+          "truth_max_px": [
+            0.23720332221525808
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 4.348382725002011,
+          "warm_seconds": [
+            4.373730410006829,
+            4.3817662759975065
+          ],
+          "warm_median_seconds": 4.3777483430021675,
+          "repeat_max_world_mm": 0.0,
+          "finite": true
+        },
+        "itk": {
+          "ncc_squared": [
+            0.9812405004471609
+          ],
+          "min_residual_jacobian": [
+            0.768313020647331
+          ],
+          "truth_rms_px": [
+            0.07975096324735992
+          ],
+          "truth_max_px": [
+            0.20866870311076302
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 40.22795855399454,
+          "warm_seconds": [
+            40.29577497900755,
+            40.14180058099737
+          ],
+          "warm_median_seconds": 40.21878778000246,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.08000316282864924
+          ]
+        }
+      }
+    },
+    "3d-batch8": {
+      "shape": [
+        32,
+        32,
+        32
+      ],
+      "frames": 8,
+      "provenance": null,
+      "backends": {
+        "voxreg-cpu": {
+          "ncc_squared": [
+            0.9838492498320501,
+            0.9835656148861688,
+            0.9828742083461439,
+            0.9824621914999786,
+            0.9821184582288626,
+            0.9818113325582043,
+            0.9815575816776809,
+            0.9813180185350919
+          ],
+          "min_residual_jacobian": [
+            0.8131383523851495,
+            0.797194917195354,
+            0.7897679133278049,
+            0.7781428327516627,
+            0.7503808153235595,
+            0.7515386800926482,
+            0.7375787424311302,
+            0.6991524473831042
+          ],
+          "truth_rms_px": [
+            0.06247284453520603,
+            0.061079654972908584,
+            0.06439302332638527,
+            0.06515626519915836,
+            0.06982296111779357,
+            0.06773608230704285,
+            0.07048621907764664,
+            0.07630479017112761
+          ],
+          "truth_max_px": [
+            0.1620960119640687,
+            0.1758143629256301,
+            0.1786876995937597,
+            0.18129280881992527,
+            0.2645974131401828,
+            0.17256987236137553,
+            0.2381527752116784,
+            0.2866870488603625
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 43.915439132004394,
+          "warm_seconds": [
+            44.16271353799675,
+            43.05173876399931
+          ],
+          "warm_median_seconds": 43.60722615099803,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.0627328781690861,
+            0.061491723777542855,
+            0.06462378764565188,
+            0.065365406950674,
+            0.07019341172958085,
+            0.06797895487798242,
+            0.07066913425156222,
+            0.07664791783172725
+          ]
+        },
+        "fireants-cpu": {
+          "ncc_squared": [
+            0.981544643238215,
+            0.9809731137327946,
+            0.9804669939357613,
+            0.9800921898715358,
+            0.9797963119377899,
+            0.9795271394430937,
+            0.9793326623001023,
+            0.9791451136466556
+          ],
+          "min_residual_jacobian": [
+            0.8074859205452916,
+            0.8005721375244076,
+            0.7864962985297284,
+            0.7667510525818141,
+            0.7785313195531619,
+            0.7738248547755673,
+            0.7675301690376792,
+            0.7642241984562258
+          ],
+          "truth_rms_px": [
+            0.07263848751845191,
+            0.07403522241496,
+            0.07526987638319356,
+            0.07637890608445493,
+            0.07758063590071845,
+            0.07865885257819584,
+            0.07946547557885762,
+            0.08026096034942626
+          ],
+          "truth_max_px": [
+            0.19067375185296126,
+            0.19163038194351997,
+            0.19794720399855623,
+            0.19943672322126535,
+            0.20926309318441966,
+            0.19548054049882577,
+            0.19368755109421087,
+            0.18565915542660508
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 19.63880973200139,
+          "warm_seconds": [
+            19.709618606008007,
+            19.65101275399502
+          ],
+          "warm_median_seconds": 19.680315680001513,
+          "repeat_max_world_mm": 0.0,
+          "finite": true
+        }
+      }
+    }
+  },
+  "source_sha256": {
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/fields.py": "856c8b68999c95802a10fa3856b6cd0c6bb7164ef86616a5432e17d817a6d47a",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "f6f3b46f11439b4ec0114d2dd11fb23de12480d8c34d961761ea21b49276ff78",
+    "src/voxreg/sampling.py": "a3db6763ccfc52d64a5d0cacae78d7ef33a8cdcc74de3b4be3d5ff822ef3860a",
+    "src/voxreg/syn.py": "713dbe4bb6797e6d4f8aed8623136be3a540c0732efbd93c18bcfdc1948d7dc2",
+    "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+    "tests/conftest.py": "6baee74601d74c57cdcabdbb8eeb8fad846a242aae1f0b9502d0ae6180c6d1af",
+    "research/syn/compare.py": "c9875b1c8b20b78e9a1bad321a80039bb7dd02f4f735a2f7bc5d2df20555c340"
+  }
+}

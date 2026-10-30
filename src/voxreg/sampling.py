@@ -486,13 +486,24 @@ def _sample_displaced(images, normalized, interpolation):
     Final float64 interpolation retains unsnapped float64 coordinates and weights.
     """
     dimensions = images.ndim - 1
+    native_cpu = (
+        images.device.type == "cpu"
+        and images.dtype == torch.float32
+        and interpolation == "linear"
+    )
     coordinates = []
     for axis, size in enumerate(images.shape[1:]):
         coordinate = (normalized[..., dimensions - axis - 1] + 1) * ((size - 1) / 2)
         if images.dtype == torch.float32:
             nearest = coordinate.round()
+            snapped_knot = nearest
+            if native_cpu:
+                # Preserve the fitting derivative side through normalization roundoff.
+                snapped_knot = torch.where(
+                    (nearest > 0) & (nearest < size - 1), nearest + 1e-10, nearest
+                )
             snapped = torch.where(
-                (coordinate - nearest).abs() < 1e-10, nearest, coordinate
+                (coordinate - nearest).abs() < 1e-10, snapped_knot, coordinate
             )
             coordinate = coordinate + (snapped - coordinate).detach()
         coordinate = torch.where(
@@ -501,6 +512,19 @@ def _sample_displaced(images, normalized, interpolation):
             coordinate.detach().clamp(0, size - 1),
         )
         coordinates.append(coordinate)
+    if native_cpu:
+        normalized_cpu = [
+            c / ((size - 1) / 2) - 1
+            for c, size in zip(coordinates, images.shape[1:], strict=True)
+        ]
+        query = torch.stack(normalized_cpu[::-1], dim=-1)
+        return F.grid_sample(
+            images[:, None].double(),
+            query,
+            mode="bilinear",
+            padding_mode="border",
+            align_corners=True,
+        )[:, 0].float()
     if interpolation == "nearest":
         index = torch.zeros_like(coordinates[0], dtype=torch.int64)
         for size, coordinate in zip(images.shape[1:], coordinates, strict=True):

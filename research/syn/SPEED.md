@@ -7,7 +7,7 @@ The target is FireANTs-class recording throughput **without relaxing** the
 Identical scores are not an anatomical oracle. Native optimizer, arithmetic and
 diagnostic differences remain explicit; see [LANDEMARD.md](LANDEMARD.md).
 
-The default/eager checkout has three qualified changes:
+The default/eager checkout has these qualified changes:
 
 1. Replace per-voxel tiny double-precision batched GEMMs with explicit component
    arithmetic. The measured baseline spent 76.79% of device time in `aten::bmm`.
@@ -16,13 +16,19 @@ The default/eager checkout has three qualified changes:
    Images are still sampled from the originals, not from prewarped intermediates.
 3. Specialize exactly sparse/permuted-diagonal field lattices. Detection uses
    exact zeros, not a tolerance; general oblique/sheared mappings are retained.
+4. On CPU, use native double interpolation of float32 fitting images, returning
+   float32 samples with the same right-sided knot convention. Float64 final
+   interpolation and nearest-neighbor tie rules keep their original path.
+5. On CPU without an autograd tape, use SciPy's compiled separable float64
+   Gaussian filter rather than grouped convolution. Differentiable field
+   smoothing and compiled tensor paths retain the original Torch implementation.
 
 All coordinates, displacement states, field operations and CC statistics remain
 float64. Fitting image samples remain float32; final interpolation remains genuine
 float64. Iteration budgets, convergence, inverse iterations, regularity checks,
 callbacks and optional-output behavior have not been removed to win a timing.
 
-Compilation, native-double fitting interpolation, scaled float32 gradient
+Compilation, CUDA native-double fitting interpolation, scaled float32 gradient
 filtering and squared-norm inverse updates are **research-only monkeypatches**.
 There is no new compiler dependency or public compiler switch.
 
@@ -78,6 +84,32 @@ matched arms, not the historical FireANTs number. Automatic voxreg batch is 32,
 peak allocated memory 368.08 MiB, and 11,309 fitted frames retain the 100-update
 budget. Warmups were 2.828/1.311 s and are separate. This is one full measurement,
 not a repeated-run confidence interval.
+
+## CPU milestone
+
+Single CPU thread, 120 updates, two warm repeats, shared independent fixtures:
+
+| Case | Before CPU changes | Native CPU kernels | Matched FireANTs CPU |
+|---|---:|---:|---:|
+| 2D medium | 0.413 s | 0.377 s | 0.202 s |
+| 3D medium | 7.707 s | 6.153 s | 4.281 s |
+| 3D batch eight | 43.607 s | 34.745 s | 19.615 s |
+
+The CPU changes improve these controls by roughly 9–20%, **not yet FireANTs
+parity**. All truth gates pass. Medium 3D RMS changes from 0.1001063 to
+0.1001070 pixels; native ITK's corresponding RMS is 0.0797510 pixels. That is not
+identical accuracy, but the optimization has negligible measured effect and
+retains the 0.25-pixel RMS gate. CPU/CUDA point gates also remain unchanged.
+
+The baseline's expensive eight-frame ITK timing was stopped by the investigator
+budget after the whole baseline process exceeded eleven minutes; that arm is
+incomplete. Completed ITK 2D/3D controls and all completed backend rows remain in
+`artifacts/syn-speed/cpu-baseline-01/`. Native-kernel prototype results are in
+`cpu-fast-01/`; CPU profiles are `cpu-profile-fast-{01,2d-01}/`.
+
+The first layout experiment moved independent field channels into the batch
+axis. It helped the measured CUDA 2D filter but was up to about **60× slower** for
+CUDA 3D and inconsistent on CPU. It is not a universal layout replacement.
 
 ## Why low VRAM allocation is not low GPU utilization
 
@@ -168,8 +200,11 @@ checks are retained. Its qualification is separate from the default-path proof.
 
 ## Verification and evidence
 
-- Default checkout: **772 passed**, 1098 existing warnings, 130.76 s, CPU and
-  CUDA, one CPU thread (`full-suite-02.log`).
+- CPU native-kernel checkout: **780 passed**, 1098 existing warnings, 135.20 s,
+  CPU and CUDA, one CPU thread (`cpu-core-full-suite-01.log`). The prior milestone
+  was 772 passed (`full-suite-02.log`).
+- Added independent SciPy interpolation/one-sided-knot derivative controls and
+  an explicit check that differentiable smoothing retains its tensor path.
 - This includes independent nonlinear truth on newly added exactly sparse
   native 2D/3D grids, fixed/convergent budgets, CPU/CUDA point gates, general-grid
   preservation, gradients, final interpolation, metadata/dtype and output-off

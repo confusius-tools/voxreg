@@ -3752,6 +3752,7 @@ dependencies = [
     { name = "confusius" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
+    { name = "scipy" },
     { name = "torch" },
     { name = "xarray" },
 ]
@@ -3778,6 +3779,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'examples'", specifier = ">=3.11.2" },
     { name = "nibabel", marker = "extra == 'examples'", specifier = ">=5.4.2" },
     { name = "numpy", specifier = ">=2.3.4" },
+    { name = "scipy", specifier = ">=1.18.1" },
     { name = "scipy", marker = "extra == 'examples'", specifier = ">=1.18.1" },
     { name = "torch", specifier = ">=2.14.1" },
     { name = "xarray", specifier = ">=2026.9.0" },

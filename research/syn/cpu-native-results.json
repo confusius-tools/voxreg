@@ -1,0 +1,278 @@
+{
+  "versions": {
+    "voxreg": "0.1.0",
+    "torch": "2.14.1",
+    "itk": "5.4.7",
+    "fireants": "1.5.1",
+    "numpy": "2.5.4"
+  },
+  "python": "3.14.8",
+  "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "fireants_fused": false,
+  "iterations": 120,
+  "repeats": 2,
+  "cpu_threads": 1,
+  "cases": {
+    "2d-medium": {
+      "shape": [
+        1,
+        64,
+        80
+      ],
+      "frames": 1,
+      "provenance": null,
+      "backends": {
+        "voxreg-cpu": {
+          "ncc_squared": [
+            0.9875392466775746
+          ],
+          "min_residual_jacobian": [
+            0.8844192607782019
+          ],
+          "truth_rms_px": [
+            0.07618182557197785
+          ],
+          "truth_max_px": [
+            0.18958231426118638
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 0.3786600010062102,
+          "warm_seconds": [
+            0.37345909600844607,
+            0.3804849930020282
+          ],
+          "warm_median_seconds": 0.37697204450523714,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.07627469333969507
+          ]
+        },
+        "fireants-cpu": {
+          "ncc_squared": [
+            0.9868803883270852
+          ],
+          "min_residual_jacobian": [
+            0.8443472001509645
+          ],
+          "truth_rms_px": [
+            0.08096138908544113
+          ],
+          "truth_max_px": [
+            0.2046769846355701
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 0.20807245699688792,
+          "warm_seconds": [
+            0.20096556800126564,
+            0.20230099601030815
+          ],
+          "warm_median_seconds": 0.2016332820057869,
+          "repeat_max_world_mm": 0.0,
+          "finite": true
+        }
+      }
+    },
+    "3d-medium": {
+      "shape": [
+        32,
+        40,
+        48
+      ],
+      "frames": 1,
+      "provenance": null,
+      "backends": {
+        "voxreg-cpu": {
+          "ncc_squared": [
+            0.9805606159887106
+          ],
+          "min_residual_jacobian": [
+            0.7566134062538656
+          ],
+          "truth_rms_px": [
+            0.10010696724321769
+          ],
+          "truth_max_px": [
+            0.4017639059292848
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 6.283793431997765,
+          "warm_seconds": [
+            6.261007853012416,
+            6.044353820005199
+          ],
+          "warm_median_seconds": 6.152680836508807,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.10044217882498556
+          ]
+        },
+        "fireants-cpu": {
+          "ncc_squared": [
+            0.9789656287890534
+          ],
+          "min_residual_jacobian": [
+            0.7710086074223511
+          ],
+          "truth_rms_px": [
+            0.1012686452416684
+          ],
+          "truth_max_px": [
+            0.23720332221525808
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 4.291492053991533,
+          "warm_seconds": [
+            4.282417476002593,
+            4.2786382640042575
+          ],
+          "warm_median_seconds": 4.280527870003425,
+          "repeat_max_world_mm": 0.0,
+          "finite": true
+        }
+      }
+    },
+    "3d-batch8": {
+      "shape": [
+        32,
+        32,
+        32
+      ],
+      "frames": 8,
+      "provenance": null,
+      "backends": {
+        "voxreg-cpu": {
+          "ncc_squared": [
+            0.9838492496469463,
+            0.9835655739514906,
+            0.9828742082496592,
+            0.982462192580068,
+            0.9821184576491663,
+            0.9818111901188856,
+            0.9815575715700315,
+            0.9813180125616267
+          ],
+          "min_residual_jacobian": [
+            0.8131383903425526,
+            0.7971945489276194,
+            0.7897678844868903,
+            0.7781429077710285,
+            0.7503810035373725,
+            0.7515381798257643,
+            0.7375806581403286,
+            0.699152938507698
+          ],
+          "truth_rms_px": [
+            0.06247284926064653,
+            0.061080109643636124,
+            0.06439302529063429,
+            0.06515625235433628,
+            0.06982289266525915,
+            0.06773732130745914,
+            0.07048634553160822,
+            0.07630483375577377
+          ],
+          "truth_max_px": [
+            0.162096046612242,
+            0.1758138644190011,
+            0.1786875603043926,
+            0.18129307248636428,
+            0.2645970284498563,
+            0.17263755768946157,
+            0.23815255104859026,
+            0.28668745500279047
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 34.897401488997275,
+          "warm_seconds": [
+            34.78268180000305,
+            34.70750338600192
+          ],
+          "warm_median_seconds": 34.74509259300248,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.06273288319291634,
+            0.06149217291349075,
+            0.06462379038968386,
+            0.06536539439656185,
+            0.07019332616543585,
+            0.06798013084610076,
+            0.07066927340671714,
+            0.07664792553747538
+          ]
+        },
+        "fireants-cpu": {
+          "ncc_squared": [
+            0.981544643238215,
+            0.9809731137327946,
+            0.9804669939357613,
+            0.9800921898715358,
+            0.9797963119377899,
+            0.9795271394430937,
+            0.9793326623001023,
+            0.9791451136466556
+          ],
+          "min_residual_jacobian": [
+            0.8074859205452916,
+            0.8005721375244076,
+            0.7864962985297284,
+            0.7667510525818141,
+            0.7785313195531619,
+            0.7738248547755673,
+            0.7675301690376792,
+            0.7642241984562258
+          ],
+          "truth_rms_px": [
+            0.07263848751845191,
+            0.07403522241496,
+            0.07526987638319356,
+            0.07637890608445493,
+            0.07758063590071845,
+            0.07865885257819584,
+            0.07946547557885762,
+            0.08026096034942626
+          ],
+          "truth_max_px": [
+            0.19067375185296126,
+            0.19163038194351997,
+            0.19794720399855623,
+            0.19943672322126535,
+            0.20926309318441966,
+            0.19548054049882577,
+            0.19368755109421087,
+            0.18565915542660508
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 19.711462309001945,
+          "warm_seconds": [
+            19.603995277007925,
+            19.626681185007328
+          ],
+          "warm_median_seconds": 19.615338231007627,
+          "repeat_max_world_mm": 0.0,
+          "finite": true
+        }
+      }
+    }
+  },
+  "source_sha256": {
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/fields.py": "856c8b68999c95802a10fa3856b6cd0c6bb7164ef86616a5432e17d817a6d47a",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "f6f3b46f11439b4ec0114d2dd11fb23de12480d8c34d961761ea21b49276ff78",
+    "src/voxreg/sampling.py": "a3db6763ccfc52d64a5d0cacae78d7ef33a8cdcc74de3b4be3d5ff822ef3860a",
+    "src/voxreg/syn.py": "713dbe4bb6797e6d4f8aed8623136be3a540c0732efbd93c18bcfdc1948d7dc2",
+    "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+    "tests/conftest.py": "6baee74601d74c57cdcabdbb8eeb8fad846a242aae1f0b9502d0ae6180c6d1af",
+    "research/syn/compare.py": "c9875b1c8b20b78e9a1bad321a80039bb7dd02f4f735a2f7bc5d2df20555c340"
+  },
+  "cpu_experiment": {
+    "fitting_sampler": "native-double",
+    "state_filter": "scipy-float64",
+    "production": false
+  }
+}

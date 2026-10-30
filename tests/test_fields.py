@@ -382,6 +382,20 @@ def test_research_scaled_gradient_filter_preserves_range(
     )
 
 
+@pytest.mark.parametrize("planar", [False, True])
+def test_smoothing_keeps_differentiable_tensor_path(
+    displacement_factory, device, planar
+):
+    data, _, _, values = displacement_factory(planar)
+    grid = make_field_grid(data, device=device)
+    base = torch.tensor(values, device=device)
+    theta = torch.tensor(1.0, device=device, requires_grad=True, dtype=torch.float64)
+    actual = smooth_field(base * theta, grid, sigma=1.5).sum()
+    derivative = torch.autograd.grad(actual, theta)[0]
+    expected = smooth_field(base, grid, sigma=1.5).sum()
+    assert_allclose(derivative.detach().cpu(), expected.cpu(), rtol=1e-12, atol=1e-12)
+
+
 def test_tiny_geometry_map_gradients(displacement_factory):
     from voxreg.sampling import _map_displacement
 

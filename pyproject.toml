@@ -7,6 +7,7 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "confusius>=0.8.0",
     "numpy>=2.3.4",
+    "scipy>=1.18.1",
     "torch>=2.14.1",
     "xarray>=2026.9.0",
 ]

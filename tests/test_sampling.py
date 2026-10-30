@@ -11,6 +11,58 @@ from voxreg import position_to_world
 from voxreg.sampling import global_ncc, make_plane, sample_rigid, world_matrices
 
 
+@pytest.mark.parametrize("planar", [False, True])
+def test_fitting_sampler_values_and_right_knot_derivatives(
+    nonlinear_pair_factory, device, planar
+):
+    from voxreg.sampling import _sample_displaced
+
+    shape = (5, 6) if planar else (4, 5, 6)
+    _, moving, *_ = nonlinear_pair_factory(planar, shape=shape, amplitude=0.1)
+    image = moving.values[0] if planar else moving.values
+    dimensions = len(shape)
+    knot = np.arange(1, dimensions + 1, dtype=float)
+    points = np.stack(
+        (
+            knot,
+            knot + np.linspace(0.2, 0.4, dimensions),
+            np.zeros(dimensions),
+            np.array(shape) + 0.2,
+        )
+    )
+    half = (np.array(shape) - 1) / 2
+    normalized = (points / half - 1)[:, ::-1].copy()
+    query_shape = (1, *([1] * (dimensions - 1)), len(points), dimensions)
+    query = torch.tensor(
+        normalized.reshape(query_shape), device=device, requires_grad=True
+    )
+    actual = _sample_displaced(
+        torch.tensor(image[None], device=device), query, "linear"
+    )
+    expected = map_coordinates(
+        image.astype(float), points.T, order=1, mode="nearest", prefilter=False
+    )
+    assert_allclose(actual.detach().cpu().reshape(-1), expected, rtol=2e-7, atol=1e-7)
+    derivative = (
+        torch.autograd.grad(actual.sum(), query)[0]
+        .cpu()
+        .numpy()
+        .reshape(len(points), dimensions)
+    )
+    expected_derivative = np.zeros_like(points)
+    step = 1e-6
+    for axis in range(dimensions):
+        changed = points.copy()
+        changed[:2, axis] += step
+        changed_values = map_coordinates(
+            image.astype(float), changed.T, order=1, mode="nearest", prefilter=False
+        )
+        expected_derivative[:2, dimensions - axis - 1] = (
+            (changed_values[:2] - expected[:2]) / step * half[axis]
+        )
+    assert_allclose(derivative, expected_derivative, rtol=3e-6, atol=3e-7)
+
+
 @pytest.mark.parametrize("strided", [False, True])
 @pytest.mark.parametrize("sheared", [False, True])
 def test_physical_sampler_against_scipy(recording_factory, strided, sheared):
