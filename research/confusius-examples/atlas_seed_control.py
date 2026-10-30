@@ -42,6 +42,7 @@ def held_register(moving, fixed, pull, *, device="cpu"):
             moving,
             fixed,
             transform="affine",
+            return_transforms=True,
             initialization=pull,
             intensity_scaling="none",
             max_iterations=1,

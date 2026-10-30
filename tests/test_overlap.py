@@ -25,6 +25,7 @@ def test_aligned_smaller_moving_image_is_not_rejected(shape, model, device):
     result = register(
         moving,
         fixed,
+        return_transforms=True,
         transform=model,
         intensity_scaling="none",
         max_iterations=1,
@@ -98,6 +99,7 @@ def test_no_overlap_keeps_seed_and_original_fill(model):
     result = register(
         fixed,
         fixed,
+        return_transforms=True,
         transform=model,
         initialization=seed,
         intensity_scaling="none",

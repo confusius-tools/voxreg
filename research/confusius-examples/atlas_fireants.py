@@ -267,7 +267,7 @@ for model in ['rigid','affine']:
         if REPLAY is None:
             trace=[]
             def report(indices,iterations,objective):trace.append([int(iterations[0]),float(objective[0])])
-            result=voxreg.register(source,target,transform=model,initialization=seed,intensity_scaling='none',max_iterations=500,convergence_window_size=50,learning_rate=.1,device=DEVICE,progress=False,metric_callback=report,metric_interval=1)
+            result=voxreg.register(source,target,return_transforms=True,transform=model,initialization=seed,intensity_scaling='none',max_iterations=500,convergence_window_size=50,learning_rate=.1,device=DEVICE,progress=False,metric_callback=report,metric_interval=1)
             p=np.asarray(result.transforms);canonical=p if is_slice else np.linalg.inv(p)
             row={'model':model,'direction':direction,'canonical_pull':canonical.tolist(),'metric':float(result.diagnostics.objective),'steps':int(result.diagnostics.n_iterations),'trace':trace,'pivot':result.diagnostics.attrs.get('rotation_center_zyx_mm',result.diagnostics.attrs.get('center_zyx_mm')),'status':str(result.diagnostics.status.values),'optimized_parameters':6 if model=='rigid' else 12}
         else:

@@ -518,6 +518,7 @@ def standard_worker(args, measure):
                 r = register(
                     moving,
                     fixed,
+                    return_transforms=True,
                     device=device,
                     batch_size=batch,
                     max_iterations=args.max_iterations,

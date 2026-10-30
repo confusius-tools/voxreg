@@ -281,7 +281,7 @@ def main():
                 return matrices, steps, None
             result = register(
                 data,
-                batch_size=args.batch_size,
+                return_transforms=True, batch_size=args.batch_size,
                 device=args.device,
                 progress=False,
                 convergence_window_size=101,

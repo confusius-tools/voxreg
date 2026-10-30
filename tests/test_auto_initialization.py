@@ -68,6 +68,7 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
     before = register(
         moving,
         fixed,
+        return_transforms=True,
         intensity_scaling=scaling,
         max_iterations=1,
         progress=False,
@@ -77,6 +78,7 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
     r = register(
         moving,
         fixed,
+        return_transforms=True,
         initialization=mode,
         intensity_scaling=scaling,
         max_iterations=1,
@@ -142,6 +144,7 @@ def test_moments_pivot_sampling_and_scales(
     r = register(
         moving,
         fixed,
+        return_transforms=True,
         initialization="center_moments",
         intensity_scaling="none",
         progress=False,
@@ -193,8 +196,8 @@ def test_moments_pivot_sampling_and_scales(
 def test_series_reference_batch_and_fitting_scaling(recording_factory, mode):
     data, _, _ = recording_factory(oblique=True, strided=True)
     options = {"initialization": mode, "max_iterations": 100, "progress": False}
-    combined = register(data, batch_size=3, **options)
-    serial = register(data, batch_size=1, **options)
+    combined = register(data, return_transforms=True, batch_size=3, **options)
+    serial = register(data, return_transforms=True, batch_size=1, **options)
     np.testing.assert_allclose(
         combined.transforms, serial.transforms, atol=1e-9, rtol=0
     )
@@ -214,8 +217,10 @@ def test_series_reference_batch_and_fitting_scaling(recording_factory, mode):
         )
 
     with patch("voxreg.rigid._optimize", frozen):
-        linear = register(data, intensity_scaling="none", **options)
-        db = register(data, intensity_scaling="db", **options)
+        linear = register(
+            data, return_transforms=True, intensity_scaling="none", **options
+        )
+        db = register(data, return_transforms=True, intensity_scaling="db", **options)
     np.testing.assert_array_equal(linear.transforms, db.transforms)
     np.testing.assert_array_equal(
         linear.diagnostics.attrs["rotation_center_zyx_mm"],
@@ -266,6 +271,7 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
         r = register(
             moving,
             fixed,
+            return_transforms=True,
             initialization="center_moments",
             intensity_scaling="none",
             max_iterations=160,

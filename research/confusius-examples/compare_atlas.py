@@ -69,7 +69,7 @@ def run(output):
                 "progress": False,
             }
             with warnings.catch_warnings(record=True) as caught:
-                result = register(moving, fixed, **options)
+                result = register(moving, fixed, return_transforms=True, **options)
             registered, matrix = result.registered, result.transforms.values
             meta = {
                 "n_iterations": int(result.diagnostics.n_iterations),
@@ -83,7 +83,7 @@ def run(output):
             }
             # Reverse the argument roles without changing the anatomical problem.
             reverse = register(
-                fixed, moving, **(options | {"initialization": placement})
+                fixed, moving, return_transforms=True, **(options | {"initialization": placement})
             )
             discrepancy = cpu_cuda_error(
                 np.linalg.inv(matrix), reverse.transforms.values, moving

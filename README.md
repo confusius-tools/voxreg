@@ -1,16 +1,18 @@
 # voxreg
 
-A proof of concept for **batched physical-space linear registration** using
+A proof of concept for **batched physical-space registration** using
 PyTorch and ConfUSIus's xarray-based VoxelData implementation.
 
 The engine registers **single 3D volume pairs or batched frames**, with independent
-fixed/moving shapes, spacings, origins and orientations. Coplanar single-slice
-pairs retain identifiable in-plane transforms. CPU and CUDA share one optimizer,
-metric, convergence policy and dtype-preserving resampling path.
+fixed/moving shapes, spacings, origins and orientations. Native single-slice pairs
+retain identifiable in-plane transforms. CPU and CUDA share each model's numerical
+path, convergence policy and dtype-preserving resampling contracts.
 
-This remains a linear-registration proof of concept, not a complete ConfUSIus
-replacement. Translation, rigid and affine models share one engine; the historical
-performance benchmarks below measure rigid registration only. A [shared benchmark protocol](research/registration/README.md) now
+Translation, rigid and affine fitting are joined by **symmetric compositive SyN**
+for native 2D–2D and 3D–3D pairs/recordings. This is not a complete ConfUSIus
+replacement or a claim of anatomical validation. See the new
+[SyN implementation and measured ITK/FireANTs comparison](research/syn/README.md).
+The historical performance benchmarks below measure rigid registration only. A [shared benchmark protocol](research/registration/README.md) now
 covers 3D pairs and motion correction against ITK/FireANTs, including 64³/128³
 phantoms and a real-template known-pose control—not a natural 3D session pair.
 
@@ -67,7 +69,7 @@ recording = cf.create_voxeldata(
     units="mm",
 )
 
-result = voxreg.register(recording, device="cuda", batch_size=32)
+result = voxreg.register(recording, device="cuda", return_transforms=True)
 registered = result.registered  # VoxelData, original intensities and dtype.
 valid = result.valid  # VoxelData, boolean sample-support mask.
 matrices = result.transforms  # (time, world_out, world_in), float64.
@@ -82,6 +84,15 @@ physical parameters, and dB fitting intensities. Use `intensity_scaling="none"`
 for already-prepared fitting intensities or signed integer images. dB mode
 requires nonnegative power.
 
+Transforms are **off by default**: ordinary `voxreg.register(recording)` returns
+corrected intensities, validity and diagnostics, with both transform attributes
+set to `None`. Set **`return_transforms=True`** only when you need matrices or
+fields. For equal grids and float32 images, both exported float64 SyN fields cost
+**12× the uncompressed image storage**, plus assembly temporaries: a 525 MB movie
+needs about 6.3 GB for fields alone. Other dtypes/grid sizes change this ratio.
+With transforms disabled, dense exports, downloads and accumulation are skipped;
+only batch-sized deformation state is retained during fitting/resampling.
+
 ### Transform models
 
 Use one entry point, `voxreg.register(..., transform=...)`:
@@ -91,6 +102,7 @@ Use one entry point, `voxreg.register(..., transform=...)`:
 | `"translation"` | 2 parameters | 3 parameters |
 | `"rigid"` (default) | 3 parameters | 6 parameters |
 | `"affine"` | 6 parameters | 12 parameters |
+| `"syn"` | Two 2-component halfway fields | Two 3-component halfway fields |
 
 Euler transforms belong to the rigid family. Voxreg's rigid optimizer uses a
 rotation vector in 3D, not ITK's Euler-angle parameterization. Affine adds scale
@@ -108,8 +120,8 @@ registered = voxreg.register(
 
 The pre-release `register_rigid` name has been removed. Change existing calls to
 `register`; omitting `transform` keeps rigid fitting and its numerical behavior.
-All three models accept matrix or geometry/moments initialization and support
-pairs/recordings on the same sampling/optimizer path.
+The three linear models accept matrix or geometry/moments initialization and
+support pairs/recordings on the same sampling/optimizer path.
 
 Slices use an orthonormal intrinsic i/j plane; affine slices leave the world
 normal unchanged, rather than fitting unidentifiable 3D coefficients. Affine
@@ -130,13 +142,49 @@ natural inter-session data or new performance benchmarks. Defaults were calibrat
 on **rigid slices**, not affine fitting or general 3D; see
 [research/linear/README.md](research/linear/README.md) and [VALIDATION.md](VALIDATION.md).
 
+### Symmetric nonlinear registration
+
+```python
+# Optional global prealignment: keep using the original images in both calls.
+seed = voxreg.register(
+    moving, fixed, transform="affine", intensity_scaling="none", return_transforms=True
+)
+result = voxreg.register(
+    moving, fixed, transform="syn", initial_transform=seed.transforms,
+    intensity_scaling="none", device="cuda", batch_size=1, return_transforms=True,
+)
+forward = result.transforms          # (*fixed spatial shape, world_component).
+inverse = result.inverse_transforms # (*moving spatial shape, world_component).
+```
+
+For recordings, fields also retain `time`. Components are labeled **z/y/x in mm**:
+`p_moving = p_fixed + forward(p_fixed)`; the inverse is the reverse pull on the
+original moving grid. These are complete displacements, **including the affine
+seed**, not homogeneous matrices. Linear results remain matrices and have
+`inverse_transforms=None`. Plane outputs embed two identifiable in-plane degrees
+of freedom into world components; they do not estimate depth variation.
+
+SyN independently optimizes two halfway maps using masked squared local NCC,
+smoothed normalized compositive updates, and approximate numerical inversion.
+The current implementation is **single-resolution**, with neighborhood radius 2,
+update sigma 1.5 and total sigma 0.5 voxels. `learning_rate` bounds each halfway
+update's maximum voxel-coordinate norm. The affine seed is fixed during field
+fitting and must preserve orientation. Mixed slice/volume deformation and dense
+restart seeds are rejected. Use small volume batches to limit memory.
+
+`min_jacobian` and `inverse_error` expose regularity and two-sided sampled inverse
+residuals. Positive sampled Jacobians do not prove global invertibility; sampled
+inverses are not exact. The live research plotter currently supports linear
+models only. See [contracts, tests and measured limitations](research/syn/README.md).
+
 ### Single 3D volume registration
 
 ```python
 # moving_volume and fixed_volume: VoxelData with dimensions (k, j, i).
 # Their shapes, spacings, orientations and origins need not match.
 result = voxreg.register(
-    moving_volume, fixed_volume, intensity_scaling="none", device="cuda"
+    moving_volume, fixed_volume, intensity_scaling="none", device="cuda",
+    return_transforms=True,
 )
 registered = result.registered  # (k, j, i), on fixed_volume's grid.
 matrix = result.transforms     # (world_out, world_in), no synthetic time axis.
@@ -146,11 +194,18 @@ print(result.diagnostics)       # Scalar objective, status and motion parameters
 All three axes must contain at least two samples for volume fitting (6 DOFs for
 the default rigid model).
 Recordings `(time, k, j, i)` use the same volume engine in batches. Choose a small
-`batch_size` for 3D series: the default 32 was sized for slices. Single-pair
-3D memory is benchmarked at the documented sizes; large 3D batches are not. Spatial-only input requires an explicit fixed image. Coplanar `k=1` slice pairs instead fit
+`batch_size` override when needed. The default (`None`) is automatic: CPU caps at
+32; CUDA uses available VRAM, image size and a conservative per-method working-set
+estimate with 50% headroom. Performance caps are 256 for linear slice pairs and
+32 for SyN/volumes; larger batches are not always faster. CUDA caps round down to
+powers of two and are limited to the frame count. Reusable Torch cache counts as
+available; concurrent allocations can still cause OOM, and one frame must fit.
+No optimizer probes or OOM retries run. The effective size is recorded in
+`result.diagnostics.attrs["batch_size"]`. Explicit positive integers override the
+policy. Single-pair 3D memory is benchmarked at documented sizes; large 3D batches are not. Spatial-only input requires an explicit fixed image. Coplanar `k=1` slice pairs instead fit
 three identifiable in-plane parameters with the default rigid model.
 
-For all supported pairs, the metric is evaluated on the caller's native fixed-grid points, sampling moving array positions as
+For linear pairs, the metric is evaluated on the caller's native fixed-grid points, sampling moving array positions as
 `inverse(A_moving) @ T @ A_fixed`, where each `A` includes native crop/stride
 coordinates. Thus **identity world motion can resample unequal grids** without
 estimating their known geometry as motion.
@@ -250,7 +305,7 @@ initial = np.eye(4)
 initial[:3, 3] = [5.0, -2.0, 1.0]  # World z/y/x offset in mm, fixed → moving.
 result = voxreg.register(
     moving_volume, fixed_volume,
-    initial_transform=initial, intensity_scaling="none",
+    initial_transform=initial, intensity_scaling="none", return_transforms=True,
 )
 # initial is unchanged; result.transforms contains the complete refined pose.
 ```

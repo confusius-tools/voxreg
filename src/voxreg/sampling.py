@@ -1,6 +1,7 @@
 """Differentiable physical-space sampling on independent fixed and moving grids."""
 
 from dataclasses import dataclass
+from itertools import product
 
 import numpy as np
 import numpy.typing as npt
@@ -344,12 +345,7 @@ def _physical_transform(parameters, grid):
     return linear, translation
 
 
-def _sample_grid(
-    images: torch.Tensor,
-    parameters: torch.Tensor,
-    grid: SpatialGrid,
-    interpolation: str,
-) -> tuple[torch.Tensor, torch.Tensor]:
+def _grid_coordinates(parameters, grid, dimensions):
     rotation, translation = _physical_transform(parameters, grid)
     identity = torch.eye(3, device=parameters.device, dtype=parameters.dtype)
     linear = (
@@ -363,7 +359,6 @@ def _sample_grid(
             + ((rotation - identity) @ grid.rotation_offset)
             @ grid.world_to_normalized.T
         )
-    dimensions = images.ndim - 1
     expand = (slice(None),) + (None,) * dimensions
     components = []
     for axis in range(3):
@@ -371,7 +366,22 @@ def _sample_grid(
         for column, coordinates in enumerate(grid.coordinates):
             value = value + linear[:, axis, column][expand] * coordinates
         components.append(value)
-    mapped = torch.stack(components, dim=-1)
+    return torch.stack(components, dim=-1), rotation
+
+
+def _sample_grid(
+    images: torch.Tensor,
+    parameters: torch.Tensor,
+    grid: SpatialGrid,
+    interpolation: str,
+    displacement: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    mapped, rotation = _grid_coordinates(parameters, grid, images.ndim - 1)
+    if displacement is not None:
+        mapping = grid.world_to_normalized @ rotation @ grid.resident_basis
+        return _sample_prepared(
+            images, displacement, (mapped, mapping, grid), interpolation
+        )
     upper_valid = (
         mapped < grid.upper if grid.slice_basis is not None else mapped <= grid.upper
     )
@@ -387,56 +397,7 @@ def _sample_grid(
     return sampled, valid
 
 
-def rotation_matrices(angles: torch.Tensor) -> torch.Tensor:
-    """Build differentiable 2D rotations.
-
-    Parameters
-    ----------
-    angles : (B,) torch.Tensor
-        Rotation angles in radians.
-
-    Returns
-    -------
-    rotations : (B, 2, 2) torch.Tensor
-        Physical plane rotations.
-    """
-    c, s = angles.cos(), angles.sin()
-    return torch.stack((c, -s, s, c), dim=-1).reshape(-1, 2, 2)
-
-
-def sample_rigid(
-    images: torch.Tensor,
-    parameters: torch.Tensor,
-    plane: Plane | SpatialGrid,
-    *,
-    interpolation: str = "linear",
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Pull-sample the fixed domain under the geometry's centered physical model.
-
-    Parameters
-    ----------
-    images : (B, H, W) or (B, D, H, W) torch.Tensor
-        Moving image intensities.
-    parameters : (B, P) torch.Tensor
-        Rigid slices: angle and intrinsic i/j translations. Rigid volumes: world
-        z/y/x rotation vector (right-handed XYZ), then z/y/x translation.
-        Translation: d center shifts. Affine: d*d row-major identity deviations
-        then d center shifts, where d=2 in the plane or 3 for volumes.
-    plane : Plane or SpatialGrid
-        Fixed/moving geometry, on the image device and parameter dtype.
-        The final normalized interpolation grid uses the image dtype.
-    interpolation : {"linear", "nearest"}, default: "linear"
-        Sampling rule; registration fitting always uses linear.
-
-    Returns
-    -------
-    sampled : torch.Tensor
-        Fixed-domain images with border extension pending explicit fill.
-    valid : torch.Tensor
-        Pixel-center support mask, excluding out-of-field samples.
-    """
-    if isinstance(plane, SpatialGrid):
-        return _sample_grid(images, parameters, plane, interpolation)
+def _plane_coordinates(parameters, plane):
     if plane.transform == "rigid":
         rotation = rotation_matrices(parameters[:, 0])
         physical_translation = parameters[:, 1:]
@@ -465,7 +426,165 @@ def sample_rigid(
         + delta[:, 1, 1, None, None] * ny
         + translation[:, 1, None, None]
     )
-    grid = torch.stack((gx, gy), dim=-1)
+    return torch.stack((gx, gy), dim=-1), rotation
+
+
+def _prepare_displaced_sampling(images, parameters, geometry):
+    """Cache complete seed queries, never a resampled or prewarped image."""
+    if isinstance(geometry, SpatialGrid):
+        base, rotation = _grid_coordinates(parameters, geometry, images.ndim - 1)
+        mapping = geometry.world_to_normalized @ rotation @ geometry.resident_basis
+    else:
+        base, rotation = _plane_coordinates(parameters, geometry)
+        mapping = geometry.plane_to_normalized @ rotation
+    return base, mapping, geometry
+
+
+def _sample_prepared(images, displacement, prepared, interpolation="linear"):
+    """Sample with a resident seed grid/matrix; only the deformation varies."""
+    base, mapping, geometry = prepared
+    mapped = base + _map_displacement(mapping, displacement)
+    if isinstance(geometry, SpatialGrid):
+        upper = (
+            mapped < geometry.upper
+            if geometry.slice_basis is not None
+            else mapped <= geometry.upper
+        )
+        valid = ((mapped >= geometry.lower) & upper).all(dim=-1)
+        query = mapped[..., [2, 1] if geometry.planar else [2, 1, 0]]
+    else:
+        tolerance = geometry.support_tolerance
+        valid = ((mapped >= -1 - tolerance) & (mapped <= 1 + tolerance)).all(dim=-1)
+        query = mapped
+    return _sample_displaced(images, query, interpolation), valid
+
+
+def _map_displacement(matrix, field, axes=None):
+    """Apply tiny geometry matrices without strided, per-voxel batched GEMMs."""
+    expand = (-1,) + (1,) * (field.ndim - 2)
+    components = []
+    for row in range(matrix.shape[-2]):
+        if axes is not None:
+            column = axes[row]
+            value = matrix[:, row, column].reshape(expand) * field[:, column]
+        else:
+            value = matrix[:, row, 0].reshape(expand) * field[:, 0]
+            for column in range(1, field.shape[1]):
+                value = (
+                    value + matrix[:, row, column].reshape(expand) * field[:, column]
+                )
+        components.append(value)
+    return torch.stack(components, dim=-1)
+
+
+def _sample_displaced(images, normalized, interpolation):
+    """Fixed-order linear interpolation with double geometry and image-dtype math.
+
+    Unlike float32 normalized grid_sample, voxel coordinates are not quantized
+    before selecting interpolation cells. At float32-fitting voxel knots, remove
+    only double roundoff and choose a consistent one-sided gradient on both devices.
+    Final float64 interpolation retains unsnapped float64 coordinates and weights.
+    """
+    dimensions = images.ndim - 1
+    coordinates = []
+    for axis, size in enumerate(images.shape[1:]):
+        coordinate = (normalized[..., dimensions - axis - 1] + 1) * ((size - 1) / 2)
+        if images.dtype == torch.float32:
+            nearest = coordinate.round()
+            snapped = torch.where(
+                (coordinate - nearest).abs() < 1e-10, nearest, coordinate
+            )
+            coordinate = coordinate + (snapped - coordinate).detach()
+        coordinate = torch.where(
+            (coordinate > 0) & (coordinate < size - 1),
+            coordinate,
+            coordinate.detach().clamp(0, size - 1),
+        )
+        coordinates.append(coordinate)
+    if interpolation == "nearest":
+        index = torch.zeros_like(coordinates[0], dtype=torch.int64)
+        for size, coordinate in zip(images.shape[1:], coordinates, strict=True):
+            index = index * size + coordinate.round().long()
+        return images.flatten(1).gather(1, index.flatten(1)).reshape(index.shape)
+    lower = [c.floor().long() for c in coordinates]
+    fractions = [
+        (c - i).to(images.dtype) for c, i in zip(coordinates, lower, strict=True)
+    ]
+    result = images.new_zeros(coordinates[0].shape)
+    for corner in product((0, 1), repeat=dimensions):
+        index = torch.zeros_like(lower[0])
+        weight = torch.ones_like(fractions[0])
+        for size, i, f, side in zip(
+            images.shape[1:], lower, fractions, corner, strict=True
+        ):
+            index = index * size + (i + side).clamp(0, size - 1)
+            weight = weight * (f if side else 1 - f)
+        values = images.flatten(1).gather(1, index.flatten(1)).reshape(index.shape)
+        result = result + weight * values
+    return result
+
+
+def rotation_matrices(angles: torch.Tensor) -> torch.Tensor:
+    """Build differentiable 2D rotations.
+
+    Parameters
+    ----------
+    angles : (B,) torch.Tensor
+        Rotation angles in radians.
+
+    Returns
+    -------
+    rotations : (B, 2, 2) torch.Tensor
+        Physical plane rotations.
+    """
+    c, s = angles.cos(), angles.sin()
+    return torch.stack((c, -s, s, c), dim=-1).reshape(-1, 2, 2)
+
+
+def sample_rigid(
+    images: torch.Tensor,
+    parameters: torch.Tensor,
+    plane: Plane | SpatialGrid,
+    *,
+    interpolation: str = "linear",
+    displacement: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pull-sample the fixed domain under the geometry's centered physical model.
+
+    Parameters
+    ----------
+    images : (B, H, W) or (B, D, H, W) torch.Tensor
+        Moving image intensities.
+    parameters : (B, P) torch.Tensor
+        Rigid slices: angle and intrinsic i/j translations. Rigid volumes: world
+        z/y/x rotation vector (right-handed XYZ), then z/y/x translation.
+        Translation: d center shifts. Affine: d*d row-major identity deviations
+        then d center shifts, where d=2 in the plane or 3 for volumes.
+    plane : Plane or SpatialGrid
+        Fixed/moving geometry, on the image device and parameter dtype.
+        The final normalized interpolation grid uses the image dtype.
+    interpolation : {"linear", "nearest"}, default: "linear"
+        Sampling rule; registration fitting always uses linear.
+    displacement : torch.Tensor, optional
+        SyN's physical midpoint-to-fixed-domain displacement, component-first.
+        Uses intrinsic i/j components for planes and world z/y/x for volumes;
+        applied before the parameterized seed. The None path is unchanged.
+
+    Returns
+    -------
+    sampled : torch.Tensor
+        Fixed-domain images with border extension pending explicit fill.
+    valid : torch.Tensor
+        Pixel-center support mask, excluding out-of-field samples.
+    """
+    if isinstance(plane, SpatialGrid):
+        return _sample_grid(images, parameters, plane, interpolation, displacement)
+    grid, rotation = _plane_coordinates(parameters, plane)
+    if displacement is not None:
+        mapping = plane.plane_to_normalized @ rotation
+        return _sample_prepared(
+            images, displacement, (grid, mapping, plane), interpolation
+        )
     tolerance = plane.support_tolerance
     valid = ((grid >= -1 - tolerance) & (grid <= 1 + tolerance)).all(dim=-1)
     sampled = F.grid_sample(

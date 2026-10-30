@@ -5,6 +5,76 @@
 Optimizer defaults are unchanged. Library comparisons below are diagnostics, not
 an ITK/FireANTs output-equivalence product requirement or anatomical ground truth.
 
+## Quick Landemard motion QC
+
+[`compare_landemard_motion.py`](compare_landemard_motion.py) fetches ALD001/ref20
+through ConfUSIus and compares raw, rigid, rigid→affine and rigid→affine→SyN on
+the same original recording and first selected reference frame. Default: **the
+whole recording**, 100 updates per stage, CUDA if available. First download is
+about 0.5 GB. There are **exactly three whole-recording `voxreg.register` calls**,
+one per method; batching happens inside voxreg. Every call uses the original
+images and the same first-frame reference. The comparison deliberately reuses
+rigid/affine results as the next method's optional seed; ordinary motion correction
+needs just `result = voxreg.register(pwd)` for the default rigid model.
+
+```sh
+uv run python research/confusius-examples/compare_landemard_motion.py \
+  --output artifacts/landemard-ref20-full
+# Optional short window: --start 1000 --frames 120
+```
+
+Writes `rigid.nii`, `affine.nii`, `syn.nii`, their ConfUSIus geometry/timing JSON
+sidecars, `qc.png`, full-resolution `qc.csv` and settings/status/timing JSON.
+**No GIFs or dense fields.** NIfTIs retain original power intensities and dtype;
+invalid samples use the registration engine's per-frame-minimum fill. Three full
+corrected recordings occupy about 1.6 GB uncompressed, in addition to the cached
+input. Each method is exported and released before proceeding. There is no
+script-level registration chunking or output scratch. Linear matrices are
+explicitly requested for stage seeds; **SyN transform export is disabled** (as it
+is by default in the library), avoiding the full-recording 6.3 GB dense fields.
+Only per-batch deformation state is needed; full corrected images/masks still
+occupy CPU RAM. Existing output directories are never overwritten.
+
+The four stacked raster panels share −30…0 dB relative to the first reference's
+maximum. Whole-run rasters use temporal means in at most 1200 bins; gray means
+no supported samples. Correlation plots show bin means **and min/max envelopes**
+so brief dips remain visible; CSV retains every frame. Long runs use minutes.
+`--batch-size` (optional override of voxreg's automatic policy), `--iterations` and
+`--device cpu|cuda` are optional. QC reads one exported recording at a time,
+after dense fields are released; it does not add registration calls.
+Correlation improvement is QC, not anatomical truth or proof physiology is retained.
+
+After saving, the script opens **uncorrected, rigid, affine and SyN** in a **2×2
+Napari grid**, using `cf.plotting.plot_napari`. All four share a time slider,
+physical calibration and the same gray colormap/power contrast limits. Corrected
+NIfTIs are loaded lazily through ConfUSIus. Pass **`--no-view`** on headless machines;
+the saved outputs are unchanged. Display uses original power rather than the QC
+figure's dB scale. ConfUSIus uses median temporal spacing for the viewer; exact
+acquisition times remain in the sidecars and CSV.
+
+To reopen an existing run without repeating registration, from the repository root:
+
+```python
+import json
+import sys
+from pathlib import Path
+
+import confusius as cf
+
+sys.path.insert(0, "research/confusius-examples")
+from compare_landemard_motion import show_recordings
+
+root = Path("artifacts/landemard-ref20-full")
+settings = json.loads((root / "settings.json").read_text())
+start = settings["start"]
+raw = cf.load(settings["source"]).isel(
+    time=slice(start, start + len(settings["time_seconds"]))
+)
+show_recordings(raw, root)
+```
+
+## Pair/atlas exploration and historical validation
+
 **Current mixed-pair protocol:** [native fixed-grid sampling](../slice-geometry/NATIVE-FIXED.md),
 with `atlas_native_fixed.py`: no role reversal or replicated slab. Eight fresh
 native fits pass CPU/CUDA precision but still fail the atlas reference gate.

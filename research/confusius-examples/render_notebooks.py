@@ -292,7 +292,7 @@ cf_rigid, cf_matrix, cf_diag = cf.registration.register_volume(
     moving=moving, fixed=fixed, transform_type="rigid",
     sitk_threads=8, show_progress=False, plot_metric=False, plot_composite=False,
 )
-vr = voxreg.register(moving, fixed, transform="rigid", initialization="center_geometry",
+vr = voxreg.register(moving, fixed, return_transforms=True, transform="rigid", initialization="center_geometry",
                     intensity_scaling="none", device=DEVICE, progress=False)
 print("CF pull:\\n", cf_matrix)
 print("voxreg pull:\\n", vr.transforms.values)
@@ -363,7 +363,7 @@ data = cf.load(path).isel(time=slice(220,340)).compute()
 INPUTS = [{"path":str(path),"sha256":digest(path),"sidecar_sha256":digest(path.with_name(path.name.removesuffix(".nii.gz")+".json"))}]
 print("Shape:", data.shape, "dtype:", data.dtype, "time range:", (float(data.time[0]),float(data.time[-1])))
 cf_motion = cf.registration.register_volumewise(data,transform="rigid",moving_intensity_scaling="db",metric="correlation",learning_rate=.1,n_jobs=8,show_progress=False)
-vr = voxreg.register(data,transform="rigid",initialization="center_geometry",intensity_scaling="db",batch_size=120,device=DEVICE,progress=False)
+vr = voxreg.register(data,return_transforms=True,transform="rigid",initialization="center_geometry",intensity_scaling="db",batch_size=120,device=DEVICE,progress=False)
 assert cf_motion.dtype == vr.registered.dtype == data.dtype
 cf_df = cf_motion.attrs["motion_params"]
 vr_df = cf.registration.create_motion_dataframe(list(vr.transforms.values),reference=data.isel(time=0,drop=True),time_coords=data.time.values)
@@ -449,7 +449,7 @@ composites(moving.values,{"Manual template placement":initial},"Native recording
     book.code("""
 cf_direct,cf_direct_matrix,cf_direct_diag = cf.registration.register_volume(moving,fixed,transform_type="affine",metric="correlation",learning_rate=1.,number_of_iterations=500,convergence_window_size=50,initialization=seed,sitk_threads=8,show_progress=False,plot_metric=False,plot_composite=False)
 with warnings.catch_warnings(record=True) as caught:
-    vr_direct = voxreg.register(moving,fixed,transform="affine",initialization=seed,intensity_scaling="none",max_iterations=500,convergence_window_size=50,device=DEVICE,progress=False)
+    vr_direct = voxreg.register(moving,fixed,return_transforms=True,transform="affine",initialization=seed,intensity_scaling="none",max_iterations=500,convergence_window_size=50,device=DEVICE,progress=False)
 print("voxreg output coverage:",float(vr_direct.diagnostics.output_valid_fraction))
 for warning in caught:print(str(warning.message))
 matrices = {"CF original affine":cf_direct_matrix,"voxreg original affine":vr_direct.transforms.values}

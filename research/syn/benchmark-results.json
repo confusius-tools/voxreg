@@ -1,0 +1,1184 @@
+{
+  "runs": {
+    "comparison-01": {
+      "versions": {
+        "voxreg": "0.1.0",
+        "torch": "2.14.1",
+        "itk": "5.4.7",
+        "fireants": "1.5.1",
+        "numpy": "2.5.4"
+      },
+      "python": "3.14.8",
+      "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+      "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+      "fireants_fused": false,
+      "iterations": 120,
+      "repeats": 3,
+      "cpu_threads": 1,
+      "cases": {
+        "2d-small": {
+          "shape": [
+            1,
+            25,
+            29
+          ],
+          "frames": 1,
+          "provenance": null,
+          "backends": {
+            "voxreg-cpu": {
+              "ncc_squared": [
+                0.9887071577649952
+              ],
+              "min_residual_jacobian": [
+                0.7760791753073478
+              ],
+              "truth_rms_px": [
+                0.06920354600043041
+              ],
+              "truth_max_px": [
+                0.15555246820485752
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.2705319980013883,
+              "warm_seconds": [
+                0.2626679300010437,
+                0.2686203379998915,
+                0.26243484299629927
+              ],
+              "warm_median_seconds": 0.2626679300010437,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.06942971014007233
+              ]
+            },
+            "voxreg-cuda": {
+              "ncc_squared": [
+                0.9887071581063541
+              ],
+              "min_residual_jacobian": [
+                0.776079185115231
+              ],
+              "truth_rms_px": [
+                0.06920355859859602
+              ],
+              "truth_max_px": [
+                0.15555273690994909
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 1.299017247001757,
+              "warm_seconds": [
+                0.658624609997787,
+                0.6467805579959531,
+                0.611649619997479
+              ],
+              "warm_median_seconds": 0.6467805579959531,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.06942972078044896
+              ]
+            },
+            "itk": {
+              "ncc_squared": [
+                0.9891585064602774
+              ],
+              "min_residual_jacobian": [
+                0.7749026784109435
+              ],
+              "truth_rms_px": [
+                0.06810660688290754
+              ],
+              "truth_max_px": [
+                0.14592745752065187
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 6.265199923000182,
+              "warm_seconds": [
+                0.15051909299654653,
+                0.1505209110036958,
+                0.15187099899776513
+              ],
+              "warm_median_seconds": 0.1505209110036958,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.06817797262210233
+              ]
+            },
+            "fireants-cpu": {
+              "error": "NotImplementedError",
+              "message": "Got 4D input, but trilinear mode needs 5D input"
+            },
+            "fireants-cuda": {
+              "error": "NotImplementedError",
+              "message": "Got 4D input, but trilinear mode needs 5D input"
+            }
+          },
+          "cpu_cuda_max_point_px": 6.462425770676299e-07,
+          "precision_gate_pass": true,
+          "voxreg_fields_cpu_cuda_max_point_px": 6.462425770676299e-07,
+          "voxreg_inverse_cpu_cuda_max_point_px": 6.865691568147543e-07
+        },
+        "2d-medium": {
+          "shape": [
+            1,
+            64,
+            80
+          ],
+          "frames": 1,
+          "provenance": null,
+          "backends": {
+            "voxreg-cpu": {
+              "ncc_squared": [
+                0.9875392466889074
+              ],
+              "min_residual_jacobian": [
+                0.884419241635
+              ],
+              "truth_rms_px": [
+                0.07618181238716897
+              ],
+              "truth_max_px": [
+                0.18958253752575588
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.5681669379991945,
+              "warm_seconds": [
+                0.5571463160013082,
+                0.5527650660005747,
+                0.554645131000143
+              ],
+              "warm_median_seconds": 0.554645131000143,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.07627468016325478
+              ]
+            },
+            "voxreg-cuda": {
+              "ncc_squared": [
+                0.9875392462355163
+              ],
+              "min_residual_jacobian": [
+                0.8844193381890895
+              ],
+              "truth_rms_px": [
+                0.07618181547387505
+              ],
+              "truth_max_px": [
+                0.18958246425549072
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.635747373002232,
+              "warm_seconds": [
+                0.617668392995256,
+                0.6642972389963688,
+                0.678755460998218
+              ],
+              "warm_median_seconds": 0.6642972389963688,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.07627468264964726
+              ]
+            },
+            "itk": {
+              "ncc_squared": [
+                0.987928052875498
+              ],
+              "min_residual_jacobian": [
+                0.890310826698466
+              ],
+              "truth_rms_px": [
+                0.06641128815264681
+              ],
+              "truth_max_px": [
+                0.17484204458259187
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.8576575050028623,
+              "warm_seconds": [
+                0.8584691020005266,
+                0.8596519810016616,
+                0.8585260190011468
+              ],
+              "warm_median_seconds": 0.8585260190011468,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.0664804691841772
+              ]
+            },
+            "fireants-cpu": {
+              "ncc_squared": [
+                0.9868803883270852
+              ],
+              "min_residual_jacobian": [
+                0.8443472001509645
+              ],
+              "truth_rms_px": [
+                0.08096138908544113
+              ],
+              "truth_max_px": [
+                0.2046769846355701
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.2114642409942462,
+              "warm_seconds": [
+                0.22203658400394488,
+                0.21014034300606,
+                0.21031216300616506
+              ],
+              "warm_median_seconds": 0.21031216300616506,
+              "repeat_max_world_mm": 0.0,
+              "finite": true
+            },
+            "fireants-cuda": {
+              "ncc_squared": [
+                0.9868907862444131
+              ],
+              "min_residual_jacobian": [
+                0.8443796257242097
+              ],
+              "truth_rms_px": [
+                0.08096063490742779
+              ],
+              "truth_max_px": [
+                0.2046769846355701
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.3869936890041572,
+              "warm_seconds": [
+                0.3536125939936028,
+                0.33670441600406775,
+                0.3690172159986105
+              ],
+              "warm_median_seconds": 0.3536125939936028,
+              "repeat_max_world_mm": 2.9555521408042296e-07,
+              "finite": true
+            }
+          },
+          "cpu_cuda_max_point_px": 9.303325729364351e-07,
+          "precision_gate_pass": true,
+          "voxreg_fields_cpu_cuda_max_point_px": 9.303325729364351e-07,
+          "voxreg_inverse_cpu_cuda_max_point_px": 9.253768689006655e-07,
+          "fireants_fields_cpu_cuda_max_point_px": 0.007571079696819119
+        },
+        "3d-small": {
+          "shape": [
+            17,
+            19,
+            21
+          ],
+          "frames": 1,
+          "provenance": null,
+          "backends": {
+            "voxreg-cpu": {
+              "ncc_squared": [
+                0.9827213270159764
+              ],
+              "min_residual_jacobian": [
+                0.5991086374234246
+              ],
+              "truth_rms_px": [
+                0.08323131492756589
+              ],
+              "truth_max_px": [
+                0.297188779739193
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.9384692949970486,
+              "warm_seconds": [
+                0.9322496890017646,
+                0.9253247730011935,
+                0.9273966550026671
+              ],
+              "warm_median_seconds": 0.9273966550026671,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.08312333742175759
+              ]
+            },
+            "voxreg-cuda": {
+              "ncc_squared": [
+                0.9827213270159764
+              ],
+              "min_residual_jacobian": [
+                0.5991086374234219
+              ],
+              "truth_rms_px": [
+                0.08323131492757764
+              ],
+              "truth_max_px": [
+                0.2971887797391936
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.9283934650011361,
+              "warm_seconds": [
+                0.8973746149931685,
+                0.8862415089970455,
+                0.9010200119955698
+              ],
+              "warm_median_seconds": 0.8973746149931685,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.08312333742177189
+              ]
+            },
+            "itk": {
+              "ncc_squared": [
+                0.9833132092105298
+              ],
+              "min_residual_jacobian": [
+                0.599583074499044
+              ],
+              "truth_rms_px": [
+                0.08157747271954832
+              ],
+              "truth_max_px": [
+                0.2680291632593468
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 4.617307346001326,
+              "warm_seconds": [
+                4.786535237006319,
+                4.485037001999444,
+                4.523944453001604
+              ],
+              "warm_median_seconds": 4.523944453001604,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.08069931832064038
+              ]
+            },
+            "fireants-cpu": {
+              "error": "AssertionError",
+              "message": "Scale factor is 0.65625, which is less than 1"
+            },
+            "fireants-cuda": {
+              "error": "AssertionError",
+              "message": "Scale factor is 0.65625, which is less than 1"
+            }
+          },
+          "cpu_cuda_max_point_px": 1.0027701245250915e-12,
+          "precision_gate_pass": true,
+          "voxreg_fields_cpu_cuda_max_point_px": 1.0027701245250915e-12,
+          "voxreg_inverse_cpu_cuda_max_point_px": 1.2321792551384608e-12
+        },
+        "3d-medium": {
+          "shape": [
+            32,
+            40,
+            48
+          ],
+          "frames": 1,
+          "provenance": null,
+          "backends": {
+            "voxreg-cpu": {
+              "ncc_squared": [
+                0.9805606542407851
+              ],
+              "min_residual_jacobian": [
+                0.7566142716610493
+              ],
+              "truth_rms_px": [
+                0.10010629132114869
+              ],
+              "truth_max_px": [
+                0.40176394610654975
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 7.898708337001153,
+              "warm_seconds": [
+                7.968139951997728,
+                8.096996468004363,
+                7.977799672997207
+              ],
+              "warm_median_seconds": 7.977799672997207,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.10044149656316753
+              ]
+            },
+            "voxreg-cuda": {
+              "ncc_squared": [
+                0.9805605800715627
+              ],
+              "min_residual_jacobian": [
+                0.7566141333553202
+              ],
+              "truth_rms_px": [
+                0.10010722714814883
+              ],
+              "truth_max_px": [
+                0.4017641989653546
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 1.234323600998323,
+              "warm_seconds": [
+                1.0858020209998358,
+                1.0850632459987537,
+                1.0518787219989463
+              ],
+              "warm_median_seconds": 1.0850632459987537,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.10044236295263732
+              ]
+            },
+            "itk": {
+              "ncc_squared": [
+                0.9812405004471609
+              ],
+              "min_residual_jacobian": [
+                0.768313020647331
+              ],
+              "truth_rms_px": [
+                0.07975096324735992
+              ],
+              "truth_max_px": [
+                0.20866870311076302
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 41.68215034400055,
+              "warm_seconds": [
+                41.651606555999024,
+                41.0696176019992,
+                46.08271733100264
+              ],
+              "warm_median_seconds": 41.651606555999024,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.08000316282864924
+              ]
+            },
+            "fireants-cpu": {
+              "ncc_squared": [
+                0.9789656287890534
+              ],
+              "min_residual_jacobian": [
+                0.7710086074223511
+              ],
+              "truth_rms_px": [
+                0.1012686452416684
+              ],
+              "truth_max_px": [
+                0.23720332221525808
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 5.556422781002766,
+              "warm_seconds": [
+                6.4006648549984675,
+                5.864280571004201,
+                5.0487541670008795
+              ],
+              "warm_median_seconds": 5.864280571004201,
+              "repeat_max_world_mm": 0.0,
+              "finite": true
+            },
+            "fireants-cuda": {
+              "ncc_squared": [
+                0.9791129302128379
+              ],
+              "min_residual_jacobian": [
+                0.7752873408466323
+              ],
+              "truth_rms_px": [
+                0.09951422151983409
+              ],
+              "truth_max_px": [
+                0.2362567319990774
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.4675940770030138,
+              "warm_seconds": [
+                0.42461561300297035,
+                0.42373934100032784,
+                0.48440914200182306
+              ],
+              "warm_median_seconds": 0.42461561300297035,
+              "repeat_max_world_mm": 4.5919781044290175e-07,
+              "finite": true
+            }
+          },
+          "cpu_cuda_max_point_px": 0.00013517109683627477,
+          "precision_gate_pass": true,
+          "voxreg_fields_cpu_cuda_max_point_px": 0.00013517109683627477,
+          "voxreg_inverse_cpu_cuda_max_point_px": 0.00013974162993661893,
+          "fireants_fields_cpu_cuda_max_point_px": 0.06759455924816107
+        }
+      },
+      "source_sha256": {
+        "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+        "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+        "src/voxreg/fields.py": "60fe480553cac0774e9a0572c05552229e355f4b0442d5be73da5e5a29a2747e",
+        "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+        "src/voxreg/rigid.py": "0c14060260ed59e59645382011f5ba4616e366b844813221db7cb91211aa0791",
+        "src/voxreg/sampling.py": "179c7c8097aafa50c759e7a6693919b8088fe71755b40670d3bae2847c656455",
+        "src/voxreg/syn.py": "6c75214c34817c2106668b3a622558284556e2e498e46aba97c6e990ef988ae6",
+        "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+        "tests/conftest.py": "46af2802a2fd3f6ea4d1df9f2373a425ed71049b409592589a1090832214c06a",
+        "research/syn/compare.py": "07beda04b6bad7f9a7d3b0350bc33b88c846bf96495e4631e7e9c96c470d399e"
+      }
+    },
+    "threads8-01": {
+      "versions": {
+        "voxreg": "0.1.0",
+        "torch": "2.14.1",
+        "itk": "5.4.7",
+        "fireants": "1.5.1",
+        "numpy": "2.5.4"
+      },
+      "python": "3.14.8",
+      "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+      "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+      "fireants_fused": false,
+      "iterations": 120,
+      "repeats": 2,
+      "cpu_threads": 8,
+      "cases": {
+        "3d-medium": {
+          "shape": [
+            32,
+            40,
+            48
+          ],
+          "frames": 1,
+          "provenance": null,
+          "backends": {
+            "itk": {
+              "ncc_squared": [
+                0.9812405004471609
+              ],
+              "min_residual_jacobian": [
+                0.768313020647331
+              ],
+              "truth_rms_px": [
+                0.07975096324735992
+              ],
+              "truth_max_px": [
+                0.20866870311076302
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 19.088708675000817,
+              "warm_seconds": [
+                11.84555429500324,
+                10.990154652005003
+              ],
+              "warm_median_seconds": 11.417854473504121,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.08000316282864924
+              ]
+            },
+            "voxreg-cpu": {
+              "ncc_squared": [
+                0.9805606542407851
+              ],
+              "min_residual_jacobian": [
+                0.7566142716610493
+              ],
+              "truth_rms_px": [
+                0.10010629132114869
+              ],
+              "truth_max_px": [
+                0.40176394610654975
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 5.622091454999463,
+              "warm_seconds": [
+                6.09120855400397,
+                5.101709756003402
+              ],
+              "warm_median_seconds": 5.596459155003686,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.10044149656316753
+              ]
+            },
+            "fireants-cpu": {
+              "ncc_squared": [
+                0.9789656287890534
+              ],
+              "min_residual_jacobian": [
+                0.7710086074223511
+              ],
+              "truth_rms_px": [
+                0.1012686452416684
+              ],
+              "truth_max_px": [
+                0.23720332221525808
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 5.167902642002446,
+              "warm_seconds": [
+                5.109741362997738,
+                4.95488623399433
+              ],
+              "warm_median_seconds": 5.032313798496034,
+              "repeat_max_world_mm": 0.0,
+              "finite": true
+            }
+          }
+        }
+      },
+      "source_sha256": {
+        "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+        "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+        "src/voxreg/fields.py": "60fe480553cac0774e9a0572c05552229e355f4b0442d5be73da5e5a29a2747e",
+        "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+        "src/voxreg/rigid.py": "0c14060260ed59e59645382011f5ba4616e366b844813221db7cb91211aa0791",
+        "src/voxreg/sampling.py": "179c7c8097aafa50c759e7a6693919b8088fe71755b40670d3bae2847c656455",
+        "src/voxreg/syn.py": "6c75214c34817c2106668b3a622558284556e2e498e46aba97c6e990ef988ae6",
+        "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+        "tests/conftest.py": "46af2802a2fd3f6ea4d1df9f2373a425ed71049b409592589a1090832214c06a",
+        "research/syn/compare.py": "07beda04b6bad7f9a7d3b0350bc33b88c846bf96495e4631e7e9c96c470d399e"
+      }
+    },
+    "real-pair-01": {
+      "versions": {
+        "voxreg": "0.1.0",
+        "torch": "2.14.1",
+        "itk": "5.4.7",
+        "fireants": "1.5.1",
+        "numpy": "2.5.4"
+      },
+      "python": "3.14.8",
+      "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+      "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+      "fireants_fused": false,
+      "iterations": 120,
+      "repeats": 2,
+      "cpu_threads": 1,
+      "cases": {
+        "real-pair": {
+          "shape": [
+            1,
+            112,
+            128
+          ],
+          "frames": 1,
+          "provenance": [
+            {
+              "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220523/susi/sub-rat75_ses-20220523_acq-slice32_rec-minframe2d_pwd.nii.gz",
+              "sha256": "bfc059b22695ed6e7f5cf8b1927b0978d291a0f9d2f7bddae4ccd69f674d3049",
+              "sidecar_sha256": "324693cb1f9c93e767c75816ec78bb171bf4c8cf173d63b3e9ca459e8dbb402c",
+              "shape": [
+                1,
+                112,
+                128
+              ],
+              "dtype": "float64",
+              "raw_range": [
+                20.989732573125544,
+                6766.365013732707
+              ],
+              "position_to_world": [
+                [
+                  0.3999999761581421,
+                  -1.9172617353978458e-34,
+                  -1.388833351185086e-33,
+                  1.7763568394002505e-15
+                ],
+                [
+                  1.7463359889231874e-34,
+                  0.09855999797582625,
+                  -6.364600602585139e-19,
+                  5.000000000000002
+                ],
+                [
+                  -8.711952302508758e-34,
+                  -2.2372464514507346e-19,
+                  0.10999999940395355,
+                  -6.984999656677246
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ]
+            },
+            {
+              "path": "/home/sdiebolt/.cache/confusius/cybis-pereira-2026-bids/1.0.0/sub-rat75/ses-20220524/susi/sub-rat75_ses-20220524_acq-slice32_rec-minframe2d_pwd.nii.gz",
+              "sha256": "f97e329ed71aec0427dd0a1f44e9694712c76905a3a5004c3981f9d30cb75f91",
+              "sidecar_sha256": "7604bae724589b16188bbecce2fcca8f71e3a70aacbe5fca0fba4e998e83f560",
+              "shape": [
+                1,
+                112,
+                128
+              ],
+              "dtype": "float64",
+              "raw_range": [
+                37.04333990704922,
+                25065.500206656092
+              ],
+              "position_to_world": [
+                [
+                  0.3999999761581421,
+                  3.98012486173997e-34,
+                  -2.7660057984100148e-33,
+                  1.7763568394002505e-15
+                ],
+                [
+                  -4.549644814859601e-34,
+                  0.09855999797582628,
+                  -8.449405938948477e-19,
+                  4.999999999999998
+                ],
+                [
+                  2.5388249847242993e-33,
+                  1.2080067083566224e-18,
+                  0.10999999940395354,
+                  -6.984999656677246
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ]
+            }
+          ],
+          "backends": {
+            "voxreg-cpu": {
+              "ncc_squared": [
+                0.9068198448082121
+              ],
+              "min_residual_jacobian": [
+                0.2694706578924919
+              ],
+              "cold_seconds": 1.1583783300011419,
+              "warm_seconds": [
+                1.1549309990004986,
+                1.158887411998876
+              ],
+              "warm_median_seconds": 1.1569092054996872,
+              "repeat_max_world_mm": 0.0,
+              "finite": true
+            },
+            "voxreg-cuda": {
+              "ncc_squared": [
+                0.9068198448970843
+              ],
+              "min_residual_jacobian": [
+                0.2694706570115424
+              ],
+              "cold_seconds": 2.3979661369958194,
+              "warm_seconds": [
+                0.6653290900067077,
+                0.6649434849969111
+              ],
+              "warm_median_seconds": 0.6651362875018094,
+              "repeat_max_world_mm": 0.0,
+              "finite": true
+            },
+            "itk": {
+              "ncc_squared": [
+                0.9037791008279702
+              ],
+              "min_residual_jacobian": [
+                0.3810119097940452
+              ],
+              "cold_seconds": 8.185063504002756,
+              "warm_seconds": [
+                2.280825679998088,
+                2.254804773001524
+              ],
+              "warm_median_seconds": 2.267815226499806,
+              "repeat_max_world_mm": 0.0,
+              "finite": true
+            },
+            "fireants-cpu": {
+              "ncc_squared": [
+                0.9077784069393237
+              ],
+              "min_residual_jacobian": [
+                0.47268500026057736
+              ],
+              "cold_seconds": 0.35281363400281407,
+              "warm_seconds": [
+                0.3323952940045274,
+                0.33411460500065004
+              ],
+              "warm_median_seconds": 0.3332549495025887,
+              "repeat_max_world_mm": 0.0,
+              "finite": true
+            },
+            "fireants-cuda": {
+              "ncc_squared": [
+                0.9077783948359329
+              ],
+              "min_residual_jacobian": [
+                0.4726828450808907
+              ],
+              "cold_seconds": 1.4666488340008073,
+              "warm_seconds": [
+                0.3524592949979706,
+                0.3625223199996981
+              ],
+              "warm_median_seconds": 0.35749080749883433,
+              "repeat_max_world_mm": 3.2604216855247614e-06,
+              "finite": true
+            }
+          },
+          "cpu_cuda_max_point_px": 2.7284282987105876e-07,
+          "precision_gate_pass": true,
+          "voxreg_fields_cpu_cuda_max_point_px": 2.7284282987105876e-07,
+          "voxreg_inverse_cpu_cuda_max_point_px": 2.7698253910520105e-07,
+          "fireants_fields_cpu_cuda_max_point_px": 0.009311260074608,
+          "seed_ncc_squared": 0.8251570233978794
+        }
+      },
+      "source_sha256": {
+        "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+        "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+        "src/voxreg/fields.py": "60fe480553cac0774e9a0572c05552229e355f4b0442d5be73da5e5a29a2747e",
+        "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+        "src/voxreg/rigid.py": "0c14060260ed59e59645382011f5ba4616e366b844813221db7cb91211aa0791",
+        "src/voxreg/sampling.py": "179c7c8097aafa50c759e7a6693919b8088fe71755b40670d3bae2847c656455",
+        "src/voxreg/syn.py": "6c75214c34817c2106668b3a622558284556e2e498e46aba97c6e990ef988ae6",
+        "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+        "tests/conftest.py": "46af2802a2fd3f6ea4d1df9f2373a425ed71049b409592589a1090832214c06a",
+        "research/syn/compare.py": "07beda04b6bad7f9a7d3b0350bc33b88c846bf96495e4631e7e9c96c470d399e"
+      }
+    },
+    "batch8-01": {
+      "versions": {
+        "voxreg": "0.1.0",
+        "torch": "2.14.1",
+        "itk": "5.4.7",
+        "fireants": "1.5.1",
+        "numpy": "2.5.4"
+      },
+      "python": "3.14.8",
+      "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+      "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+      "fireants_fused": false,
+      "iterations": 120,
+      "repeats": 1,
+      "cpu_threads": 8,
+      "cases": {
+        "3d-batch8": {
+          "shape": [
+            32,
+            32,
+            32
+          ],
+          "frames": 8,
+          "provenance": null,
+          "backends": {
+            "voxreg-cpu": {
+              "ncc_squared": [
+                0.9838492498320501,
+                0.9835656148861688,
+                0.9828742083461439,
+                0.9824621914999786,
+                0.9821184582288626,
+                0.9818113325582043,
+                0.9815575816776809,
+                0.9813180185350919
+              ],
+              "min_residual_jacobian": [
+                0.8131383523851496,
+                0.797194917195354,
+                0.7897679133278049,
+                0.7781428327516627,
+                0.7503808153235595,
+                0.7515386800926482,
+                0.7375787424311302,
+                0.6991524473831042
+              ],
+              "truth_rms_px": [
+                0.062472844535206025,
+                0.061079654972908584,
+                0.06439302332638527,
+                0.06515626519915836,
+                0.06982296111779357,
+                0.06773608230704287,
+                0.07048621907764664,
+                0.07630479017112762
+              ],
+              "truth_max_px": [
+                0.1620960119640687,
+                0.1758143629256301,
+                0.1786876995937597,
+                0.18129280881992527,
+                0.2645974131401828,
+                0.17256987236137564,
+                0.23815277521167844,
+                0.2866870488603625
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 15.987462496996159,
+              "warm_seconds": [
+                17.53924026599998
+              ],
+              "warm_median_seconds": 17.53924026599998,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.0627328781690861,
+                0.06149172377754285,
+                0.06462378764565188,
+                0.06536540695067398,
+                0.07019341172958085,
+                0.06797895487798242,
+                0.07066913425156222,
+                0.07664791783172725
+              ]
+            },
+            "voxreg-cuda": {
+              "ncc_squared": [
+                0.9838492503940242,
+                0.9835656148861688,
+                0.9828742087388668,
+                0.9824621913453926,
+                0.9821184582288626,
+                0.9818112457831392,
+                0.9815575578664425,
+                0.9813180384377522
+              ],
+              "min_residual_jacobian": [
+                0.8131383612574324,
+                0.797194917195354,
+                0.7897679395246906,
+                0.7781429254667686,
+                0.7503808153235596,
+                0.7515382664676059,
+                0.7375791321273951,
+                0.6991524918821318
+              ],
+              "truth_rms_px": [
+                0.062472840854437696,
+                0.06107965497335162,
+                0.06439302043720767,
+                0.06515626265637524,
+                0.06982296111802479,
+                0.0677368818218831,
+                0.07048643678201938,
+                0.07630456202228875
+              ],
+              "truth_max_px": [
+                0.16209592446995702,
+                0.17581436292562874,
+                0.17868761163793276,
+                0.18129297110521764,
+                0.26459741314219065,
+                0.1726102081864871,
+                0.23815277082586264,
+                0.2866867065308464
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 4.658933976999833,
+              "warm_seconds": [
+                2.819062030001078
+              ],
+              "warm_median_seconds": 2.819062030001078,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.06273287414365748,
+                0.06149172377796293,
+                0.06462378564698712,
+                0.06536540371035736,
+                0.07019341172984349,
+                0.06797971593819786,
+                0.07066934416104487,
+                0.07664771955847524
+              ]
+            },
+            "itk": {
+              "ncc_squared": [
+                0.9842342528609477,
+                0.9837737337253215,
+                0.9833992328442684,
+                0.9829799846917375,
+                0.9826521781671858,
+                0.9823488907826913,
+                0.9821696015573321,
+                0.9819786513211138
+              ],
+              "min_residual_jacobian": [
+                0.7978319514832789,
+                0.7887825060540999,
+                0.7836423657176242,
+                0.7700849674929141,
+                0.7592812090369856,
+                0.7189653952412214,
+                0.7379501066161228,
+                0.7279328344446669
+              ],
+              "truth_rms_px": [
+                0.057654490823168036,
+                0.05773911329794907,
+                0.05831973043643433,
+                0.05959234439276775,
+                0.05998214849496259,
+                0.06266446870133997,
+                0.06087342880234895,
+                0.061012021022981165
+              ],
+              "truth_max_px": [
+                0.14966750075043353,
+                0.15102401824564293,
+                0.17115195905057654,
+                0.17470709381176647,
+                0.1664387131611549,
+                0.1685704908891197,
+                0.15927262003420886,
+                0.16552512176353015
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 56.88384789599513,
+              "warm_seconds": [
+                50.83310815600271
+              ],
+              "warm_median_seconds": 50.83310815600271,
+              "repeat_max_world_mm": 0.0,
+              "finite": true,
+              "inverse_truth_rms_px": [
+                0.05783779637485309,
+                0.05787732018257843,
+                0.058375762148248724,
+                0.05963902351432799,
+                0.06000614632409835,
+                0.06297524592834088,
+                0.06086069619503015,
+                0.060981553972563524
+              ]
+            },
+            "fireants-cpu": {
+              "ncc_squared": [
+                0.981517184968964,
+                0.9809789642393423,
+                0.9805198517671289,
+                0.9800428182190761,
+                0.979865097306216,
+                0.979542456665136,
+                0.9792914794703877,
+                0.9791814217037221
+              ],
+              "min_residual_jacobian": [
+                0.8077044105538495,
+                0.8006096939586596,
+                0.7864058881920445,
+                0.7667625052182531,
+                0.778609922251695,
+                0.7738405358724805,
+                0.767575861478261,
+                0.7642371403988243
+              ],
+              "truth_rms_px": [
+                0.07263782061466996,
+                0.0740033211644921,
+                0.07526371919729445,
+                0.07639110936842895,
+                0.07758107653817675,
+                0.07865482045339797,
+                0.07944181329738832,
+                0.08027087795728167
+              ],
+              "truth_max_px": [
+                0.19034178641160232,
+                0.19119938951409615,
+                0.19795027109628915,
+                0.19931278325901614,
+                0.20926582180489525,
+                0.19561763534841606,
+                0.19342111887555521,
+                0.18574204177136017
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 6.424202436995984,
+              "warm_seconds": [
+                6.2221978480010876
+              ],
+              "warm_median_seconds": 6.2221978480010876,
+              "repeat_max_world_mm": 0.0,
+              "finite": true
+            },
+            "fireants-cuda": {
+              "ncc_squared": [
+                0.9817642175365173,
+                0.9811899840060634,
+                0.9807458442683609,
+                0.9802167039504494,
+                0.9800326197616611,
+                0.9797632086079454,
+                0.9795204099345566,
+                0.9793012757334781
+              ],
+              "min_residual_jacobian": [
+                0.8156373686524139,
+                0.8037312843161251,
+                0.7938228834321347,
+                0.7735578087277164,
+                0.777769169490027,
+                0.7764301012548818,
+                0.7689018627756743,
+                0.7652353988608019
+              ],
+              "truth_rms_px": [
+                0.07016243092502371,
+                0.07150686122204239,
+                0.0727228200717562,
+                0.07396934270395246,
+                0.07563883294381385,
+                0.07665661332697274,
+                0.07771293961922411,
+                0.07847426728942507
+              ],
+              "truth_max_px": [
+                0.17323214005732337,
+                0.180616515097009,
+                0.1773885585126487,
+                0.17517458625686966,
+                0.2124582482126746,
+                0.19045746266984376,
+                0.18646422411749577,
+                0.18628604287697867
+              ],
+              "truth_gate_pass": true,
+              "cold_seconds": 0.8852065829996718,
+              "warm_seconds": [
+                0.6992928409963497
+              ],
+              "warm_median_seconds": 0.6992928409963497,
+              "repeat_max_world_mm": 0.012890882555339545,
+              "finite": true
+            }
+          },
+          "cpu_cuda_max_point_px": 8.495321924547373e-05,
+          "precision_gate_pass": true,
+          "voxreg_fields_cpu_cuda_max_point_px": 8.495321924547373e-05,
+          "voxreg_inverse_cpu_cuda_max_point_px": 8.781351173969624e-05,
+          "fireants_fields_cpu_cuda_max_point_px": 0.13931954640602998
+        }
+      },
+      "source_sha256": {
+        "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+        "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+        "src/voxreg/fields.py": "60fe480553cac0774e9a0572c05552229e355f4b0442d5be73da5e5a29a2747e",
+        "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+        "src/voxreg/rigid.py": "0c14060260ed59e59645382011f5ba4616e366b844813221db7cb91211aa0791",
+        "src/voxreg/sampling.py": "179c7c8097aafa50c759e7a6693919b8088fe71755b40670d3bae2847c656455",
+        "src/voxreg/syn.py": "6c75214c34817c2106668b3a622558284556e2e498e46aba97c6e990ef988ae6",
+        "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+        "tests/conftest.py": "46af2802a2fd3f6ea4d1df9f2373a425ed71049b409592589a1090832214c06a",
+        "research/syn/compare.py": "07beda04b6bad7f9a7d3b0350bc33b88c846bf96495e4631e7e9c96c470d399e"
+      }
+    }
+  }
+}

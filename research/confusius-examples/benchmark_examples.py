@@ -160,7 +160,7 @@ def worker(output, key, repeats):
             else (lambda: cf.registration.register_volumewise(moving, **kwargs))
         )
     else:
-        call = lambda: register(moving, fixed, **kwargs)
+        call = lambda: register(moving, fixed, return_transforms=True, **kwargs)
     cuda = "cuda" in backend
     meta = {
         "key": key,

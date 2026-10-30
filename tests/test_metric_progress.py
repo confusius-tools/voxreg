@@ -24,10 +24,11 @@ def test_metric_callback_preserves_results_and_reports_frame_clocks(
         "convergence_window_size": 6,
         "progress": False,
     }
-    baseline = register(data, **options)
+    baseline = register(data, return_transforms=True, **options)
     events = []
     reported = register(
         data,
+        return_transforms=True,
         **options,
         metric_callback=lambda frames, steps, metric: events.append(
             (frames, steps, metric)
@@ -69,7 +70,7 @@ def test_metric_callback_arrays_are_owned_and_invalid_metrics_are_nan(
         "max_iterations": 3,
         "progress": False,
     }
-    baseline = register(data, **options)
+    baseline = register(data, return_transforms=True, **options)
     seen = []
 
     def mutate(frames, steps, metric):
@@ -78,7 +79,13 @@ def test_metric_callback_arrays_are_owned_and_invalid_metrics_are_nan(
         steps[:] = 999
         metric[:] = np.nan
 
-    reported = register(data, **options, metric_callback=mutate, metric_interval=1)
+    reported = register(
+        data,
+        return_transforms=True,
+        **options,
+        metric_callback=mutate,
+        metric_interval=1,
+    )
     for name in ["registered", "valid", "transforms"]:
         assert_array_equal(
             getattr(reported, name).values, getattr(baseline, name).values

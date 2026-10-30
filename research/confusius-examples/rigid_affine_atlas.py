@@ -59,7 +59,7 @@ def fit_chain(moving, fixed, seed, backend):
                 "progress": False,
             }
             with warnings.catch_warnings(record=True) as caught:
-                result = register(moving, fixed, **options)
+                result = register(moving, fixed, return_transforms=True, **options)
             registered, matrix = result.registered, result.transforms.values
             meta = {
                 "n_iterations": int(result.diagnostics.n_iterations),

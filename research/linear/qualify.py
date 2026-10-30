@@ -175,7 +175,7 @@ def run():
                 r = register(
                     moving,
                     fixed,
-                    transform=model,
+                    return_transforms=True, transform=model,
                     initialization="center_geometry",
                     intensity_scaling="none",
                     max_iterations=160,

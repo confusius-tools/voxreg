@@ -73,6 +73,7 @@ def test_native_domains_and_nonidentity_seed_match_sitk_value(
     result = register(
         moving,
         fixed,
+        return_transforms=True,
         transform=model,
         initialization=seed,
         intensity_scaling="none",

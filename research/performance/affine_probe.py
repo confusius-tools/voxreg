@@ -140,7 +140,7 @@ def main():
             def run():
                 return register(
                     moving,
-                    fixed=fixed,
+                    return_transforms=True, fixed=fixed,
                     batch_size=batch,
                     device=args.device,
                     progress=False,

@@ -46,7 +46,7 @@ def main():
             start = perf_counter()
             result = register(
                 data,
-                device=args.device,
+                return_transforms=True, device=args.device,
                 batch_size=args.batch_size,
                 convergence_minimum_value=args.minimum,
                 progress=False,

@@ -97,7 +97,7 @@ def test_initial_pose_enables_large_displacement_and_is_refined(device):
         "max_iterations": 150,
         "device": device,
     }
-    identity = register(moving, fixed, **options)
+    identity = register(moving, fixed, return_transforms=True, **options)
     assert identity.diagnostics.status == "insufficient_overlap"
     seed = truth.copy()
     seed[:3, :3] = (
@@ -106,7 +106,9 @@ def test_initial_pose_enables_large_displacement_and_is_refined(device):
     center = position_to_world(fixed) @ np.r_[(np.array(fixed.shape) - 1) / 2, 1]
     seed[:3, 3] += (truth[:3, :3] - seed[:3, :3]) @ center[:3] + [0.06, -0.04, 0.05]
     untouched = seed.copy()
-    result = register(moving, fixed, initial_transform=seed, **options)
+    result = register(
+        moving, fixed, return_transforms=True, initial_transform=seed, **options
+    )
     np.testing.assert_array_equal(seed, untouched)
     points = world_points(fixed)
     ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
@@ -149,6 +151,7 @@ def test_failed_fit_retains_initial_not_identity(device, failure):
     r = register(
         moving,
         fixed,
+        return_transforms=True,
         initial_transform=seed,
         intensity_scaling="none",
         max_iterations=2,
@@ -176,8 +179,8 @@ def test_slice_per_frame_initialization_and_reference(
         "max_iterations": 100,
         "progress": False,
     }
-    combined = register(data, batch_size=3, **options)
-    serial = register(data, batch_size=1, **options)
+    combined = register(data, return_transforms=True, batch_size=3, **options)
+    serial = register(data, return_transforms=True, batch_size=1, **options)
     np.testing.assert_allclose(
         combined.transforms, serial.transforms, atol=1e-9, rtol=0
     )
@@ -191,6 +194,7 @@ def test_slice_per_frame_initialization_and_reference(
     labeled = combined.transforms.copy(data=truth)
     again = register(
         data,
+        return_transforms=True,
         initial_transform=labeled,
         intensity_scaling="none",
         max_iterations=100,
@@ -203,8 +207,10 @@ def test_slice_per_frame_initialization_and_reference(
 def test_identity_seed_preserves_default_bitwise(recording_factory, device):
     data, _, _ = recording_factory(oblique=True, strided=True)
     options = {"max_iterations": 65, "progress": False, "device": device}
-    default = register(data, **options)
-    seeded = register(data, initial_transform=np.eye(4), **options)
+    default = register(data, return_transforms=True, **options)
+    seeded = register(
+        data, return_transforms=True, initial_transform=np.eye(4), **options
+    )
     for name in ["registered", "valid", "transforms", "diagnostics"]:
         xr.testing.assert_equal(getattr(default, name), getattr(seeded, name))
 
@@ -257,8 +263,10 @@ def test_slice_seed_rejects_out_of_plane_motion(recording_factory):
 def test_reference_and_labeled_seed_validation(recording_factory):
     data, truth, _ = recording_factory()
     with pytest.raises(ValueError, match="implicit reference"):
-        register(data, initial_transform=truth[1], progress=False)
-    result = register(data, max_iterations=1, progress=False)
+        register(
+            data, return_transforms=True, initial_transform=truth[1], progress=False
+        )
+    result = register(data, return_transforms=True, max_iterations=1, progress=False)
     labeled = result.transforms.copy(data=truth)
     for wrong in [
         labeled.isel(time=slice(None, None, -1)),
@@ -268,7 +276,9 @@ def test_reference_and_labeled_seed_validation(recording_factory):
         labeled.assign_attrs(convention="moving-to-fixed"),
     ]:
         with pytest.raises(ValueError, match="initial_transform"):
-            register(data, initial_transform=wrong, progress=False)
+            register(
+                data, return_transforms=True, initial_transform=wrong, progress=False
+            )
 
 
 def test_seeded_original_float64_resampling_matches_scipy(monkeypatch):
@@ -307,8 +317,22 @@ def test_3d_seed_batch_and_device_independence():
     seeds[0, :3, 3] += [0.06, -0.04, 0.05]
     seeds[1, :3, 3] += [-0.03, 0.05, -0.02]
     options = {"intensity_scaling": "none", "max_iterations": 110, "progress": False}
-    together = register(data, fixed, initial_transform=seeds, batch_size=2, **options)
-    alone = register(data, fixed, initial_transform=seeds, batch_size=1, **options)
+    together = register(
+        data,
+        fixed,
+        return_transforms=True,
+        initial_transform=seeds,
+        batch_size=2,
+        **options,
+    )
+    alone = register(
+        data,
+        fixed,
+        return_transforms=True,
+        initial_transform=seeds,
+        batch_size=1,
+        **options,
+    )
     points = world_points(fixed)
     ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
     for other in [alone] + (
@@ -316,6 +340,7 @@ def test_3d_seed_batch_and_device_independence():
             register(
                 data,
                 fixed,
+                return_transforms=True,
                 initial_transform=seeds,
                 batch_size=2,
                 device="cuda",
@@ -332,9 +357,21 @@ def test_3d_seed_batch_and_device_independence():
         np.testing.assert_array_equal(
             other.diagnostics.n_iterations, together.diagnostics.n_iterations
         )
-    shared = register(data, fixed, initial_transform=seeds[0], batch_size=2, **options)
+    shared = register(
+        data,
+        fixed,
+        return_transforms=True,
+        initial_transform=seeds[0],
+        batch_size=2,
+        **options,
+    )
     explicit = register(
-        data, fixed, initial_transform=np.stack([seeds[0]] * 2), batch_size=2, **options
+        data,
+        fixed,
+        return_transforms=True,
+        initial_transform=np.stack([seeds[0]] * 2),
+        batch_size=2,
+        **options,
     )
     np.testing.assert_array_equal(shared.transforms, explicit.transforms)
 
@@ -344,6 +381,7 @@ def test_unlabeled_dataarray_seeds_follow_position(recording_factory):
     seed = xr.DataArray(truth, dims=("time", "world_out", "world_in"))
     r = register(
         data,
+        return_transforms=True,
         initial_transform=seed,
         intensity_scaling="none",
         max_iterations=1,
@@ -354,8 +392,12 @@ def test_unlabeled_dataarray_seeds_follow_position(recording_factory):
     shared = r.transforms.isel(time=1)
     fixed = data.isel(time=0, drop=True)
     options = {"intensity_scaling": "none", "max_iterations": 1, "progress": False}
-    labeled = register(data, fixed, initial_transform=shared, **options)
-    positional = register(data, fixed, initial_transform=shared.values, **options)
+    labeled = register(
+        data, fixed, return_transforms=True, initial_transform=shared, **options
+    )
+    positional = register(
+        data, fixed, return_transforms=True, initial_transform=shared.values, **options
+    )
     np.testing.assert_array_equal(labeled.transforms, positional.transforms)
 
 
@@ -411,6 +453,7 @@ def test_itk_initial_transform_inplaceoff_oracle():
     result = register(
         failed,
         fixed,
+        return_transforms=True,
         initial_transform=seed,
         intensity_scaling="none",
         max_iterations=1,
@@ -451,8 +494,12 @@ def test_initialization_matrix_alias_matches_initial_transform(representation):
         seed = seed[None]
     untouched = np.array(seed, copy=True)
     options = {"intensity_scaling": "none", "max_iterations": 3, "progress": False}
-    expected = register(moving, fixed, initial_transform=seed, **options)
-    actual = register(moving, fixed, initialization=seed, **options)
+    expected = register(
+        moving, fixed, return_transforms=True, initial_transform=seed, **options
+    )
+    actual = register(
+        moving, fixed, return_transforms=True, initialization=seed, **options
+    )
     for name in ["registered", "valid", "transforms", "diagnostics"]:
         xr.testing.assert_equal(getattr(actual, name), getattr(expected, name))
     np.testing.assert_array_equal(seed, untouched)

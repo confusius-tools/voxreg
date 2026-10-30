@@ -30,8 +30,8 @@ def test_slice_volume_directions_use_their_own_native_fixed_grid(
         "device": device,
         "progress": False,
     }
-    result = register(volume, target, **kwargs)
-    reverse = register(target, volume, **kwargs)
+    result = register(volume, target, return_transforms=True, **kwargs)
+    reverse = register(target, volume, return_transforms=True, **kwargs)
     assert result.registered.shape == target.shape
     assert reverse.registered.shape == volume.shape
     assert result.registered.dtype == reverse.registered.dtype == np.float64
@@ -100,7 +100,10 @@ def test_slice_volume_cpu_cuda_unchanged_precision_gate(
         "convergence_window_size": 401,
         "progress": False,
     }
-    a, b = (register(volume, target, device=device, **kwargs) for device in DEVICES)
+    a, b = (
+        register(volume, target, return_transforms=True, device=device, **kwargs)
+        for device in DEVICES
+    )
     points = position_to_world(target) @ np.vstack(
         (np.indices(target.shape).reshape(3, -1), np.ones((1, target.size)))
     )
@@ -173,12 +176,18 @@ def test_nonparallel_slice_planes_need_an_explicit_alignment_choice(model, mode)
     moving = voxel(fixed.values.copy(), truth @ af)
     with pytest.raises(ValueError, match="Noncoplanar"):
         register(
-            moving, fixed, intensity_scaling="none", transform=model, progress=False
+            moving,
+            fixed,
+            return_transforms=True,
+            intensity_scaling="none",
+            transform=model,
+            progress=False,
         )
     with pytest.raises(ValueError, match="preserve"):
         register(
             moving,
             fixed,
+            return_transforms=True,
             intensity_scaling="none",
             transform=model,
             initialization="center_geometry",
@@ -187,6 +196,7 @@ def test_nonparallel_slice_planes_need_an_explicit_alignment_choice(model, mode)
     result = register(
         moving,
         fixed,
+        return_transforms=True,
         intensity_scaling="none",
         transform=model,
         initialization="align_planes" if mode == "align_planes" else truth,
@@ -229,8 +239,8 @@ def test_batched_slice_targets_seeds_failures_and_chunk_independence(
         "device": device,
         "progress": False,
     }
-    a = register(movie, volume, batch_size=1, **kwargs)
-    b = register(movie, volume, batch_size=3, **kwargs)
+    a = register(movie, volume, return_transforms=True, batch_size=1, **kwargs)
+    b = register(movie, volume, return_transforms=True, batch_size=3, **kwargs)
     assert list(a.diagnostics.status.values) == [
         "max_iterations",
         "max_iterations",
@@ -259,6 +269,7 @@ def test_mixed_no_overlap_retains_public_seed(slice_volume_pair_factory, model):
         result = register(
             moving,
             fixed,
+            return_transforms=True,
             transform=model,
             initialization=seed,
             intensity_scaling="none",
@@ -280,6 +291,7 @@ def test_reversed_strided_slice_and_volume_grids(slice_volume_pair_factory, mode
     result = register(
         volume,
         target,
+        return_transforms=True,
         transform=model,
         initialization=truth,
         intensity_scaling="none",
@@ -305,6 +317,7 @@ def test_plane_seed_can_select_the_opposite_normal_orientation(angle):
     result = register(
         moving,
         fixed,
+        return_transforms=True,
         initialization=pose,
         intensity_scaling="none",
         max_iterations=1,
@@ -343,6 +356,7 @@ def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(
     result = register(
         volume,
         target,
+        return_transforms=True,
         transform=model,
         initialization=truth,
         intensity_scaling="none",
@@ -369,6 +383,7 @@ def test_integer_mixed_output_retains_rounding_and_original_dtype(
     result = register(
         integer,
         target,
+        return_transforms=True,
         initialization=truth,
         intensity_scaling="none",
         max_iterations=1,
@@ -426,8 +441,8 @@ def test_mixed_centering_seed_is_direction_consistent(
         "convergence_window_size": 3,
         "progress": False,
     }
-    a = register(volume, target, **kwargs)
-    b = register(target, volume, **kwargs)
+    a = register(volume, target, return_transforms=True, **kwargs)
+    b = register(target, volume, return_transforms=True, **kwargs)
     assert_allclose(a.transforms, np.linalg.inv(b.transforms), atol=1e-12, rtol=0)
 
 
@@ -438,7 +453,12 @@ def test_volume_grid_centers_within_singleton_voxel_extent_are_valid(
     values, _ = sample(volume, target, np.eye(4))
     target = voxel(values, position_to_world(target))
     result = register(
-        target, volume, intensity_scaling="none", max_iterations=1, progress=False
+        target,
+        volume,
+        return_transforms=True,
+        intensity_scaling="none",
+        max_iterations=1,
+        progress=False,
     )
     assert result.valid.any()
     assert not result.valid.values[:12].any()
@@ -460,6 +480,7 @@ def test_parallel_plane_centering_and_translation_model():
     result = register(
         moving,
         fixed,
+        return_transforms=True,
         transform="translation",
         initialization="center_geometry",
         intensity_scaling="none",

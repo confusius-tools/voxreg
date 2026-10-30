@@ -14,6 +14,14 @@ Reusable image data belongs in the package-wide `conftest.py`:
   affine pairs in 2D/3D, with unequal oblique grids and an off-origin center.
 - `slice_volume_pair_factory`: native singleton/volume pairs with a finite slice
   voxel cell. Truth is built with NumPy/SciPy, not voxreg's parameter decoder.
+- `displacement_factory`: smooth zero-boundary physical fields on oblique,
+  sheared and optionally reversed/strided native 2D/3D grids.
+- `nonlinear_pair_factory`: textured native pairs with independent multi-axis
+  sinusoidal compositive truth, reverse-order Newton inversion and optional
+  shape/dtype/orthogonal-lattice variants. Even the best affine correspondence
+  fails the nonlinear RMS gate; production field composition/inversion is not
+  used to generate truth.
+- `device`: CPU/CUDA selection with an explicit skip when CUDA is unavailable.
 
 Factories are function-scoped and create fresh arrays/RNGs. Do not cache mutable
 VoxelData, set global NumPy seeds, import fixtures from another test module, or
@@ -22,6 +30,7 @@ Specialized local data may remain where it tests a genuinely different case.
 
 `oracles.py` holds shared pure construction/interpolation helpers. Its SciPy
 mixed-grid pull uses float64 interpolation and half-open finite-voxel support.
+Physical field composition has independent SciPy and native SimpleITK oracles.
 Existing native ITK/SimpleITK point and metric oracles remain independent checks.
 
 ## What deserves a test
@@ -39,3 +48,18 @@ recovery, distinct transform families, dimensionality and point/center semantics
 Their optimizer trajectories, image baselines and tolerances are not our oracle.
 No new runtime dependency or external data download is needed for these fixtures.
 Keep cached real examples and heavyweight comparisons separate from unit tests.
+
+`test_syn.py` checks default/fixed-budget nonlinear recovery, forward/inverse
+CPU/CUDA points, exchange symmetry (not anatomical truth), original-intensity
+SciPy interpolation, integer/float64 output, callbacks, chunk/reference/failure
+isolation and invalid inputs. `test_syn_comparison.py` verifies zero-update
+physical ownership and complete seed directions through native ITK/FireANTs APIs.
+The actual accuracy/speed runs live in [research/syn](../research/syn/README.md).
+
+Transform export is off by default. Recovery/precision or seed-reuse tests must
+explicitly request `return_transforms=True`; do not replace their assertions with
+None checks. `test_optional_transforms.py` separately proves default-off output
+parity and prevents dense export functions from running, for all models and native
+2D/3D spatial/recording inputs on CPU/CUDA. `test_auto_batch.py` isolates VRAM-policy
+arithmetic at the CUDA boundary and verifies real public dispatch/overrides;
+there are no trial optimizer calls or silent OOM retries.

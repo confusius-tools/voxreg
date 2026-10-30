@@ -31,12 +31,13 @@ def test_batch_progress_is_silent_and_preserves_results(
 
     monkeypatch.setattr(torch.cuda, "synchronize", synchronize)
     options = {"device": device, "batch_size": batch_size, "max_iterations": 3}
-    baseline = register(data, **options, progress=False)
+    baseline = register(data, return_transforms=True, **options, progress=False)
     baseline_syncs = len(synchronizations)
     synchronizations.clear()
     updates = []
     reported = register(
         data,
+        return_transforms=True,
         **options,
         progress=lambda completed, total: updates.append((completed, total)),
     )
@@ -127,10 +128,10 @@ def test_default_rich_progress_preserves_results_and_syncs(
         original()
 
     monkeypatch.setattr(torch.cuda, "synchronize", synchronize)
-    quiet = register(data, **options, progress=False)
+    quiet = register(data, return_transforms=True, **options, progress=False)
     baseline_syncs = len(synchronizations)
     synchronizations.clear()
-    reported = register(data, **options)
+    reported = register(data, return_transforms=True, **options)
     assert len(synchronizations) == baseline_syncs
     for field in ["registered", "valid", "transforms", "diagnostics"]:
         xr.testing.assert_equal(getattr(reported, field), getattr(quiet, field))
@@ -175,9 +176,9 @@ def test_spatial_pair_progress_is_auto_quiet(shape, mode, rich_bars):
     values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape) + 1
     data = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
     options = {"intensity_scaling": "none", "max_iterations": 2}
-    quiet = register(data, data, progress=False, **options)
+    quiet = register(data, data, return_transforms=True, progress=False, **options)
     kwargs = {} if mode == "default" else {"progress": mode}
-    result = register(data, data, **kwargs, **options)
+    result = register(data, data, return_transforms=True, **kwargs, **options)
     for name in ["registered", "valid", "transforms", "diagnostics"]:
         xr.testing.assert_equal(getattr(result, name), getattr(quiet, name))
     assert len(rich_bars) == (1 if mode is True else 0)

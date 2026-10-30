@@ -24,7 +24,7 @@ cf_image,cf_matrix,cf_diag = cf.registration.register_volume(
     show_progress=False,plot_metric=False,plot_composite=False)
 fits = {}
 for rate in [.1,.3,1.]:
-    fits[rate] = voxreg.register(moving,fixed,transform="rigid",
+    fits[rate] = voxreg.register(moving,fixed,return_transforms=True,transform="rigid",
         initialization="center_geometry",intensity_scaling="none",
         max_iterations=100,convergence_window_size=50,learning_rate=rate,
         device=DEVICE,progress=False)

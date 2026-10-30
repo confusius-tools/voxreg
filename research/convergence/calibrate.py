@@ -41,7 +41,7 @@ def compare(data, *, device, batch_size):
     for name, (iterations, window, minimum) in POLICIES.items():
         result = register(
             data,
-            device=device,
+            return_transforms=True, device=device,
             batch_size=batch_size,
             max_iterations=iterations,
             convergence_window_size=window,

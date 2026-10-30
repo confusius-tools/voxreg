@@ -62,7 +62,7 @@ def main():
     for device in args.devices:
         baseline = register(
             moving,
-            fixed=fixed,
+            return_transforms=True, fixed=fixed,
             device=device,
             batch_size=len(moving),
             progress=False,
@@ -81,7 +81,7 @@ def main():
                 start = perf_counter()
                 result = register(
                     moving,
-                    fixed=fixed,
+                    return_transforms=True, fixed=fixed,
                     device=device,
                     batch_size=batch,
                     progress=False,

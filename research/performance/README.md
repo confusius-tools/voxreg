@@ -18,6 +18,17 @@ require commit `83b6dd6` or the archived-source `PYTHONPATH` recipe in BENCHMARK
 Comparing the current engine with the elementwise prototype should no longer
 reproduce the historical 5× improvement.
 
+## Current batch-size policy
+
+[`BATCH-SIZE.md`](BATCH-SIZE.md), [`batch_size.py`](batch_size.py) and
+[`batch-size-results.json`](batch-size-results.json) record a fresh fixed-budget
+ref20/3D sweep with transform export off. Larger batches help linear slice fits,
+not the current SyN or volume controls; 3D SyN batch 256 ran out of VRAM. The new
+default chooses conservatively from available VRAM, image size and measured
+performance caps, with explicit overrides and no optimizer probes/OOM retries.
+The [whole-ref20 SyN run](../syn/LANDEMARD.md) separately measures the remaining
+FireANTs throughput gap after removing dense-result storage.
+
 ## Current dtype/precision result
 
 [DTYPE.md](DTYPE.md) and [dtype-results.json](dtype-results.json) record the shipped

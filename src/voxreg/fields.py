@@ -1,0 +1,233 @@
+"""Physical displacement operations for compositive SyN.
+
+Fields have shape (batch, components, *spatial_shape) and contain millimetres.
+Volumes use world z/y/x components; planes use the existing orthonormal plane
+basis. These are field operations, not yet a public registration model.
+"""
+
+from dataclasses import dataclass
+from math import isfinite
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+import xarray as xr
+
+from voxreg.geometry import _validate_registration_geometry, position_to_world
+from voxreg.sampling import _map_displacement, make_grid
+
+
+@dataclass(frozen=True)
+class FieldGrid:
+    """Resident geometry; origin-free offsets avoid large-world cancellation."""
+
+    shape: tuple[int, ...]
+    basis: torch.Tensor
+    lattice: torch.Tensor
+    inverse_lattice: torch.Tensor
+    indices: torch.Tensor
+    half: torch.Tensor
+    boundary: torch.Tensor
+    voxel_axes: tuple[int, ...] | None = None
+    voxel_scale: torch.Tensor | None = None
+
+
+def make_field_grid(data: xr.DataArray, *, device: str = "cpu") -> FieldGrid:
+    """Build a float64 physical field lattice for a volume or native k=1 plane."""
+    _validate_registration_geometry(data)
+    geometry = make_grid(data, data, device=device)
+    planar = data.sizes["k"] == 1
+    shape = tuple(data.sizes[d] for d in (("j", "i") if planar else ("k", "j", "i")))
+    basis = geometry.basis
+    lattice = basis.T @ position_to_world(data)[:3, 1 if planar else 0 : 3]
+    inverse = np.linalg.inv(lattice)
+    # Exact zeros only; oblique/sheared lattices keep the full mapping.
+    sparse = np.count_nonzero(inverse) == len(shape)
+    voxel_axes = (
+        tuple(int(i) for i in np.abs(inverse).argmax(axis=1)) if sparse else None
+    )
+    voxel_scale = (
+        torch.tensor(
+            np.abs(inverse).sum(axis=0), dtype=torch.float64, device=device
+        ).reshape(1, len(shape), *([1] * len(shape)))
+        if sparse
+        else None
+    )
+    axes = torch.meshgrid(
+        *(torch.arange(n, dtype=torch.float64, device=device) for n in shape),
+        indexing="ij",
+    )
+    indices = torch.stack(axes, dim=-1)[None]
+    boundary = torch.zeros(shape, dtype=torch.bool, device=device)
+    for axis, coordinate in enumerate(axes):
+        boundary = boundary | (coordinate == 0) | (coordinate == shape[axis] - 1)
+    return FieldGrid(
+        shape,
+        torch.tensor(basis, dtype=torch.float64, device=device),
+        torch.tensor(lattice, dtype=torch.float64, device=device),
+        torch.tensor(inverse, dtype=torch.float64, device=device),
+        indices,
+        torch.tensor([(n - 1) / 2 for n in shape], dtype=torch.float64, device=device),
+        boundary[None, None],
+        voxel_axes,
+        voxel_scale,
+    )
+
+
+def _check_field(field: torch.Tensor, grid: FieldGrid) -> None:
+    if field.shape[1:] != (len(grid.shape), *grid.shape):
+        raise ValueError("Field shape must be (batch, components, *grid.shape).")
+    if field.dtype != grid.indices.dtype or field.device != grid.indices.device:
+        raise ValueError("Fields must match the grid device and float64 dtype.")
+
+
+def _sample_field(
+    field: torch.Tensor, displacement: torch.Tensor, grid: FieldGrid
+) -> torch.Tensor:
+    offsets = _map_displacement(
+        grid.inverse_lattice[None], displacement, grid.voxel_axes
+    )
+    mapped = grid.indices + offsets
+    return sample_field_at(field, mapped, grid)
+
+
+def sample_field_at(
+    field: torch.Tensor, mapped: torch.Tensor, grid: FieldGrid
+) -> torch.Tensor:
+    """Evaluate a resident field at batched voxel positions on any query grid."""
+    sizes = 2 * grid.half + 1
+    valid = ((mapped >= -0.5) & (mapped < sizes - 0.5)).all(dim=-1)
+    normalized = (mapped / grid.half - 1).flip(-1)
+    sampled = F.grid_sample(
+        field, normalized, mode="bilinear", padding_mode="border", align_corners=True
+    )
+    # Like ITK composition: no field contribution outside the finite field domain.
+    return torch.where(valid[:, None], sampled, 0)
+
+
+def compose_fields(
+    outer: torch.Tensor, inner: torch.Tensor, grid: FieldGrid
+) -> torch.Tensor:
+    """Return outer ∘ inner: inner(x) + outer(x + inner(x)), not vector addition."""
+    _check_field(outer, grid)
+    _check_field(inner, grid)
+    if outer.shape != inner.shape:
+        raise ValueError("Composed fields must have equal batch and spatial shapes.")
+    return inner + _sample_field(outer, inner, grid)
+
+
+def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch.Tensor:
+    """Gaussian smoothing in voxel units, with fixed active-axis boundaries.
+
+    As in ITK SyN, sigma=0 bypasses smoothing/boundary enforcement. A plane has
+    only two active boundaries; its singleton acquisition axis is never expanded.
+    """
+    _check_field(field, grid)
+    if not isfinite(sigma) or sigma < 0:
+        raise ValueError("sigma must be finite and nonnegative (voxel units).")
+    if sigma == 0:
+        return field
+    radius = int(3 * sigma + 0.5)
+    positions = torch.arange(
+        -radius, radius + 1, dtype=field.dtype, device=field.device
+    )
+    kernel = torch.exp(-0.5 * (positions / sigma) ** 2)
+    kernel = kernel / kernel.sum()
+    dimensions = len(grid.shape)
+    convolution = F.conv2d if dimensions == 2 else F.conv3d
+    result = field
+    for axis in range(dimensions):
+        shape = [1] * dimensions
+        shape[axis] = len(kernel)
+        weights = kernel.reshape(1, 1, *shape).expand(dimensions, 1, *shape)
+        padding = [0] * (2 * dimensions)
+        padding[2 * (dimensions - axis - 1) : 2 * (dimensions - axis)] = [
+            radius,
+            radius,
+        ]
+        result = convolution(
+            F.pad(result, padding, mode="replicate"), weights, groups=dimensions
+        )
+    return result.masked_fill(grid.boundary, 0)
+
+
+def _pixel_norm(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
+    if grid.voxel_scale is not None:
+        return torch.linalg.vector_norm(field * grid.voxel_scale, dim=1)
+    return torch.linalg.vector_norm(
+        _map_displacement(grid.inverse_lattice[None], field), dim=-1
+    )
+
+
+def _inverse_update(field, inverse, grid, damping):
+    """One damped, clipped inverse update, without a host-side stopping decision."""
+    residual = compose_fields(field, inverse, grid)
+    norms = _pixel_norm(residual, grid)
+    maximum = norms.flatten(1).amax(dim=1).reshape(-1, *([1] * len(grid.shape)))
+    fraction = (
+        damping * maximum / norms.clamp_min(torch.finfo(field.dtype).tiny)
+    ).clamp(max=1)
+    return (inverse - damping * residual * fraction[:, None]).masked_fill(
+        grid.boundary, 0
+    )
+
+
+def invert_field(
+    field: torch.Tensor,
+    grid: FieldGrid,
+    *,
+    iterations: int = 20,
+    initial: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Estimate a zero-boundary inverse; return it and two-sided max error in pixels.
+
+    ITK-style damped, clipped composition-residual updates, batched independently.
+    No per-iteration host polling. Intended for the zero-boundary smooth fields
+    used by compositive SyN; a finite iteration budget does not guarantee an inverse.
+    Callers must inspect the returned error and Jacobians before accepting a warp.
+    """
+    _check_field(field, grid)
+    if (
+        not isinstance(iterations, int)
+        or isinstance(iterations, bool)
+        or iterations < 1
+    ):
+        raise ValueError("iterations must be a positive integer.")
+    inverse = torch.zeros_like(field) if initial is None else initial.clone()
+    _check_field(inverse, grid)
+    if inverse.shape != field.shape:
+        raise ValueError("Initial inverse must match the field shape.")
+    for iteration in range(iterations):
+        inverse = _inverse_update(field, inverse, grid, 0.75 if iteration == 0 else 0.5)
+    left = (
+        _pixel_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(dim=1)
+    )
+    right = (
+        _pixel_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(dim=1)
+    )
+    return inverse, torch.maximum(left, right)
+
+
+def jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
+    """Finite-difference det(I + du/dphysical) on oblique/sheared/reversed grids.
+
+    Positive sampled determinants alone do not prove global invertibility.
+    """
+    _check_field(field, grid)
+    derivative = torch.stack(
+        torch.gradient(field, dim=tuple(range(2, field.ndim))), dim=2
+    )
+    physical = (
+        _map_displacement(
+            grid.inverse_lattice.T[None],
+            derivative.flatten(0, 1),
+            tuple(grid.voxel_axes.index(k) for k in range(len(grid.shape)))
+            if grid.voxel_axes is not None
+            else None,
+        )
+        .reshape(field.shape[0], field.shape[1], *grid.shape, len(grid.shape))
+        .movedim(1, -2)
+    )
+    return torch.linalg.det(
+        physical + torch.eye(len(grid.shape), dtype=field.dtype, device=field.device)
+    )

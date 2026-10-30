@@ -53,7 +53,7 @@ def test_plot_preserves_outputs_and_displays_returned_pose(
         "device": device,
         "progress": False,
     }
-    expected = register(moving, fixed, **options)
+    expected = register(moving, fixed, return_transforms=True, **options)
     seen = []
     result, fig = plotting.register_with_plot(
         moving,
@@ -240,6 +240,7 @@ def test_singleton_time_axis_and_unusable_metric(plotting, pair):
         {"display_range": (1, 1)},
         {"display_range": (0, np.inf)},
         {"metric_callback": 1},
+        {"transform": "syn"},
     ],
 )
 def test_plot_options_fail_without_leaking_figures(plotting, pair, kwargs):

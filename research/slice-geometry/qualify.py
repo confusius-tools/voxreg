@@ -45,7 +45,7 @@ def run(output):
             result = register(
                 volume,
                 target,
-                transform=model,
+                return_transforms=True, transform=model,
                 intensity_scaling="none",
                 device=device,
                 max_iterations=400,

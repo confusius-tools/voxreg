@@ -68,7 +68,7 @@ for name,device,budget,window in configs:
         assert frames.tolist()==[0]
         history.append({"updates":int(steps[0]),"objective":float(metric[0])})
         if int(steps[0])%100==0:print(name,"updates",int(steps[0]),"NCC²",float(-metric[0]),flush=True)
-    result = voxreg.register(moving,fixed,transform="affine",initialization=np.linalg.inv(placement),intensity_scaling="none",learning_rate=.1,max_iterations=budget,convergence_window_size=window,device=device,progress=False,metric_callback=report,metric_interval=1)
+    result = voxreg.register(moving,fixed,return_transforms=True,transform="affine",initialization=np.linalg.inv(placement),intensity_scaling="none",learning_rate=.1,max_iterations=budget,convergence_window_size=window,device=device,progress=False,metric_callback=report,metric_interval=1)
     results[name],traces[name] = result,history
     best = min(history,key=lambda row:row["objective"])
     assert np.isclose(best["objective"],float(result.diagnostics.objective),atol=1e-12,rtol=0)

@@ -376,6 +376,7 @@ def worker(args) -> None:
             def run():
                 result = register(
                     data,
+                    return_transforms=True,
                     device="cuda" if cuda else "cpu",
                     batch_size=batch,
                     progress=False,

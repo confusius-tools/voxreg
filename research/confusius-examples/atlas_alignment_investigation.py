@@ -244,6 +244,7 @@ def vox_control(source, target, pull, *, frozen=False, window=50):
         result = engine.register(
             source,
             target,
+            return_transforms=True,
             transform="affine",
             initialization=pull,
             intensity_scaling="none",

@@ -1,0 +1,65 @@
+{
+  "source": "/home/sdiebolt/.cache/confusius/landemard-2026-bids/1.0.0/sub-ALD001/fusi/sub-ALD001_task-awake_acq-ref20_pwd.nii.gz",
+  "shape": [
+    11310,
+    1,
+    145,
+    80
+  ],
+  "iterations": 100,
+  "voxreg_batch_size_override": null,
+  "fireants_batch_size": 256,
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "versions": {
+    "voxreg": "0.1.0",
+    "torch": "2.14.1",
+    "fireants": "1.5.1",
+    "numpy": "2.5.4",
+    "confusius": "0.8.0"
+  },
+  "fireants_fused": false,
+  "source_sha256": {
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/fields.py": "60fe480553cac0774e9a0572c05552229e355f4b0442d5be73da5e5a29a2747e",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "f6f3b46f11439b4ec0114d2dd11fb23de12480d8c34d961761ea21b49276ff78",
+    "src/voxreg/sampling.py": "179c7c8097aafa50c759e7a6693919b8088fe71755b40670d3bae2847c656455",
+    "src/voxreg/syn.py": "0fab65942b75a065925b28a650bafb1f0555cbd2c506f248b81a07117427d385",
+    "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/research/syn/landemard.py": "03d78c5b9e0931d4b6168d92ffdbc585d7825ebd6360f4d7d513d9c411f6c812",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/research/syn/compare.py": "c9875b1c8b20b78e9a1bad321a80039bb7dd02f4f735a2f7bc5d2df20555c340"
+  },
+  "notes": "Same original float32 images/reference, dB preprocessing, shared per-frame affine seeds, single resolution, radius-2 CC, sigma 1.5/0.5 voxels, nominal learning rate 0.1 and fixed update budget. Voxreg uses float64 state/compositive GD/best halfway pose; FireANTs uses native float32/Adam. No dense CPU outputs. FireANTs has no internal recording batch option, so its public API is called per batch. Original-power bilinear output/support/minimum fill included; voxreg also computes inverse/regularity diagnostics. Imports, dataset loading, shared seed fitting, QC and disk export excluded from SyN timing. No anatomical oracle. CPU RSS is whole-process high-water mark, not a per-backend allocation measurement.",
+  "backends": {
+    "voxreg": {
+      "seconds": 758.8611730839912,
+      "allocated_peak_bytes": 391978496,
+      "reserved_peak_bytes": 503316480,
+      "batch_size": 32,
+      "status_counts": {
+        "max_iterations": 11309,
+        "reference": 1
+      },
+      "stage_seconds": {
+        "prepare": 0.8191139889968326,
+        "upload": 0.08343542982765939,
+        "optimize": 755.7480426639377,
+        "resample_download": 2.019188162870705
+      },
+      "median_pearson_r_db_excluding_reference": 0.9846283323143948
+    },
+    "fireants": {
+      "seconds": 130.17188566899858,
+      "allocated_peak_bytes": 736186368,
+      "reserved_peak_bytes": 1111490560,
+      "median_pearson_r_db_excluding_reference": 0.9854504088613458
+    }
+  },
+  "prealignment_seconds": {
+    "rigid": 24.685616796996328,
+    "affine": 23.027761281991843
+  },
+  "process_peak_rss_bytes": 5397651456,
+  "raw_median_pearson_r_db_excluding_reference": 0.9724319243819218
+}

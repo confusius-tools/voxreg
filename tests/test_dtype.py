@@ -107,7 +107,7 @@ def test_dtype_preserving_fit_recovers_known_motion(recording_factory, dtype):
     if np.issubdtype(dtype, np.integer):
         values = np.rint(values * 1000)
     data = data.copy(data=values.astype(dtype))
-    result = register(data, intensity_scaling="none")
+    result = register(data, return_transforms=True, intensity_scaling="none")
     affine = position_to_world(data)
     j, i = np.indices(data.shape[-2:])
     points = affine @ np.stack((np.zeros_like(j), j, i, np.ones_like(j))).reshape(4, -1)
@@ -136,8 +136,10 @@ def test_unsafe_large_integers_are_rejected(recording_factory, dtype):
 
 def test_nearest_changes_only_output_not_fitting(recording_factory):
     data, _, _ = recording_factory()
-    linear = register(data, max_iterations=25)
-    nearest = register(data, interpolation="nearest", max_iterations=25)
+    linear = register(data, return_transforms=True, max_iterations=25)
+    nearest = register(
+        data, return_transforms=True, interpolation="nearest", max_iterations=25
+    )
     assert_array_equal(linear.transforms, nearest.transforms)
     assert_array_equal(linear.diagnostics.objective, nearest.diagnostics.objective)
     assert_array_equal(linear.valid, nearest.valid)

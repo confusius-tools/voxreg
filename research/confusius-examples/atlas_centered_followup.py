@@ -129,7 +129,7 @@ def vox_trace(
         result = voxreg.register(
             source,
             target,
-            transform=model,
+            return_transforms=True, transform=model,
             initialization=np.asarray(seed).copy(),
             intensity_scaling="none",
             learning_rate=0.1,

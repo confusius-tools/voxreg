@@ -38,7 +38,7 @@ for direction,moving_is_slice in [("slice_to_volume",True),("volume_to_slice",Fa
         else:
             device = backend.split()[-1]
             torch.set_num_threads(8 if device=="cpu" else 1)
-            result = voxreg.register(source,target,transform="affine",initialization=initial.copy(),intensity_scaling="none",learning_rate=.1,max_iterations=500,convergence_window_size=50,device=device,progress=False)
+            result = voxreg.register(source,target,return_transforms=True,transform="affine",initialization=initial.copy(),intensity_scaling="none",learning_rate=.1,max_iterations=500,convergence_window_size=50,device=device,progress=False)
             registered,matrix = result.registered,result.transforms.values
             meta = {"iterations":int(result.diagnostics.n_iterations),"status":str(result.diagnostics.status.values),"metric_domain":result.diagnostics.attrs["metric_domain"],"metric_valid_fraction":float(result.diagnostics.valid_fraction),"output_valid_fraction":float(result.valid.values.mean())}
         assert np.array_equal(seed,initial)

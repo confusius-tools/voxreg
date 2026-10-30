@@ -1,16 +1,43 @@
 # Registration validation
 
-Current status: **585 linear-contract tests pass; real-workflow qualification has
-explicit limits.** See the [package-readiness check](research/linear/READINESS.md)
-for the shared fixtures, all-model 2D/3D contracts, 20 fresh pair/motion workflow
+Current status: **675 tests pass**, including the 585 prior checks, 49 physical
+field checks, 40 SyN/comparison checks and one dense-plotter rejection check.
+Real-workflow qualification has explicit limits. See the
+[package-readiness check](research/linear/READINESS.md) for the shared fixtures, all-model 2D/3D contracts, 20 fresh pair/motion workflow
 arms and eight native atlas fits. The default pair budget still underfits the
 same-subject example, and the fixed-100 float64 motion stress control still fails
 the unchanged CPU/CUDA precision gate. Native atlas precision passes, but
 anatomical correctness is not established by CF agreement or a higher metric.
 
-Historical ITK/FireANTs performance/memory comparisons remain in
-[BENCHMARK.md](BENCHMARK.md). Their measurements cover the documented controls,
-not general registration accuracy or performance; they were not requalified here.
+[Symmetric compositive SyN](research/syn/README.md) is now public for native
+2D/3D pairs and recordings, with complete dense forward/inverse pulls, original
+intensity/dtype/metadata contracts and failure/regularity diagnostics. Default and
+fixed-budget independent multi-axis nonlinear truth recovery passes the unchanged
+0.25-pixel RMS gate. [Fresh native ITK/FireANTs comparisons](research/syn/BENCHMARK.md)
+cover four pair sizes, a real same-subject pair and eight 32³ frames, including an
+8-thread CPU control. All completed synthetic arms pass truth; voxreg forward and
+inverse CPU/CUDA points pass 0.001 pixels (worst 0.000139742). FireANTs small-native
+public-output failures are retained, not replaced with singleton expansion.
+
+On 32×40×48, voxreg CUDA takes 1.085 s versus 11.418 s for 8-thread ITK and 0.425 s
+for FireANTs CUDA. These bounded end-to-end timings do not imply universal GPU
+speedup or matched optimizer/precision/output costs. Real-data NCC improvement is
+not anatomical truth. Single-resolution capture range, mixed-dimensional
+nonlinear fitting, large-brain memory and anatomical qualification remain open.
+Sampled inverse residual is nonzero and positive sampled Jacobians are not a
+proof of global invertibility.
+
+Ruff and format checks pass. New field/SyN modules pass `ty`;
+whole-package `ty` still reports 38 diagnostics, also present in the archived
+pre-change HEAD. Offline sdist/wheel build, wheel-source byte equality and twelve
+actual-wheel CPU/CUDA 2D/3D float32/float64/uint16 SyN smokes pass. Default pytest
+collection is scoped to `tests` so preserved source snapshots are not duplicate
+modules; the initial collection failure remains in local evidence. Nothing was
+deleted or a numerical gate loosened to obtain the passing run.
+
+Historical rigid ITK/FireANTs performance/memory comparisons remain in
+[BENCHMARK.md](BENCHMARK.md), separate from the fresh SyN report. Their old
+measurements retain their documented scope; they were not rerun here.
 
 ## Current mixed-pair policy: native caller-fixed sampling
 
@@ -651,3 +678,43 @@ convergence and real-example gates are described above.
 
 The original milestone deferred model extension pending rigid qualification.
 Current model support and its remaining qualification limits are described above.
+
+## Optional transforms and automatic batching
+
+`return_transforms=False` is now the public default for every model. Both transform
+attributes are None; SyN skips world-field export, CPU transfers, accumulation and
+labeled assembly rather than allocating dense results and then discarding them.
+Fitting, original-intensity output, support masks and all diagnostics are preserved.
+Callers that consume matrices or fields opt in explicitly, including research
+plotting, staging, truth/precision controls and generated notebook code. The
+Landemard comparison requests only its linear seed matrices, not SyN fields.
+The docstring/README warn that equal-grid float32 images require 12× their
+uncompressed storage for both exported float64 world fields, plus temporaries.
+
+`test_optional_transforms.py` checks all four models, native 2D/3D, spatial unequal
+grids/recordings and CPU/CUDA: opt-out/opt-in images, masks and diagnostics match;
+patched export functions must never run on the default path. Boolean validation
+is explicit. Existing transform recovery/precision assertions still request and
+inspect real transforms, rather than passing vacuously with None.
+
+`batch_size=None` selects automatically; `test_auto_batch.py` covers method/shape
+caps, VRAM headroom, reusable Torch cache, low capacity, frame count, CPU without
+CUDA queries, public dispatch and integer overrides. No optimizer probes or OOM
+retries are added. Effective sizes are exposed in diagnostic attrs. The
+[real/3D sweep](research/performance/BATCH-SIZE.md) justifies large linear slice
+batches, not larger SyN/volume defaults; its 3D batch-256 CUDA OOM is retained.
+
+Full package verification: **727 passed**, 1,098 warnings, 194.22 seconds with one
+CPU thread and available CUDA. Scoped Ruff/format and `git diff --check` pass.
+`ty check src` still reports the existing 38 diagnostics; it is not a clean gate.
+Offline wheel/sdist build passed; every wheel Python source equals the checkout.
+Actual-wheel CPU smokes cover all four models with default-off/opt-in output
+parity and verify both new signature defaults.
+
+The [whole-ref20 SyN comparison](research/syn/LANDEMARD.md) actually processed all
+11,310 frames against FireANTs without dense CPU outputs. It records synchronized
+wall times, GPU peaks, shared prealignment, original-power NIfTIs, per-frame QC,
+source snapshots and cost/precision caveats. Both complete NIfTIs passed finite,
+dtype, shape, reference, acquisition-time and physical-lattice reload checks.
+Historical linear fixed-budget motion precision failures and anatomical/capture
+limitations remain; no numerical gate was relaxed or old evidence overwritten.

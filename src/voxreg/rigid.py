@@ -1,4 +1,4 @@
-"""Independent linear registration with fixed-domain physical-space sampling."""
+"""VoxelData registration and shared input/output contracts."""
 
 import warnings
 from collections.abc import Callable
@@ -47,16 +47,81 @@ class RegistrationResult:
         Integer output is rounded to nearest-even and clipped to its type range.
     valid : xarray.DataArray
         Boolean VoxelData mask of valid moving-image sample centers.
-    transforms : xarray.DataArray
-        Homogeneous world z/y/x pull matrices, indexed by time for recordings.
+    transforms : xarray.DataArray, optional
+        None unless register(return_transforms=True). Linear models: homogeneous world z/y/x pull matrices. SyN: complete
+        fixed-world-to-moving-world displacement in mm on the fixed grid, with
+        a final world_component axis labeled z/y/x. Recordings retain time.
     diagnostics : xarray.Dataset
-        Objective, update count, status and centered physical motion parameters.
+        Objective, update count and status, plus linear motion parameters or
+        SyN regularity/inverse-consistency diagnostics.
+    inverse_transforms : xarray.DataArray, optional
+        SyN only: complete moving-world-to-fixed-world displacement in mm on
+        the original moving grid. Sampled inverses are approximate. None for
+        linear models or return_transforms=False; exported linear matrices can
+        be inverted directly.
     """
 
     registered: xr.DataArray
     valid: xr.DataArray
-    transforms: xr.DataArray
+    transforms: xr.DataArray | None
     diagnostics: xr.Dataset
+    inverse_transforms: xr.DataArray | None = None
+
+
+def _fitting_images(raw, target_raw, intensity_scaling):
+    """Shared preprocessing; preserve float64/integer detail before float32 fitting."""
+    spatial_axes = tuple(range(1, raw.ndim))
+    preprocessing_dtype = (
+        np.float64
+        if any(
+            np.issubdtype(data.dtype, np.integer) or data.dtype.itemsize > 4
+            for data in (raw, target_raw)
+        )
+        else np.float32
+    )
+    fit_raw = raw.astype(preprocessing_dtype)
+    target_raw = target_raw.astype(preprocessing_dtype)
+    moving_scale = float(np.abs(fit_raw).max())
+    scale = max(moving_scale, float(np.abs(target_raw).max()))
+    if moving_scale == 0:
+        raise ValueError("An all-zero recording cannot be registered.")
+    if intensity_scaling == "db":
+        if fit_raw.min() < 0 or target_raw.min() < 0:
+            raise ValueError("dB scaling requires nonnegative power intensities.")
+        fit = 10 * np.log10(np.maximum(fit_raw / scale, 1e-12))
+        target = 10 * np.log10(np.maximum(target_raw / scale, 1e-12))
+    else:
+        fit, target = fit_raw / scale, target_raw / scale
+    if preprocessing_dtype == np.float64:
+        for values in (fit, target):
+            corner = (slice(None),) * (values.ndim - len(spatial_axes)) + (
+                slice(0, 1),
+            ) * len(spatial_axes)
+            values -= values[corner]
+            amplitude = np.abs(values).max(
+                axis=tuple(range(-len(spatial_axes), 0)), keepdims=True
+            )
+            values /= np.where(amplitude > 0, amplitude, 1)
+    fit, target = fit.astype(np.float32), target.astype(np.float32)
+    if np.ptp(target) == 0:
+        raise ValueError("The fixed image must not be constant.")
+    return fit, target
+
+
+def _output_template(moving, fixed, same_grid):
+    if same_grid:
+        return moving
+    template = fixed.drop_vars("time", errors="ignore").expand_dims(time=moving.time)
+    template = template.assign_coords(
+        {
+            name: coord
+            for name, coord in moving.coords.items()
+            if coord.dims == ("time",)
+        }
+    )
+    template.attrs = moving.attrs.copy()
+    template.name = moving.name
+    return template
 
 
 def _all_frames_stopped(status: torch.Tensor) -> bool:
@@ -218,11 +283,29 @@ def _optimize(
     return best * plane.parameter_scale, steps, status
 
 
+def _automatic_batch_size(moving, fixed, transform, device):
+    """Conservative working-set estimate, not an optimizer probe or OOM retry."""
+    frames = moving.sizes["time"]
+    if device == "cpu":
+        return min(frames, 32)
+    planar = moving.sizes["k"] == fixed.sizes["k"] == 1
+    # Ref20 benefits from large linear batches; larger SyN/volume batches do not.
+    cap = 256 if planar and transform != "syn" else 32
+    voxels = max(moving.size // frames, fixed.size)
+    bytes_per_voxel = (1536 if planar else 3072) if transform == "syn" else 512
+    free, _ = torch.cuda.mem_get_info()
+    reusable = torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
+    # Leave half the available capacity for workspaces, fragmentation and other users.
+    capacity = max(1, int((free + reusable) * 0.5) // (voxels * bytes_per_voxel))
+    batch = min(cap, capacity)
+    return min(frames, 1 << (batch.bit_length() - 1))
+
+
 def register(
     moving: xr.DataArray,
     fixed: xr.DataArray | None = None,
     *,
-    transform: Literal["translation", "rigid", "affine"] = "rigid",
+    transform: Literal["translation", "rigid", "affine", "syn"] = "rigid",
     initial_transform: npt.ArrayLike | xr.DataArray | None = None,
     initialization: Literal["center_geometry", "center_moments", "align_planes"]
     | npt.ArrayLike
@@ -230,7 +313,8 @@ def register(
     | None = None,
     intensity_scaling: Literal["none", "db"] = "db",
     interpolation: Literal["linear", "nearest"] = "linear",
-    batch_size: int = 32,
+    return_transforms: bool = False,
+    batch_size: int | None = None,
     max_iterations: int = 100,
     learning_rate: float = 0.1,
     convergence_window_size: int = 50,
@@ -257,20 +341,28 @@ def register(
         omission uses the first frame and preserves that reference exactly.
         Noncoplanar slice pairs require a plane-compatible seed or align_planes.
         Mixed slice/volume inputs sample the moving image on the native fixed grid.
-    transform : {"translation", "rigid", "affine"}, default: "rigid"
+    transform : {"translation", "rigid", "affine", "syn"}, default: "rigid"
         Translation/rigid/affine use 2/3/6 in-plane parameters for slice pairs,
         3/6/12 for volume pairs, and 3/6/9 for mixed slice/volume inputs.
         Euler belongs to the rigid family; the rigid model uses rotation vectors,
         not ITK's Euler optimizer parameterization. Affine refines the full linear
         map, including scale and shear, rather than freezing an affine prefix.
+        SyN uses two smoothed compositive midpoint-to-image fields on one native
+        resolution, with local NCC radius 2, update sigma 1.5 and total sigma 0.5
+        voxels. It supports two k=1 planes or two volumes, not mixed-dimensional
+        deformation. Its complete forward/inverse outputs are dense displacements,
+        not matrices. Physical geometry and field state remain float64.
     initial_transform : array-like or xarray.DataArray, optional
         Model-compatible fixed-world-to-moving-world pull matrix in world z/y/x,
         with translations in mm. Shape (4, 4) broadcasts to all frames;
-        (N, 4, 4) follows moving frame order. Labeled arrays must use
+        (N, 4, 4) follows moving frame order. SyN accepts an orientation-preserving
+        affine seed as its global prealignment; the dense result includes that
+        seed. Dense restart seeds are not supported. Labeled arrays must use
         (time, world_out, world_in) or (world_out, world_in); supplied axis/time
         labels must match. Copied, never modified, like ITK InitialTransform
-        with InPlaceOff: initializes the optimized transform, not a frozen
-        pre-transform. Rigid seeds require proper rotations (float32 roundoff
+        with InPlaceOff: initializes the optimized linear transform, not a frozen
+        pre-transform. For SyN the global affine is fixed during field fitting,
+        following the usual affine-then-SyN workflow. Rigid seeds require proper rotations (float32 roundoff
         within 1e-6 is normalized); translation seeds require an identity linear
         part. Affine seeds must pass the normalized determinant guard. Negative
         determinant affine seeds are supported, but fitting preserves their
@@ -300,13 +392,33 @@ def register(
     interpolation : {"linear", "nearest"}, default: "linear"
         Final original-image resampling only; fitting always uses linear sampling.
         Nearest is suitable for labels, not automatically for integer intensities.
-    batch_size : int, default: 32
+    return_transforms : bool, default: False
+        Return linear pull matrices or both complete SyN displacement fields.
+        Otherwise transforms and inverse_transforms are None; fitting, resampling
+        and diagnostics are unchanged. Dense fields are not exported or accumulated.
+        Warning: on equal fixed/moving grids, the two float64, three-component
+        SyN fields require 12x the uncompressed image storage of a float32 recording
+        (48 bytes per voxel versus 4), plus temporary assembly memory. For example,
+        a 525 MB recording needs about 6.3 GB for fields alone. Different grid sizes
+        or input dtypes change this ratio. batch_size does not bound returned fields.
+    batch_size : int, optional
         Maximum number of independent frames per resident optimization chunk.
+        None (default) chooses automatically: CPU uses up to 32 frames; CUDA uses
+        available VRAM (including reusable Torch cache), the larger image size and
+        a conservative method-specific working-set estimate with 50% headroom.
+        Performance caps are 256 for CUDA linear slice pairs, 32 for SyN or volumes;
+        automatic CUDA batches round down to a power of two. diagnostics.attrs
+        records the selected batch_size. This is not a runtime autotuner or a
+        guarantee against OOM under concurrent allocations; one frame must fit.
+        An explicit positive integer overrides this policy. Returned images/masks
+        and opt-in transforms still require full-recording CPU storage.
     max_iterations : int, default: 100
-        Maximum Adam steps per frame.
+        Maximum optimizer updates per frame (Adam for linear models, smoothed
+        compositive gradient descent for SyN).
     learning_rate : float, default: 0.1
         Step size in physically scaled parameters. Affine coefficients use
         minimum spacing divided by the fixed-domain RMS input-axis lever arm.
+        For SyN this bounds each halfway update's maximum voxel-coordinate norm.
     convergence_window_size : int, default: 50
         ITK-style metric-history window, at least two values. A window larger
         than max_iterations disables convergence checks for a fixed-budget run.
@@ -330,7 +442,8 @@ def register(
         NumPy arrays ``(frame_indices, n_iterations, objective)`` for each chunk;
         indices follow moving frame order, clocks count each frame's updates.
         Reports the initial trial, every metric_interval optimizer rounds, and
-        the final trial. Stopped rows may repeat. Objective is raw negative NCC²,
+        the final trial. Stopped rows may repeat. Objective is raw negative NCC²
+        (negative mean squared local NCC between halfway images for SyN),
         NaN for unusable variance/support; lower is better. The returned best
         valid pose can differ from the final trial. No history is retained unless
         the callback stores it. Exceptions propagate. CPU copies and CUDA
@@ -343,9 +456,10 @@ def register(
     Returns
     -------
     result : RegistrationResult
-        Registered intensities and validity on the fixed grid, world pull
-        matrices, and diagnostics. Spatial-only input returns spatial-only output,
-        one (4, 4) matrix and scalar diagnostics, without a synthetic time label.
+        Registered intensities and validity on the fixed grid, diagnostics, and
+        optional world pull transforms (None by default). Spatial-only input has no synthetic time
+        label: linear transforms are (4, 4), SyN fields are (k, j, i, world_component).
+        SyN inverse_transforms use the original moving grid and the reverse pull.
         Invalid frames retain their best
         valid transform, or the initial transform if no valid metric was observed.
         Motion diagnostics describe the full transform, not an increment.
@@ -353,7 +467,7 @@ def register(
     Raises
     ------
     TypeError
-        If intensities or the progress option have unsupported types.
+        If intensities, progress or return_transforms have unsupported types.
     ValueError
         If geometry, input values or numerical options are unsupported.
 
@@ -367,7 +481,8 @@ def register(
     Affine parameters are row-major deviations from identity plus physical center
     displacement; diagnostics report actual linear coefficients, not deviations.
     Slice pairs optimize only their intrinsic orthonormal i/j plane, leaving its normal
-    fixed. All models use the same sampling, optimizer and per-frame stopping path.
+    fixed. Linear models share their optimizer; SyN shares preprocessing, physical
+    sampling, output contracts and independent convergence monitoring.
     align_planes explicitly assumes corresponding sections: align centers and
     unoriented plane normals, then refine in-plane. Centering alone corrects
     parallel-plane offsets, not tilt. Translation cannot align nonparallel planes.
@@ -384,7 +499,14 @@ def register(
     describe the same fixed-grid domain, not confidence or anatomical correctness.
     Swapping inputs changes the fitting problem and need not return inverse poses.
     Exported transforms retain the fixed-world-to-moving-world pull convention.
-    Separate ITK-style fixed/moving pre-transform chains remain unsupported.
+    SyN operates on two independent halfway fields and composes them through
+    numerically estimated inverses. It returns the best usable halfway-metric
+    state, not necessarily its last trial; endpoint ncc_squared is a separate
+    diagnostic. Positive sampled Jacobians are enforced for accepted states but
+    are not a proof of global invertibility; inverse_error reports two-sided
+    residual-map error on the fixed virtual lattice, before the affine seed.
+    Final composition failure falls back to the seed with invalid_transform.
+    Separate arbitrary ITK-style pre-transform chains remain unsupported.
     Fewer than two valid sample centers flags insufficient overlap; zero/invalid
     variance flags an invalid metric. No fixed coverage percentage is required.
     valid_fraction reports coverage, not confidence: tiny overlaps can give
@@ -417,9 +539,10 @@ def register(
         "translation",
         "rigid",
         "affine",
+        "syn",
     ):
         raise ValueError(
-            "transform must be translation, rigid or affine. Euler transforms belong to the rigid family."
+            "transform must be translation, rigid, affine or syn. Euler transforms belong to the rigid family."
         )
     spatial_input = moving.dims == VOXEL_DIMS
     if spatial_input:
@@ -435,6 +558,10 @@ def register(
     if fixed.dims != VOXEL_DIMS:
         raise ValueError("fixed must have dimensions (k, j, i), without time.")
     same_grid = moving.xindexes["z"].equals(fixed.xindexes["z"])
+    if transform == "syn" and (moving.sizes["k"] == 1) != (fixed.sizes["k"] == 1):
+        raise ValueError(
+            "SyN requires two native k=1 planes or two 3D volumes; mixed-dimensional deformation is unsupported."
+        )
     for name, data in (("moving", moving), ("fixed", fixed)):
         integer = np.issubdtype(data.dtype, np.integer)
         if not integer and not (
@@ -458,12 +585,13 @@ def register(
     ):
         raise ValueError("moving must have unique one-dimensional time labels.")
     if (
-        type(batch_size) is not int
-        or batch_size < 1
+        (batch_size is not None and (type(batch_size) is not int or batch_size < 1))
         or type(max_iterations) is not int
         or max_iterations < 1
     ):
-        raise ValueError("batch_size and max_iterations must be positive integers.")
+        raise ValueError(
+            "batch_size must be None or a positive integer; max_iterations must be a positive integer."
+        )
     if type(convergence_window_size) is not int or convergence_window_size < 2:
         raise ValueError("convergence_window_size must be an integer of at least two.")
     if (
@@ -492,10 +620,14 @@ def register(
         raise TypeError(
             "progress must be True, False, None, 'auto', or a callable accepting (completed, total)."
         )
+    if type(return_transforms) is not bool:
+        raise TypeError("return_transforms must be a bool.")
     if metric_callback is not None and not callable(metric_callback):
         raise TypeError("metric_callback must be callable or None.")
     if type(metric_interval) is not int or metric_interval < 1:
         raise ValueError("metric_interval must be a positive integer.")
+    if batch_size is None:
+        batch_size = _automatic_batch_size(moving, fixed, transform, device)
     if isinstance(progress, str):
         progress = moving.sizes["time"] > 1
     if initialization is not None and initial_transform is not None:
@@ -562,7 +694,9 @@ def register(
         raise ValueError(
             "Translation cannot align nonparallel slice planes; choose rigid or affine."
         )
-    plane = configure_transform(plane, fixed, transform)
+    plane = configure_transform(
+        plane, fixed, "affine" if transform == "syn" else transform
+    )
     initial = None
     if initial_transform is not None:
         if isinstance(initial_transform, xr.DataArray):
@@ -612,50 +746,44 @@ def register(
     resampling_dtype = (
         np.float64 if integer_output or raw.dtype.itemsize > 4 else np.float32
     )
-    # Normalize before downcasting so float64/integer values are not quantized first.
-    preprocessing_dtype = (
-        np.float64
-        if any(
-            np.issubdtype(data.dtype, np.integer) or data.dtype.itemsize > 4
-            for data in (moving, fixed)
-        )
-        else np.float32
+    fit, target = _fitting_images(
+        raw, fixed.values[0] if planar else fixed.values, intensity_scaling
     )
-    fit_raw = raw.astype(preprocessing_dtype)
-    target_raw = (fixed.values[0] if planar else fixed.values).astype(
-        preprocessing_dtype
-    )
-    moving_scale = float(np.abs(fit_raw).max())
-    scale = max(moving_scale, float(np.abs(target_raw).max()))
-    if moving_scale == 0:
-        raise ValueError("An all-zero recording cannot be registered.")
-    if intensity_scaling == "db":
-        if fit_raw.min() < 0 or target_raw.min() < 0:
-            raise ValueError("dB scaling requires nonnegative power intensities.")
-        fit = 10 * np.log10(np.maximum(fit_raw / scale, 1e-12))
-        target = 10 * np.log10(np.maximum(target_raw / scale, 1e-12))
-    else:
-        fit, target = fit_raw / scale, target_raw / scale
-    if preprocessing_dtype == np.float64:
-        # NCC is affine-intensity invariant; keep low-contrast detail before float32 conversion.
-        for values in (fit, target):
-            corner = (slice(None),) * (values.ndim - len(spatial_axes)) + (
-                slice(0, 1),
-            ) * len(spatial_axes)
-            values -= values[corner]
-            amplitude = np.abs(values).max(
-                axis=tuple(range(-len(spatial_axes), 0)), keepdims=True
-            )
-            values /= np.where(amplitude > 0, amplitude, 1)
-    fit, target = fit.astype(np.float32), target.astype(np.float32)
-    if np.ptp(target) == 0:
-        raise ValueError("The fixed image must not be constant.")
     timings = {
         "prepare": perf_counter() - start,
         "upload": 0.0,
         "optimize": 0.0,
         "resample_download": 0.0,
     }
+    if transform == "syn":
+        from voxreg.syn import register_syn
+
+        return register_syn(
+            moving,
+            fixed,
+            fit,
+            target,
+            plane,
+            initial,
+            implicit_fixed=implicit_fixed,
+            return_transforms=return_transforms,
+            spatial_input=spatial_input,
+            same_grid=same_grid,
+            timings=timings,
+            batch_size=batch_size,
+            max_iterations=max_iterations,
+            learning_rate=learning_rate,
+            convergence_window_size=convergence_window_size,
+            convergence_minimum_value=convergence_minimum_value,
+            device=device,
+            progress=progress,
+            metric_callback=metric_callback,
+            metric_interval=metric_interval,
+            interpolation=interpolation,
+            update_sigma=1.5,
+            total_sigma=0.5,
+            radius=2,
+        )
     outputs, masks, parameters, clocks, statuses, objectives, overlaps = (
         [],
         [],
@@ -848,6 +976,7 @@ def register(
             ),
         },
     )
+    diagnostics.attrs["batch_size"] = batch_size
     if isinstance(plane, SpatialGrid) and plane.slice_basis is not None:
         diagnostics.attrs.update(
             metric_domain="fixed_slice" if fixed.sizes["k"] == 1 else "fixed_volume",
@@ -871,26 +1000,20 @@ def register(
             "fixed-to-moving plane geometry; only in-plane motion optimized"
         )
     axes = ["z", "y", "x", "1"]
-    transforms = xr.DataArray(
-        matrices,
-        dims=("time", "world_out", "world_in"),
-        coords={"time": moving.time, "world_out": axes, "world_in": axes},
-        attrs={"convention": "fixed-world-to-moving-world pull", "spatial_units": "mm"},
+    transforms = (
+        xr.DataArray(
+            matrices,
+            dims=("time", "world_out", "world_in"),
+            coords={"time": moving.time, "world_out": axes, "world_in": axes},
+            attrs={
+                "convention": "fixed-world-to-moving-world pull",
+                "spatial_units": "mm",
+            },
+        )
+        if return_transforms
+        else None
     )
-    template = moving
-    if not same_grid:
-        template = fixed.drop_vars("time", errors="ignore").expand_dims(
-            time=moving.time
-        )
-        template = template.assign_coords(
-            {
-                name: coord
-                for name, coord in moving.coords.items()
-                if coord.dims == ("time",)
-            }
-        )
-        template.attrs = moving.attrs.copy()
-        template.name = moving.name
+    template = _output_template(moving, fixed, same_grid)
     values, validity = np.concatenate(outputs), np.concatenate(masks)
     if planar:
         values, validity = values[:, None], validity[:, None]
@@ -901,7 +1024,7 @@ def register(
         return RegistrationResult(
             registered.isel(time=0, drop=True),
             valid_data.isel(time=0, drop=True),
-            transforms.isel(time=0, drop=True),
+            transforms.isel(time=0, drop=True) if transforms is not None else None,
             diagnostics.isel(time=0, drop=True),
         )
     return RegistrationResult(registered, valid_data, transforms, diagnostics)

@@ -220,7 +220,7 @@ def run(output):
                                 max_iterations=budget,
                                 convergence_window_size=budget + 1,
                             )
-                        result = register(moving, target, **options)
+                        result = register(moving, target, return_transforms=True, **options)
                         registered, matrix = result.registered, result.transforms.values
                         meta = {
                             "n_iterations": int(result.diagnostics.n_iterations),

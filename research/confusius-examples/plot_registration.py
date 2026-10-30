@@ -104,6 +104,7 @@ def register_with_plot(
     The raw trial curve can worsen; the final image uses the returned best pose.
     A vertical line marks its update without implying a sampled metric point.
     Tiny trial-parameter tensors stay on-device until the returned pose is matched.
+    Dense SyN display is not implemented; only linear models are supported.
     """
     from time import monotonic
 
@@ -112,6 +113,11 @@ def register_with_plot(
 
     from voxreg import rigid as engine
 
+    if kwargs.get("return_transforms", True) is not True:
+        raise ValueError("The research plotter requires return_transforms=True.")
+    kwargs["return_transforms"] = True
+    if kwargs.get("transform") == "syn":
+        raise ValueError("The research plotter supports linear models only, not SyN.")
     if not np.isfinite(redraw_interval) or redraw_interval < 0:
         raise ValueError("redraw_interval must be finite and nonnegative.")
     limits = np.asarray(display_range, dtype=float)

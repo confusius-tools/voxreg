@@ -5,7 +5,10 @@ import pytest
 import torch
 from confusius import create_voxeldata
 from oracles import sample_mixed, voxel
+from scipy.ndimage import gaussian_filter, map_coordinates
 from scipy.spatial.transform import Rotation
+
+from voxreg import position_to_world
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -15,6 +18,22 @@ def single_thread():
     torch.set_num_threads(1)
     yield
     torch.set_num_threads(previous)
+
+
+@pytest.fixture(
+    params=[
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ]
+)
+def device(request):
+    """Shared CPU/CUDA selection; unavailable CUDA remains an explicit skip."""
+    return request.param
 
 
 @pytest.fixture
@@ -213,5 +232,143 @@ def slice_volume_pair_factory():
         sampled, valid = sample_mixed(volume, target, truth)
         assert valid.all()
         return voxel(sampled, af), volume, truth
+
+    return make
+
+
+@pytest.fixture
+def nonlinear_pair_factory(displacement_factory):
+    """Textured native pairs with an independently inverted analytic nonlinear pull."""
+
+    def make(
+        planar,
+        *,
+        shape=None,
+        amplitude=None,
+        dtype=np.float32,
+        sheared=True,
+        axis_aligned=False,
+    ):
+        data, _, _, _ = displacement_factory(planar)
+        af = position_to_world(data)
+        if not sheared:
+            af[:3, 1] -= 0.2 * af[:3, 2]
+        if axis_aligned:
+            af[:3, :3] = np.diag(np.linalg.norm(af[:3, :3], axis=0))
+        base = data.values[0] if planar else data.values
+        if shape is not None:
+            shape = tuple(shape)
+            factors = (np.array(base.shape) - 1) / (np.array(shape) - 1)
+            coordinates = np.indices(shape) * factors.reshape(-1, *([1] * len(shape)))
+            base = map_coordinates(base, coordinates, order=3, mode="nearest")
+            af[:3, 1 if planar else 0 : 3] *= factors
+        shape = base.shape
+        rng = np.random.default_rng(472)
+        texture = gaussian_filter(rng.normal(size=shape), 0.9)
+        signal = (
+            0.3 * (base - base.min()) / np.ptp(base) + 0.15 * texture / texture.std()
+        )
+        signal = signal - signal.min() + 0.05
+        coordinates = np.indices(shape, dtype=float)
+        amplitude = (1.5 if planar else 2.0) if amplitude is None else amplitude
+        rates = amplitude * np.array([1.0, -0.6, 0.35])[: len(shape)]
+        assert (np.abs(rates) * np.pi / (np.array(shape) - 1) < 1).all()
+
+        def window_at(points, axis):
+            others = [i for i in range(len(shape)) if i != axis]
+            scale = (np.array(shape)[others] - 1).reshape(-1, *([1] * len(shape)))
+            return np.sin(np.pi * points[others] / scale).prod(axis=0)
+
+        forward = coordinates.copy()
+        for axis, rate in enumerate(rates):
+            forward[axis] += (
+                rate
+                * np.sin(np.pi * forward[axis] / (shape[axis] - 1))
+                * window_at(forward, axis)
+            )
+        inverse = coordinates.copy()
+        for axis in reversed(range(len(shape))):
+            target = inverse[axis].copy()
+            window = window_at(inverse, axis)
+            rate = rates[axis]
+            for _ in range(20):
+                angle = np.pi * inverse[axis] / (shape[axis] - 1)
+                residual = inverse[axis] + rate * np.sin(angle) * window - target
+                derivative = (
+                    1 + rate * np.pi / (shape[axis] - 1) * np.cos(angle) * window
+                )
+                inverse[axis] -= residual / derivative
+            assert (
+                np.abs(
+                    inverse[axis]
+                    + rate * np.sin(np.pi * inverse[axis] / (shape[axis] - 1)) * window
+                    - target
+                ).max()
+                < 1e-12
+            )
+        moved = map_coordinates(
+            signal, inverse, order=3, mode="nearest", prefilter=True
+        )
+        if np.issubdtype(dtype, np.integer):
+            scale = 30000 / max(signal.max(), moved.max())
+            signal, moved = np.rint(signal * scale), np.rint(moved * scale)
+        lattice = af[:3, 1 if planar else 0 : 3]
+        truth = np.moveaxis(forward - coordinates, 0, -1) @ lattice.T
+        reverse = np.moveaxis(inverse - coordinates, 0, -1) @ lattice.T
+        if planar:
+            signal, moved, truth, reverse = (
+                signal[None],
+                moved[None],
+                truth[None],
+                reverse[None],
+            )
+        fixed, moving = voxel(signal.astype(dtype), af), voxel(moved.astype(dtype), af)
+        moving.attrs.update(units="power", subject="nonlinear-fixture")
+        moving.name = "power"
+        return fixed, moving, truth, reverse
+
+    return make
+
+
+@pytest.fixture
+def displacement_factory(linear_pair_factory):
+    """Zero-boundary physical fields on oblique, sheared/reversed 2D/3D grids."""
+
+    def make(planar, *, strided=False):
+        data = linear_pair_factory(planar, "translation")[0]
+        affine = position_to_world(data)
+        affine[:3, 1] += 0.2 * affine[:3, 2]
+        data = voxel(data.values.copy(), affine)
+        if strided:
+            data = data.isel(j=slice(None, None, -2), i=slice(None, None, -2))
+            if not planar:
+                data = data.isel(k=slice(None, None, 2))
+        affine = position_to_world(data)
+        if planar:
+            first = affine[:3, 2] / np.linalg.norm(affine[:3, 2])
+            second = affine[:3, 1] - first * np.dot(first, affine[:3, 1])
+            basis = np.column_stack((first, second / np.linalg.norm(second)))
+        else:
+            basis = np.eye(3)
+        lattice = basis.T @ affine[:3, 1 if planar else 0 : 3]
+        shape = data.shape[1:] if planar else data.shape
+        fractions = np.indices(shape) / np.array([n - 1 for n in shape]).reshape(
+            -1, *([1] * len(shape))
+        )
+        window = np.prod(np.sin(np.pi * fractions), axis=0)
+        for axis in range(len(shape)):
+            window[(fractions[axis] == 0) | (fractions[axis] == 1)] = 0
+        ell = np.linalg.norm(lattice, axis=0).min()
+        field = np.stack(
+            [
+                (0.5 + 0.2 * np.cos(np.pi * fractions[(axis + 1) % len(shape)]))
+                * (-1) ** axis
+                * window
+                * 0.35
+                * ell
+                for axis in range(len(shape))
+            ]
+        )
+        return data, basis, lattice, np.stack((field, -0.6 * field))
 
     return make

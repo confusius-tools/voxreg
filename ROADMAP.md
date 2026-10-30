@@ -15,8 +15,13 @@ and comparators, not a requirement for identical trajectories or outputs.
 The [linear-readiness check](research/linear/READINESS.md) records 585 passing tests
 and fresh workflow results, including the still-failing fixed-budget float64 motion
 precision control. [Test conventions](tests/README.md) describe fixture ownership.
-SyN is not implemented yet. Multistart, line search and broad capture-range studies
-are deferred, not prerequisites imposed ahead of these package priorities.
+[Symmetric compositive SyN](research/syn/README.md) now includes native 2D/3D
+halfway optimization, batched motion, opt-in complete forward/inverse dense results,
+physical field operations and regularity/inverse diagnostics. Independent
+multi-axis nonlinear truth controls and fresh ITK/FireANTs accuracy/speed comparisons
+are recorded there, including real-pair and eight-volume runs. Single-resolution
+capture range, anatomical qualification, mixed-dimensional deformation, multistart,
+line search and further performance tuning remain outside this implementation.
 
 ## Remember, do not enable by default
 
@@ -29,7 +34,7 @@ are deferred, not prerequisites imposed ahead of these package priorities.
   first. ITK/SimpleITK offer gradient-descent and conjugate-gradient line-search
   optimizers; the plain gradient descent used in our CF comparisons did not.
 - **Automatic rigid→affine staging:** manual staging already works. Pass the full
-  returned rigid matrix as the affine initialization, using the original moving
+  returned rigid matrix (request `return_transforms=True`) as the affine initialization, using the original moving
   and fixed images again. Do not feed resampled rigid output into affine or freeze
   the initial rigid stage as a separate transform chain. Automate only if useful.
 
@@ -48,5 +53,8 @@ Checkpoint validated work before deleting anything. Remove dead runtime paths an
 centralize actively reused research helpers. Preserve frozen controls, minimal
 failure evidence, source snapshots and historical results; clearly identify the
 current entry point instead of treating every old experiment as current guidance.
-Do not loosen numerical gates, change defaults or claim anatomical success from
-higher correlation or agreement with a single library.
+Do not loosen numerical gates, change numerical defaults to make controls pass,
+or claim anatomical success from higher correlation or agreement with a single library.
+Transform export is now explicitly opt-in; automatic batching uses measured
+performance caps and conservative VRAM estimates, not optimizer probes or retries.
+See [batch measurements](research/performance/BATCH-SIZE.md).

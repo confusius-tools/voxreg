@@ -1,0 +1,995 @@
+{
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "iterations": 100,
+  "repeats": 2,
+  "source": "/home/sdiebolt/.cache/confusius/landemard-2026-bids/1.0.0/sub-ALD001/fusi/sub-ALD001_task-awake_acq-ref20_pwd.nii.gz",
+  "source_sha256": {
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/fields.py": "60fe480553cac0774e9a0572c05552229e355f4b0442d5be73da5e5a29a2747e",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "bdcdc562808988ceff61f266ffaeb22943c14aadcd5e74142d0680632733eea1",
+    "src/voxreg/sampling.py": "179c7c8097aafa50c759e7a6693919b8088fe71755b40670d3bae2847c656455",
+    "src/voxreg/syn.py": "70890af523989cbd386cd7dcfae372031e9772d1851c209328ccd4db095b047f",
+    "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d"
+  },
+  "notes": "Fixed budget, no transforms, one whole-recording call per trial. Imports/I/O excluded; preparation, upload, fitting and output included. Each shape/model/batch warmed with two updates. Timed repeats use the cached allocator; allocated peaks exclude reusable reserved cache. 3D frames repeat a shared nonlinear fixture, not a real 3D recording.",
+  "rows": [
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "rigid",
+      "batch_size": 32,
+      "repeat": 0,
+      "seconds": 6.682951333998062,
+      "allocated_peak_bytes": 96689664,
+      "reserved_peak_bytes": 115343360,
+      "free_bytes_before": 13763215360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.05881637900165515,
+        "upload": 0.005606017955869902,
+        "optimize": 6.573928068013629,
+        "resample_download": 0.035598403024778236
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "rigid",
+      "batch_size": 32,
+      "repeat": 1,
+      "seconds": 6.498761456001375,
+      "allocated_peak_bytes": 96689664,
+      "reserved_peak_bytes": 115343360,
+      "free_bytes_before": 13763215360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06661207200522767,
+        "upload": 0.005220955004915595,
+        "optimize": 6.3855870780098485,
+        "resample_download": 0.03318014796968782
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "rigid",
+      "batch_size": 128,
+      "repeat": 0,
+      "seconds": 1.6881790089973947,
+      "allocated_peak_bytes": 189432832,
+      "reserved_peak_bytes": 228589568,
+      "free_bytes_before": 13649969152,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06223518800106831,
+        "upload": 0.003652771010820288,
+        "optimize": 1.5939688450016547,
+        "resample_download": 0.018642230999830645
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "rigid",
+      "batch_size": 128,
+      "repeat": 1,
+      "seconds": 1.6874377580024884,
+      "allocated_peak_bytes": 189432832,
+      "reserved_peak_bytes": 228589568,
+      "free_bytes_before": 13649969152,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.05963189400063129,
+        "upload": 0.003619476017775014,
+        "optimize": 1.5976420309962123,
+        "resample_download": 0.018018688009760808
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "rigid",
+      "batch_size": 256,
+      "repeat": 0,
+      "seconds": 1.7165073869982734,
+      "allocated_peak_bytes": 307488256,
+      "reserved_peak_bytes": 377487360,
+      "free_bytes_before": 13501071360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.060642920005193446,
+        "upload": 0.0031000559974927455,
+        "optimize": 1.622343766008271,
+        "resample_download": 0.022049627994420007
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "rigid",
+      "batch_size": 256,
+      "repeat": 1,
+      "seconds": 1.726455045005423,
+      "allocated_peak_bytes": 307488256,
+      "reserved_peak_bytes": 377487360,
+      "free_bytes_before": 13501071360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06415091999951983,
+        "upload": 0.003416752995690331,
+        "optimize": 1.6250999320036499,
+        "resample_download": 0.023017218001768924
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "affine",
+      "batch_size": 32,
+      "repeat": 0,
+      "seconds": 7.307318792001752,
+      "allocated_peak_bytes": 97918464,
+      "reserved_peak_bytes": 377487360,
+      "free_bytes_before": 13501071360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.07301907600049162,
+        "upload": 0.005800799997814465,
+        "optimize": 7.179522194004676,
+        "resample_download": 0.03985230801481521
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "affine",
+      "batch_size": 32,
+      "repeat": 1,
+      "seconds": 6.945257242005027,
+      "allocated_peak_bytes": 97918464,
+      "reserved_peak_bytes": 377487360,
+      "free_bytes_before": 13501071360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06378557099378668,
+        "upload": 0.005643310003506485,
+        "optimize": 6.829980159003753,
+        "resample_download": 0.03636298199853627
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "affine",
+      "batch_size": 128,
+      "repeat": 0,
+      "seconds": 1.7818005880035344,
+      "allocated_peak_bytes": 189453824,
+      "reserved_peak_bytes": 377487360,
+      "free_bytes_before": 13501071360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06425969299743883,
+        "upload": 0.003472385011264123,
+        "optimize": 1.6881206750040292,
+        "resample_download": 0.017163857010018546
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "affine",
+      "batch_size": 128,
+      "repeat": 1,
+      "seconds": 1.8544142399987322,
+      "allocated_peak_bytes": 189453824,
+      "reserved_peak_bytes": 377487360,
+      "free_bytes_before": 13501071360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06423122900014278,
+        "upload": 0.0038522989925695583,
+        "optimize": 1.7599658370090765,
+        "resample_download": 0.01782897298107855
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "affine",
+      "batch_size": 256,
+      "repeat": 0,
+      "seconds": 1.683532049995847,
+      "allocated_peak_bytes": 307529728,
+      "reserved_peak_bytes": 377487360,
+      "free_bytes_before": 13501071360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.0638647640007548,
+        "upload": 0.0033472709910711274,
+        "optimize": 1.5842701650035451,
+        "resample_download": 0.02267522299371194
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "affine",
+      "batch_size": 256,
+      "repeat": 1,
+      "seconds": 1.737431251000089,
+      "allocated_peak_bytes": 307529728,
+      "reserved_peak_bytes": 377487360,
+      "free_bytes_before": 13501071360,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06439037599920994,
+        "upload": 0.00389046200143639,
+        "optimize": 1.637104065004678,
+        "resample_download": 0.02360111400776077
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "syn",
+      "batch_size": 32,
+      "repeat": 0,
+      "seconds": 58.20086157300102,
+      "allocated_peak_bytes": 394939904,
+      "reserved_peak_bytes": 461373440,
+      "free_bytes_before": 13309313024,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.07078332899982342,
+        "upload": 0.006324274989310652,
+        "optimize": 57.96390645900101,
+        "resample_download": 0.14126472897623898
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "syn",
+      "batch_size": 32,
+      "repeat": 1,
+      "seconds": 58.821906980003405,
+      "allocated_peak_bytes": 394939904,
+      "reserved_peak_bytes": 461373440,
+      "free_bytes_before": 13176471552,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06785948600008851,
+        "upload": 0.007168527001340408,
+        "optimize": 58.58667279402289,
+        "resample_download": 0.1431730459953542
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "syn",
+      "batch_size": 128,
+      "repeat": 0,
+      "seconds": 71.68273233999935,
+      "allocated_peak_bytes": 1366690816,
+      "reserved_peak_bytes": 1717567488,
+      "free_bytes_before": 11848712192,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06698257099924376,
+        "upload": 0.003818467004748527,
+        "optimize": 71.43627689901041,
+        "resample_download": 0.15675481700600358
+      },
+      "image_rms_vs_first_trial": 5.0261317708885604
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "syn",
+      "batch_size": 128,
+      "repeat": 1,
+      "seconds": 73.32460478199937,
+      "allocated_peak_bytes": 1366690816,
+      "reserved_peak_bytes": 1717567488,
+      "free_bytes_before": 12031229952,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.07092738500068663,
+        "upload": 0.003898482995282393,
+        "optimize": 73.0756191370092,
+        "resample_download": 0.15616338799736695
+      },
+      "image_rms_vs_first_trial": 5.0261317708885604
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "syn",
+      "batch_size": 256,
+      "repeat": 0,
+      "seconds": 79.74652562400297,
+      "allocated_peak_bytes": 2653615616,
+      "reserved_peak_bytes": 3225419776,
+      "free_bytes_before": 10654056448,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06513141500181518,
+        "upload": 0.0035665510076796636,
+        "optimize": 79.47766061400762,
+        "resample_download": 0.18449766001140233
+      },
+      "image_rms_vs_first_trial": 5.0261317708885604
+    },
+    {
+      "case": "ref20",
+      "shape": [
+        1024,
+        1,
+        145,
+        80
+      ],
+      "model": "syn",
+      "batch_size": 256,
+      "repeat": 1,
+      "seconds": 79.32504768199578,
+      "allocated_peak_bytes": 2653615616,
+      "reserved_peak_bytes": 3225419776,
+      "free_bytes_before": 10598481920,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "updates": 102300,
+      "stage_seconds": {
+        "prepare": 0.06515198599663563,
+        "upload": 0.0033551759988768026,
+        "optimize": 79.0512777190088,
+        "resample_download": 0.18859777299803682
+      },
+      "image_rms_vs_first_trial": 5.0261317708885604
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "rigid",
+      "batch_size": 32,
+      "repeat": 0,
+      "seconds": 7.258796950001852,
+      "allocated_peak_bytes": 297167872,
+      "reserved_peak_bytes": 3225419776,
+      "free_bytes_before": 10581377024,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.035109746000671294,
+        "upload": 0.004437863004568499,
+        "optimize": 7.161041850988113,
+        "resample_download": 0.04660732599586481
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "rigid",
+      "batch_size": 32,
+      "repeat": 1,
+      "seconds": 7.265253620993462,
+      "allocated_peak_bytes": 297167872,
+      "reserved_peak_bytes": 3225419776,
+      "free_bytes_before": 10581377024,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.034017968995613046,
+        "upload": 0.0046676760030095465,
+        "optimize": 7.16791658699367,
+        "resample_download": 0.047184124996419996
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "rigid",
+      "batch_size": 128,
+      "repeat": 0,
+      "seconds": 8.195218912995188,
+      "allocated_peak_bytes": 972921344,
+      "reserved_peak_bytes": 3602907136,
+      "free_bytes_before": 10203889664,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.03583095800422598,
+        "upload": 0.003950750004150905,
+        "optimize": 8.10700739499589,
+        "resample_download": 0.03966152699285885
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "rigid",
+      "batch_size": 128,
+      "repeat": 1,
+      "seconds": 8.149536826000258,
+      "allocated_peak_bytes": 972921344,
+      "reserved_peak_bytes": 3602907136,
+      "free_bytes_before": 10203889664,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.038469675004307646,
+        "upload": 0.004268138000043109,
+        "optimize": 8.058366541998112,
+        "resample_download": 0.03985473400098272
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "rigid",
+      "batch_size": 256,
+      "repeat": 0,
+      "seconds": 8.36688667099952,
+      "allocated_peak_bytes": 1721026048,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9448914944,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.03374277699913364,
+        "upload": 0.004567809999571182,
+        "optimize": 8.275129398003628,
+        "resample_download": 0.04460701099742437
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "rigid",
+      "batch_size": 256,
+      "repeat": 1,
+      "seconds": 8.394594551005866,
+      "allocated_peak_bytes": 1721026048,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9448914944,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.03490536000026623,
+        "upload": 0.004487209997023456,
+        "optimize": 8.300654527003644,
+        "resample_download": 0.04616886399890063
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "affine",
+      "batch_size": 32,
+      "repeat": 0,
+      "seconds": 7.197468537000532,
+      "allocated_peak_bytes": 297175040,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9448914944,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.03334173899929738,
+        "upload": 0.004539389003184624,
+        "optimize": 7.105086880015733,
+        "resample_download": 0.04334476200165227
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "affine",
+      "batch_size": 32,
+      "repeat": 1,
+      "seconds": 7.225587439999799,
+      "allocated_peak_bytes": 297175040,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9448914944,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.033850658997835126,
+        "upload": 0.004481730000406969,
+        "optimize": 7.132981476999703,
+        "resample_download": 0.04307762800453929
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "affine",
+      "batch_size": 128,
+      "repeat": 0,
+      "seconds": 8.114073564000137,
+      "allocated_peak_bytes": 972954624,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9448914944,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.035093266000330914,
+        "upload": 0.00426812500518281,
+        "optimize": 8.021262502996251,
+        "resample_download": 0.043459237000206485
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "affine",
+      "batch_size": 128,
+      "repeat": 1,
+      "seconds": 8.179899950999243,
+      "allocated_peak_bytes": 972954624,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9448914944,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.03512965699337656,
+        "upload": 0.004366029002994765,
+        "optimize": 8.085375414004375,
+        "resample_download": 0.044570079997356515
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "affine",
+      "batch_size": 256,
+      "repeat": 0,
+      "seconds": 8.426471960003255,
+      "allocated_peak_bytes": 1721038336,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9448914944,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.03483508800127311,
+        "upload": 0.004494979002629407,
+        "optimize": 8.333457893000741,
+        "resample_download": 0.045192024001153186
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "affine",
+      "batch_size": 256,
+      "repeat": 1,
+      "seconds": 8.359185442001035,
+      "allocated_peak_bytes": 1721038336,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9448914944,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.03412159599974984,
+        "upload": 0.00447489300131565,
+        "optimize": 8.266450491995784,
+        "resample_download": 0.04537026299658464
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "syn",
+      "batch_size": 32,
+      "repeat": 0,
+      "seconds": 154.51507131999824,
+      "allocated_peak_bytes": 2719727616,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9448914944,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.036293138000473846,
+        "upload": 0.004812829000002239,
+        "optimize": 154.07801182298135,
+        "resample_download": 0.37702796501253033
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "syn",
+      "batch_size": 32,
+      "repeat": 1,
+      "seconds": 150.38134998500755,
+      "allocated_peak_bytes": 2719727616,
+      "reserved_peak_bytes": 4357881856,
+      "free_bytes_before": 9256108032,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.03537327599769924,
+        "upload": 0.004880877997493371,
+        "optimize": 149.95243067399133,
+        "resample_download": 0.37132842000573874
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "syn",
+      "batch_size": 128,
+      "repeat": 0,
+      "seconds": 170.12742062099278,
+      "allocated_peak_bytes": 10631791616,
+      "reserved_peak_bytes": 12310282240,
+      "free_bytes_before": 1302986752,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.034374511989881285,
+        "upload": 0.003804359002970159,
+        "optimize": 169.6723328570224,
+        "resample_download": 0.40113001500139944
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "shape": [
+        256,
+        32,
+        40,
+        48
+      ],
+      "model": "syn",
+      "batch_size": 128,
+      "repeat": 1,
+      "seconds": 169.92603175299882,
+      "allocated_peak_bytes": 10631791616,
+      "reserved_peak_bytes": 12310282240,
+      "free_bytes_before": 1302986752,
+      "total_bytes": 16680943616,
+      "status_counts": {
+        "max_iterations": 256
+      },
+      "updates": 25600,
+      "stage_seconds": {
+        "prepare": 0.030844960012473166,
+        "upload": 0.0038341150066116825,
+        "optimize": 169.46378409399767,
+        "resample_download": 0.4118234189954819
+      },
+      "image_rms_vs_first_trial": 0.0
+    },
+    {
+      "case": "3d",
+      "model": "syn",
+      "batch_size": 256,
+      "error": "CUDA out of memory. Tried to allocate 120.00 MiB. GPU 0 has a total capacity of 15.54 GiB of which 184.62 MiB is free. Process 2394 has 146.72 MiB memory in use. Process 8852 has 426.97 MiB memory in use. Process 11296 has 212.79 MiB memory in use. Process 8936 has 197.50 MiB memory in use. Including non-PyTorch memory, this process has 12.75 GiB memory in use. Of the allocated memory 12.11 GiB is allocated by PyTorch, and 401.16 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)"
+    }
+  ]
+}

@@ -1,6 +1,9 @@
-# VoxelData-native batched linear registration
+# VoxelData-native batched registration
 
-Status: eager translation/rigid/affine implementation available, with synthetic CPU/CUDA tests and
+Status: eager translation/rigid/affine and symmetric compositive SyN are available.
+[SyN contracts and ITK/FireANTs measurements](research/syn/README.md) cover native
+2D/3D pairs, recordings and explicit dense forward/inverse results. Linear models
+retain their original numerical path, with synthetic CPU/CUDA tests and
 real-notebook quality comparison. Isolated ITK/FireANTs time/memory comparisons are
 available in [BENCHMARK.md](BENCHMARK.md). [PERFORMANCE.md](PERFORMANCE.md) identifies
 the dense-grid bottleneck that motivated the production scalar-affine sampler.
@@ -19,7 +22,7 @@ The original rigid/default numerical path remains unchanged. Euler is a rigid
 parameterization, not another family; this API does not claim ITK Euler-angle
 optimizer trajectories.
 
-`transforms.py` owns non-rigid model scaling, centered state, seed validation,
+`transforms.py` owns linear-model scaling, centered state, seed validation,
 world export and diagnostics. `sampling.py` retains the qualified rigid kernels
 and dispatches the same centered physical sampling composition on other linear
 maps. `rigid.py` is the shared engine despite its historical internal filename:
@@ -60,6 +63,36 @@ claimed. Fixed-budget analytic ITK/SciPy qualification is in
 [research/linear/README.md](research/linear/README.md); default rigid-slice convergence
 thresholds are not calibrated for affine or general 3D. Historical timing results
 remain rigid measurements.
+
+## Symmetric compositive SyN
+
+`register(..., transform="syn")` dispatches after shared validation, initialization
+and preprocessing into `syn.py`. Two independent physical midpoint-to-image fields
+are optimized with masked squared local NCC and normalized smoothed compositive
+updates. Complete pulls are `moving_half ∘ inverse(fixed_half)` and the reverse;
+`fields.py` owns interpolation, composition, smoothing, approximate inversion and
+full-lattice Jacobians. This is neither stationary velocity nor a renamed one-way
+warp. ITK/ANTs provides the algorithmic baseline; FireANTs informs batched execution,
+without source transplantation or optimizer-trajectory parity.
+
+An orientation-preserving affine seed prealigns the moving image. Returned dense
+world z/y/x millimetre displacements include that seed; the forward lives on the
+fixed grid and the inverse on the original moving grid. Linear matrices and
+metadata are unchanged. Native planes have two internal components, embedded in
+world coordinates for export; mixed-dimensional deformation is explicitly rejected.
+The single-resolution optimizer uses radius-2 neighborhoods and voxel sigmas
+1.5 (updates) and 0.5 (total field). Float64 geometry/state/statistics and true
+float64 final interpolation are retained. Displaced float32 image fitting uses
+fixed-order multilinear interpolation and roundoff-only voxel-knot snapping to
+avoid inconsistent CPU/CUDA one-sided gradients; linear sampling is unchanged.
+
+Accepted states require positive finite sampled halfway Jacobians. Final complete
+residual maps are also checked; failure falls back to the seed with an explicit
+status. These finite-difference checks do not prove global invertibility, and
+sampled inverse interpolation has a nonzero two-sided residual. Diagnostics expose
+that limitation rather than forcing agreement. Best-state selection uses the
+halfway objective; endpoint global NCC is reported separately. Detailed numerical
+proof and comparison caveats are in [research/syn](research/syn/README.md).
 
 ## Independent-grid / 3D rigid extension
 
@@ -218,7 +251,11 @@ The first milestone is complete when it:
 
 This is not yet a general replacement for the existing registration API.
 
-### Not in the first milestone
+### Not in the first milestone (historical rigid-only scope)
+
+Affine, independent grids, full 3D and SyN were added subsequently as described
+above. The original exclusions below describe that first milestone, not today's
+supported transform list.
 
 - Affine, B-spline, dense deformation, SyN or numerical field inversion.
 - Full 3D registration, multiple poses, or arbitrary extra feature dimensions.
@@ -446,7 +483,8 @@ result = voxreg.register(
     recording,
     fixed=None,  # First frame; explicit fixed images use the same grid.
     intensity_scaling="db",  # Fitting only; output retains original intensities.
-    batch_size=32,
+    batch_size=None,  # Automatic, VRAM-aware on CUDA; explicit integers override.
+    return_transforms=False,  # Opt in only when matrices/fields are needed.
     max_iterations=100,
     learning_rate=0.1,  # Proposed scaled-parameter rate, not ITK's rate.
     device="cuda",  # CPU also supported; no automatic device switch.
@@ -457,8 +495,12 @@ Return a small `RegistrationResult` with:
 
 - `registered`: VoxelData `(time, k, j, i)` on the fixed grid.
 - `valid`: boolean VoxelData with the same geometry and dimensions.
-- `transforms`: DataArray `(time, world_out, world_in)` with labeled homogeneous
-  z/y/x matrix axes and explicit fixed-world-to-moving-world semantics.
+- `transforms`: None by default; with `return_transforms=True`, linear models
+  return DataArray `(time, world_out, world_in)` with labeled homogeneous z/y/x
+  matrix axes and explicit fixed-world-to-moving-world semantics. SyN instead
+  exports complete forward/inverse float64 world-displacement fields. Both fields
+  cost 12× equal-grid float32 image storage, plus assembly temporaries; opting out
+  skips export/download/accumulation, not fitting, resampling or diagnostics.
 - `diagnostics`: Dataset indexed by time, containing final objective, valid
   fraction, iteration count and a per-frame status.
 

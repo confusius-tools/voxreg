@@ -81,9 +81,15 @@ def test_stops_before_next_update_and_disabled_window_reaches_limit(
     data, _, _ = recording_factory()
     options = {"device": device, "max_iterations": 8, "progress": False}
     stopped = register(
-        data, **options, convergence_window_size=4, convergence_minimum_value=1
+        data,
+        return_transforms=True,
+        **options,
+        convergence_window_size=4,
+        convergence_minimum_value=1,
     )
-    limited = register(data, **options, convergence_window_size=9)
+    limited = register(
+        data, return_transforms=True, **options, convergence_window_size=9
+    )
     np.testing.assert_array_equal(stopped.diagnostics.n_iterations[1:], 3)
     np.testing.assert_array_equal(stopped.diagnostics.status[1:], "converged")
     np.testing.assert_array_equal(limited.diagnostics.n_iterations[1:], 8)
@@ -130,11 +136,11 @@ def test_terminal_check_preserves_frozen_full_budget_results(
 
     monkeypatch.setattr(rigid, "sample_rigid", counted_sample)
     options = {"device": device, "max_iterations": 400, "progress": False}
-    stopped = register(data, **options)
+    stopped = register(data, return_transforms=True, **options)
     stopped_calls = len(calls)
     calls.clear()
     monkeypatch.setattr(rigid, "_all_frames_stopped", lambda status: False)
-    full_budget = register(data, **options)
+    full_budget = register(data, return_transforms=True, **options)
     assert stopped_calls < len(calls)
     for field in ["registered", "valid", "transforms", "diagnostics"]:
         xr.testing.assert_equal(getattr(stopped, field), getattr(full_budget, field))

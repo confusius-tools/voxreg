@@ -59,11 +59,11 @@ def test_nonparallel_planes_refine_image_motion_after_geometry_alignment(
         "convergence_window_size": 401,
         "progress": False,
     }
-    result = register(moving, fixed, device=device, **kwargs)
+    result = register(moving, fixed, return_transforms=True, device=device, **kwargs)
     assert np.sqrt(np.mean(error(result.transforms, truth, fixed) ** 2)) < 0.25
     assert result.diagnostics.objective < -0.999
     if device == "cuda":
-        cpu = register(moving, fixed, device="cpu", **kwargs)
+        cpu = register(moving, fixed, return_transforms=True, device="cpu", **kwargs)
         assert error(result.transforms, cpu.transforms, fixed).max() < 0.001
 
 
@@ -92,6 +92,7 @@ def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
     r = register(
         failed,
         fixed,
+        return_transforms=True,
         transform=model,
         initialization=truth,
         intensity_scaling="none",
@@ -175,6 +176,7 @@ def test_fitting_truth_and_cpu_cuda_precision(linear_pair_factory, planar, model
         r = register(
             moving,
             fixed,
+            return_transforms=True,
             transform=model,
             intensity_scaling="none",
             initialization="center_moments",
@@ -207,8 +209,8 @@ def test_series_batch_reference_and_explicit_seed(recording_factory, model, devi
         "initialization": "center_moments",
         "device": device,
     }
-    a = register(data, batch_size=1, **options)
-    b = register(data, batch_size=3, **options)
+    a = register(data, return_transforms=True, batch_size=1, **options)
+    b = register(data, return_transforms=True, batch_size=3, **options)
     np.testing.assert_allclose(a.transforms, b.transforms, atol=1e-9, rtol=0)
     np.testing.assert_array_equal(
         a.diagnostics.n_iterations, b.diagnostics.n_iterations
@@ -217,6 +219,7 @@ def test_series_batch_reference_and_explicit_seed(recording_factory, model, devi
     np.testing.assert_array_equal(a.registered[0], data[0])
     c = register(
         data,
+        return_transforms=True,
         transform=model,
         initialization=a.transforms,
         max_iterations=1,
@@ -228,7 +231,13 @@ def test_series_batch_reference_and_explicit_seed(recording_factory, model, devi
         0.1 * make_grid(data.isel(time=0, drop=True), data).basis[:, 0]
     )
     with pytest.raises(ValueError, match="implicit reference"):
-        register(data, transform=model, initialization=bad, progress=False)
+        register(
+            data,
+            return_transforms=True,
+            transform=model,
+            initialization=bad,
+            progress=False,
+        )
 
 
 @pytest.mark.parametrize("model", ["translation", "affine"])
@@ -309,6 +318,7 @@ def test_affine_seed_is_refined_as_full_pose_not_frozen_prefix(
     r = register(
         moving,
         fixed,
+        return_transforms=True,
         transform="affine",
         initialization=seed,
         intensity_scaling="none",
@@ -332,6 +342,7 @@ def test_affine_final_interpolation_preserves_float64_detail(
     r = register(
         moving,
         fixed,
+        return_transforms=True,
         transform="affine",
         initialization=truth,
         intensity_scaling="none",
@@ -356,6 +367,7 @@ def test_reflecting_affine_seed_is_preserved(linear_pair_factory):
     r = register(
         failed,
         fixed,
+        return_transforms=True,
         transform="affine",
         initialization=truth,
         intensity_scaling="none",
@@ -405,6 +417,7 @@ def test_affine_candidate_guard_is_per_frame_and_keeps_best(
     r = register(
         series,
         fixed,
+        return_transforms=True,
         transform="affine",
         learning_rate=100,
         max_iterations=2,
@@ -442,6 +455,7 @@ def test_invalid_affine_frame_does_not_stop_companions(
     result = register(
         series,
         fixed,
+        return_transforms=True,
         transform="affine",
         max_iterations=2,
         intensity_scaling="none",
@@ -467,8 +481,14 @@ def test_single_public_registration_entry_point():
 
 def test_default_is_identical_to_explicit_rigid(recording_factory):
     data, _, _ = recording_factory()
-    a = register(data, max_iterations=5, progress=False)
-    b = register(data, transform="rigid", max_iterations=5, progress=False)
+    a = register(data, return_transforms=True, max_iterations=5, progress=False)
+    b = register(
+        data,
+        return_transforms=True,
+        transform="rigid",
+        max_iterations=5,
+        progress=False,
+    )
     for field in ("registered", "valid", "transforms", "diagnostics"):
         xr.testing.assert_equal(getattr(a, field), getattr(b, field))
 
