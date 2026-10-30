@@ -120,8 +120,11 @@ is unsnapped with double weights. The legacy linear sampler remains unchanged.
 
 ## Proof, preserved failures and limits
 
-The full suite passes **675 tests**: 585 previous checks, 49 field checks, 40 SyN
-and comparison checks, and one explicit linear-plotter rejection case. Tests share
+The current acceleration checkpoint passes **840 tests**, with **32 actual-wheel
+CPU/CUDA API checks**; see [SPEED.md](SPEED.md) for default versus experimental
+paths, full-recording timings and cold compilation costs. The initial milestone
+passed 675 tests: 585 previous checks, 49 field checks, 40 SyN/comparison checks,
+and one explicit linear-plotter rejection case. Tests share
 package-wide fresh factories and independent SciPy/native ITK oracles. Multi-axis
 sinusoidal compositive truth is inverted independently with reverse-order Newton
 solves, never production field code. Even its best affine correspondence fails

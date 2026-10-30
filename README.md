@@ -197,8 +197,13 @@ Recordings `(time, k, j, i)` use the same volume engine in batches. Choose a sma
 `batch_size` override when needed. The default (`None`) is automatic: CPU caps at
 32; CUDA uses available VRAM, image size and a conservative per-method working-set
 estimate with 50% headroom. Performance caps are 256 for linear slice pairs and
-32 for SyN/volumes; larger batches are not always faster. CUDA caps round down to
-powers of two and are limited to the frame count. Reusable Torch cache counts as
+32 for SyN/volumes; larger batches are not always faster. The memory-limited CUDA
+choice rounds down to a power of two, then is limited to the frame count. This
+rounding is a conservative policy, **not evidence that powers of two are always
+faster**; short recordings and final partial batches need not be powers of two.
+Seeing 256 for linear slices and 32 for SyN usually means the performance cap,
+not the VRAM limit, was reached. CPU currently uses a fixed cap, not a memory or
+speed autotuner. Reusable Torch cache counts as
 available; concurrent allocations can still cause OOM, and one frame must fit.
 No optimizer probes or OOM retries run. The effective size is recorded in
 `result.diagnostics.attrs["batch_size"]`. Explicit positive integers override the

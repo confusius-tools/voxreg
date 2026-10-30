@@ -1,0 +1,353 @@
+{
+  "versions": {
+    "voxreg": "0.1.0",
+    "torch": "2.14.1",
+    "itk": "5.4.7",
+    "fireants": "1.5.1",
+    "numpy": "2.5.4"
+  },
+  "python": "3.14.8",
+  "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "fireants_fused": false,
+  "iterations": 120,
+  "repeats": 2,
+  "cpu_threads": 1,
+  "cases": {
+    "2d-medium": {
+      "shape": [
+        1,
+        64,
+        80
+      ],
+      "frames": 1,
+      "provenance": null,
+      "backends": {
+        "voxreg-cuda": {
+          "ncc_squared": [
+            0.9875392465780589
+          ],
+          "min_residual_jacobian": [
+            0.8844192821095274
+          ],
+          "truth_rms_px": [
+            0.07618183055384226
+          ],
+          "truth_max_px": [
+            0.18958266120671957
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 20.978589009988355,
+          "warm_seconds": [
+            0.17293571399932262,
+            0.17041890999826137
+          ],
+          "warm_median_seconds": 0.171677311998792,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.07627469739345717
+          ]
+        },
+        "fireants-cuda": {
+          "ncc_squared": [
+            0.9868907865131401
+          ],
+          "min_residual_jacobian": [
+            0.8443796257242097
+          ],
+          "truth_rms_px": [
+            0.08096063667233674
+          ],
+          "truth_max_px": [
+            0.2046769846355701
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 1.417343510009232,
+          "warm_seconds": [
+            0.34044073399854824,
+            0.34352900300291367
+          ],
+          "warm_median_seconds": 0.34198486850073095,
+          "repeat_max_world_mm": 2.9555521408042296e-07,
+          "finite": true
+        }
+      }
+    },
+    "3d-medium": {
+      "shape": [
+        32,
+        40,
+        48
+      ],
+      "frames": 1,
+      "provenance": null,
+      "backends": {
+        "voxreg-cuda": {
+          "ncc_squared": [
+            0.9805606645826409
+          ],
+          "min_residual_jacobian": [
+            0.7566142601330524
+          ],
+          "truth_rms_px": [
+            0.10010647498246349
+          ],
+          "truth_max_px": [
+            0.40175948771598446
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 41.36750442899938,
+          "warm_seconds": [
+            0.2078216679947218,
+            0.20670446399890352
+          ],
+          "warm_median_seconds": 0.20726306599681266,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.10044162406455401
+          ]
+        },
+        "fireants-cuda": {
+          "ncc_squared": [
+            0.9791129305662373
+          ],
+          "min_residual_jacobian": [
+            0.775287897798034
+          ],
+          "truth_rms_px": [
+            0.09951422074874613
+          ],
+          "truth_max_px": [
+            0.2362567319990774
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 0.5105663510039449,
+          "warm_seconds": [
+            0.42118184399441816,
+            0.41966975599643774
+          ],
+          "warm_median_seconds": 0.42042579999542795,
+          "repeat_max_world_mm": 4.4638855634104857e-07,
+          "finite": true
+        }
+      }
+    },
+    "3d-batch8": {
+      "shape": [
+        32,
+        32,
+        32
+      ],
+      "frames": 8,
+      "provenance": null,
+      "backends": {
+        "voxreg-cuda": {
+          "ncc_squared": [
+            0.9838492501978205,
+            0.9835656156649762,
+            0.982874208001615,
+            0.9824621906640879,
+            0.9821184579623669,
+            0.9818112457866598,
+            0.9815575624175791,
+            0.9813180384954551
+          ],
+          "min_residual_jacobian": [
+            0.8131383788658568,
+            0.7971947514170085,
+            0.7897678844804463,
+            0.7781428680901928,
+            0.7503806903114798,
+            0.7515383019965142,
+            0.737579118519456,
+            0.6991548744874755
+          ],
+          "truth_rms_px": [
+            0.06247284756081097,
+            0.06107965467341102,
+            0.06439302837828084,
+            0.06515627059490886,
+            0.06982296194150016,
+            0.06773687051440098,
+            0.07048638095418487,
+            0.07630465914423586
+          ],
+          "truth_max_px": [
+            0.16209592313386248,
+            0.1758143874173428,
+            0.17868760186225516,
+            0.18129287915764883,
+            0.2645974107615292,
+            0.17261009231206975,
+            0.238152923778983,
+            0.2866870581778491
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 52.331425982003566,
+          "warm_seconds": [
+            0.539567519997945,
+            0.49060817901045084
+          ],
+          "warm_median_seconds": 0.515087849504198,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.06273288084550666,
+            0.0614917232895334,
+            0.06462379296183154,
+            0.06536541196363352,
+            0.07019341273826019,
+            0.06797970621856025,
+            0.0706692877372903,
+            0.07664777381981454
+          ]
+        },
+        "fireants-cuda": {
+          "ncc_squared": [
+            0.9817642173679348,
+            0.9812454053881752,
+            0.9806887918727357,
+            0.9802127441267452,
+            0.980074122987231,
+            0.9797761731867666,
+            0.97962147108017,
+            0.9792590575562584
+          ],
+          "min_residual_jacobian": [
+            0.8156381468726377,
+            0.8088416106859453,
+            0.787221019284912,
+            0.7689054496198685,
+            0.7801345713634307,
+            0.7730489486320747,
+            0.7687523701044652,
+            0.7646203296550741
+          ],
+          "truth_rms_px": [
+            0.07016243036251588,
+            0.0716479252917751,
+            0.07280357420942553,
+            0.07415299057854915,
+            0.07555509919742823,
+            0.07642313881743328,
+            0.07745542706925897,
+            0.07849874151900861
+          ],
+          "truth_max_px": [
+            0.17323214005732337,
+            0.18342621918490543,
+            0.1812918555351703,
+            0.18375381227783041,
+            0.21309260231905738,
+            0.1879599325830394,
+            0.1862978411729618,
+            0.1858720617528601
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 0.5443870419985615,
+          "warm_seconds": [
+            0.5966385670035379,
+            0.5466935300064506
+          ],
+          "warm_median_seconds": 0.5716660485049943,
+          "repeat_max_world_mm": 0.01352225756761527,
+          "finite": true
+        }
+      }
+    }
+  },
+  "source_sha256": {
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/fields.py": "992884195ca1e8d2b5fa4f004a4677a63c489f9f17c734fb45ae4fdf6b2c8007",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "f6f3b46f11439b4ec0114d2dd11fb23de12480d8c34d961761ea21b49276ff78",
+    "src/voxreg/sampling.py": "2b5fa378e9fbcb342eee81267b1da1241a17e92e96f0899b55a641a0e8e696e1",
+    "src/voxreg/syn.py": "a366178274c31bb074a7dc81ac4d7adcdee1f48a73410afe47b96d6b2ed7bfc4",
+    "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+    "tests/conftest.py": "6baee74601d74c57cdcabdbb8eeb8fad846a242aae1f0b9502d0ae6180c6d1af",
+    "research/syn/compare.py": "c9875b1c8b20b78e9a1bad321a80039bb7dd02f4f735a2f7bc5d2df20555c340"
+  },
+  "experimental_compile": {
+    "targets": [
+      "loss",
+      "update",
+      "inverse",
+      "newton",
+      "newton3d"
+    ],
+    "research_source_sha256": {
+      "box_filter.py": "9f80ce0dc9f70be349aea024e9c50bb8200c3807080716c11a5157ecf2a0b410",
+      "compare.py": "c9875b1c8b20b78e9a1bad321a80039bb7dd02f4f735a2f7bc5d2df20555c340",
+      "contract_inverse.py": "0c133df021e801d46bd5728ba7eb2f9c7c10d781c5da2eb074e66406deec94bd",
+      "cpu_fast.py": "4ca72f67e340523c568ae34732b56ea955db230915ca41b28b36e18e7b28252b",
+      "cpu_map.py": "350fa4dfd01b787fa77422f5a9018d37a5f6b51982e75305daa25022e2f5d38b",
+      "gradient_filter.py": "c39a18365e804e4e94d772720f87c87d5b5141f4b3b7edfda31333aa9d21698b",
+      "inverse_rsqrt.py": "959e83e2a60953bb1f33919dfe93245347fef4d20b8e40e67339301cd6275a57",
+      "jacobian_direct.py": "e0b9533c3eb3a5fc9197350d48a4aae983940a16d934fd2c274d2d117ff56599",
+      "landemard.py": "7c1fb3470ad8a0436715653f9084cb46183e9b6c313d8865b3e0d126dea48ae8",
+      "maxnorm.py": "d49937b88865e390ef8a757ab636bc88ca5a877f4abf9b2d44047b11c4a98968",
+      "native_sampler.py": "c721a3dc203c2702029b85f74a4430b0a9d6cd3601878cd58384ee4329c00fcc",
+      "newton3d.py": "b73abf46082ccb0cd6b9dacc7c00162f71c79aed0eb0cf220026b45c137bd061",
+      "newton_benchmark.py": "77789af40b890015f3bb285cb36e9c2af80eb1ee1bf7e73425a166468c331146",
+      "newton_inverse.py": "ee53b1e6f64a0d70a06a8f770a6b7c302a16cda4a4c60470b9280c3ccb0daa46",
+      "profile_cpu.py": "24acd170413332120dd4f4e929543bf600cc4140d0a2c4f7ae4cedc6d86b7999",
+      "profile_syn.py": "554d3d13eb3a23b251e9f45b558fd2731c0f78067cd8e5e52e69cfa8268a2209",
+      "qualify_compiled.py": "5a239c8a1beb0170b88f5572a33944609c6fd22d18376cf360256d22664e5a61",
+      "smooth_layout.py": "1bf4bf81156a8f5a2622ad5e23586d4cf8165b1eb26206106ebed36c58555784"
+    },
+    "contract_inverse": false,
+    "smooth_batch": false,
+    "jacobian_direct": false,
+    "inductor_graphs": false,
+    "cpu_fast": false,
+    "cpu_map": false,
+    "maxnorm_squared": false,
+    "box_filter": false,
+    "newton_inverse": false,
+    "newton3d": true,
+    "recompile_limit": 64,
+    "backend": "inductor-native-grid",
+    "gradient32": false,
+    "inverse_rsqrt": false,
+    "dynamic": {
+      "update": null,
+      "other_targets": true
+    },
+    "compile_threads": 1,
+    "emulate_precision_casts": true,
+    "runner_sha256": "554d3d13eb3a23b251e9f45b558fd2731c0f78067cd8e5e52e69cfa8268a2209"
+  },
+  "newton_solver_counts": {
+    "accepted": 6,
+    "fallback": 0,
+    "left_residual": [
+      4.97962784607311e-16,
+      4.833911277628099e-16,
+      4.97962784607311e-16,
+      4.833911277628099e-16,
+      4.97962784607311e-16,
+      4.833911277628099e-16
+    ]
+  },
+  "newton_volume_solver_counts": {
+    "accepted": 12,
+    "fallback": 0,
+    "left_residual": [
+      7.764637506030702e-16,
+      7.764477615055142e-16,
+      7.764637506030702e-16,
+      7.764477615055142e-16,
+      7.764637506030702e-16,
+      7.764477615055142e-16,
+      7.733357710149758e-16,
+      6.519748640473777e-16,
+      7.733357710149758e-16,
+      6.519748640473777e-16,
+      7.733357710149758e-16,
+      6.519748640473777e-16
+    ]
+  }
+}

@@ -1,13 +1,27 @@
 # Registration validation
 
-Current status: **675 tests pass**, including the 585 prior checks, 49 physical
-field checks, 40 SyN/comparison checks and one dense-plotter rejection check.
+Current acceleration checkpoint: **840 tests pass**, with 1,098 existing warnings
+in 135.56 seconds on CPU/CUDA with one CPU thread. The unchanged truth and physical
+point gates, cold/warm costs, preserved failures and actual-wheel checks are in
+[the SyN acceleration report](research/syn/SPEED.md). The production path remains
+eager; experimental compilation is not a new public requirement.
+
+The initial SyN milestone passed **675 tests**, including the 585 prior checks,
+49 physical field checks, 40 SyN/comparison checks and one dense-plotter rejection
+check. Its historical limitations remain:
 Real-workflow qualification has explicit limits. See the
 [package-readiness check](research/linear/READINESS.md) for the shared fixtures, all-model 2D/3D contracts, 20 fresh pair/motion workflow
 arms and eight native atlas fits. The default pair budget still underfits the
 same-subject example, and the fixed-100 float64 motion stress control still fails
 the unchanged CPU/CUDA precision gate. Native atlas precision passes, but
 anatomical correctness is not established by CF agreement or a higher metric.
+
+The latest offline wheel matches all eight source modules and passes **32 actual
+wheel CPU/CUDA checks** across all four models, native 2D/3D and default-off/opt-in
+outputs. The complete experimental Newton recording exports were reloaded and
+verified finite, float32, reference-exact, acquisition-time-exact and calibrated
+to 1e-8 mm; all 11,310 QC rows and captured source hashes were verified. These
+checks do not imply anatomical truth or universal FireANTs parity.
 
 [Symmetric compositive SyN](research/syn/README.md) is now public for native
 2D/3D pairs and recordings, with complete dense forward/inverse pulls, original

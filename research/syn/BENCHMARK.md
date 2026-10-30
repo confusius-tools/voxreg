@@ -6,6 +6,51 @@ benchmarks. Raw measurements, versions and source hashes are in
 the unchanged **0.25 native-pixel RMS physical truth gate**. Voxreg forward and
 inverse CPU/CUDA points pass the unchanged **0.001-pixel maximum** gate.
 
+## Latest default/eager three-way comparison
+
+The `a7e2f45` production checkout was measured again with **all three libraries**,
+without compilation or research patches. CPU thread count is **eight**, including
+the host configuration for CUDA arms. Each arm uses 120 updates, one cold call and
+**two warm repeats**. Raw times, versions, source hashes and every truth result
+are in [three-way-eager-results.json](three-way-eager-results.json).
+
+Warm wall time, seconds (lower is better):
+
+| Case | ITK CPU | FireANTs CPU | voxreg CPU | FireANTs CUDA | voxreg CUDA |
+|---|---:|---:|---:|---:|---:|
+| 2D medium | 1.046 | 0.284 | 0.421 | 0.337 | 0.625 |
+| 3D medium | 10.043 | 4.453 | 3.605 | 0.425 | 1.032 |
+| 3D batch eight | 48.405 | 5.210 | 11.769 | 0.671 | 1.774 |
+
+ITK here is native CPU SyN; there is no ITK CUDA arm. Its eight-volume adapter
+runs frames sequentially with eight ITK threads, not an additional eight-worker
+frame scheduler. These accuracy controls request dense transforms and original
+image resampling; the recording throughput runs separately use transforms off.
+Imports are outside timing; preparation, optimization, output construction and
+resampling are inside. See the output-cost/optimizer differences below.
+
+All truth RMS values pass 0.25 pixels. Medium 3D RMS is **0.079751 / 0.101269 /
+0.100107 pixels** for ITK / FireANTs CPU / voxreg CPU: faster is not identical
+accuracy. The largest voxreg CPU/CUDA point difference in these three cases is
+**0.000083312 pixels**, below the unchanged 0.001-pixel gate.
+
+Thus default voxreg beats ITK on these cases and FireANTs CPU on the single 3D
+pair, but **still loses to FireANTs CUDA and to FireANTs CPU on the batch**. Small
+2D CUDA is also slower than voxreg CPU. No universal parity claim is justified.
+Compiled warm wins and their substantial cold costs are reported separately in
+[SPEED.md](SPEED.md), never substituted into this default-path table.
+
+```bash
+uv run python research/syn/compare.py \
+  --output artifacts/syn-speed/three-way-reproduction \
+  --cases 2d-medium 3d-medium 3d-batch8 \
+  --backends voxreg-cpu voxreg-cuda fireants-cpu fireants-cuda itk \
+  --threads 8 --iterations 120 --repeats 2
+```
+
+The earlier baseline sections below retain their original source state and
+repetition counts; they are not presented as current production measurements.
+
 ## Protocol and boundaries
 
 - Hardware: Core Ultra 9 275HX, RTX 5080 Laptop GPU; Linux, Python 3.14.

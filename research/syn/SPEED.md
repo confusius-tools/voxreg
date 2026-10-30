@@ -167,6 +167,55 @@ The latest eager/default prefix is **20.315 s versus FireANTs 8.930 s**. No
 whole-recording speedup is inferred from that prefix. Details and failures remain
 under `artifacts/syn-speed/{direct-contract*,cpu-map*,inductor-graphs*}`.
 
+## Bounded Newton inverse candidate: qualified, not a compiler default
+
+A separate research solver converts each halfway field to float64 voxel
+coordinates once, evaluates the exact bilinear/trilinear field derivatives, and
+runs twelve bounded Newton updates. It only accepts a finite inverse with a
+left residual at most 1e-10 pixels; otherwise it calls the original solver. The
+right residual, endpoint Jacobians and original-image interpolation remain.
+CPU and differentiable paths retain their existing algorithms.
+
+Both eager and compiled candidate qualification passed **89 controls**, including
+independent two-sided SciPy composition and unchanged CPU/CUDA point gates.
+
+Native CUDA controls, 120 updates, two warm repeats:
+
+| Case | Compiled voxreg warm | FireANTs warm | Voxreg cold registration |
+|---|---:|---:|---:|
+| 2D medium | 0.172 s | 0.342 s | 20.979 s |
+| 3D medium | 0.207 s | 0.420 s | 41.368 s |
+| 3D batch eight | 0.515 s | 0.572 s | 52.331 s |
+
+All truth gates pass. Medium 3D RMS is 0.1001065 pixels versus FireANTs 0.0995142
+and the prior native ITK control 0.0797510. Warm wins do **not** erase the cold
+cost. These cold registrations include compilation and registration; they are
+not isolated compiler timers. Without compilation, this candidate was roughly
+neutral on those native CUDA controls (0.551 / 0.908 / 1.490 s versus the default
+0.548 / 0.895 / 1.492 s). It is not promoted merely from warm compiled timings.
+
+On the **complete 11,310-frame** recording, the compiled candidate took
+**127.118 s versus FireANTs 102.979 s**. It remains **23.4% slower**, not parity.
+Separate two-update warmups were **19.390 / 0.766 s**; adding them gives about
+146.5 / 103.7 s before I/O, shared seed fitting and export. All **710** inverse
+calls (including warmup) passed the residual check without fallback; worst left
+residual was **2.43e-14 pixels**. This is a root residual, not an anatomical or
+between-lattice inverse guarantee. Full exports/QC/provenance are retained in
+`newton-full-01/`.
+
+Smaller batches did not improve it: compiled prefix times at batches 8 / 16 / 32
+were **17.087 / 12.165 / 10.549 s**. Eager batch 16 took 30.610 s versus batch 32's
+19.314 s. No speculative cache-capacity batching heuristic was added. A separate
+float64 `addcmul` fusion candidate passed 203 controls but took 20.413 s on the
+prefix versus the default's 20.315 s; it also remains research-only.
+
+CPU thread count also matters. On medium 3D, default voxreg/FireANTs took
+**3.807 / 4.061 s** with four threads and **4.064 / 4.524 s** with eight. But the
+eight-volume batch remained slower: **14.624 / 7.395 s** and **12.362 / 5.608 s**,
+respectively. At 24 threads medium 3D was 7.766 / 17.018 s, while the batch was
+25.022 / 7.775 s. All truth gates pass; there is no blanket CPU parity claim and
+no library-global thread-setting change.
+
 ## Why low VRAM allocation is not low GPU utilization
 
 Allocated memory measures the live tensor working set, not useful arithmetic,
@@ -278,12 +327,19 @@ checks are retained. Its qualification is separate from the default-path proof.
   unchanged displacement-state smoothing (`gradient32-range-02.log`).
 - Scoped Ruff and `git diff --check` pass. `ty check src` retains the **38**
   baseline diagnostics; it is not a clean type-check claim.
-- Offline wheel/sdist rebuilt under `artifacts/syn-speed/build/`.
+- Latest offline wheel/sdist rebuilt under `artifacts/syn-speed/overnight-package-01/`.
+  All eight wheel modules match the checkout; **32 actual-wheel CPU/CUDA checks**
+  cover all four models, native 2D/3D, double transforms and output-off/opt-in parity.
+- Both complete experimental recording exports passed finite/float32/shape,
+  exact-reference, exact-acquisition-time and 1e-8-mm lattice checks. All 11,310 QC
+  rows are finite; captured library/research source hashes match. Dataset/export
+  hashes are retained in `newton-full-01/validation.json`.
 
 Raw traces/operator tables/timing JSON, source snapshots and preserved failures
 are under `artifacts/syn-speed/`. The runners are `profile_syn.py`,
 `qualify_compiled.py`, and `landemard.py`. The baseline full comparison and its
 source hashes remain under `artifacts/syn-ref20/full-01/`.
 
-No commit/push, vendor patches, public precision-mode knobs, GUI qualification,
+Qualified production milestones were committed separately. No push, vendor
+patches, public precision-mode knobs, GUI qualification,
 or claim of anatomical equivalence/global invertibility is included.

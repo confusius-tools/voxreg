@@ -18,6 +18,10 @@ from voxreg import fields, register, sampling, syn
 
 
 def run(args):
+    research_hashes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(Path(__file__).parent.glob("*.py"))
+    }
     targets = {
         "map": [(sampling, "_map_displacement"), (fields, "_map_displacement")],
         "image": [(sampling, "_sample_displaced")],
@@ -28,6 +32,10 @@ def run(args):
     }
     compiled = {}
     backend_name = getattr(args, "backend", "inductor")
+    graphs = backend_name == "cudagraphs" or getattr(args, "inductor_graphs", False)
+    compile_options = {"compile_threads": 1, "emulate_precision_casts": True}
+    if getattr(args, "inductor_graphs", False):
+        compile_options["triton.cudagraphs"] = True
     if backend_name == "inductor-native-grid":
         from torch._inductor.compile_fx import compile_fx
         from torch._inductor.decomposition import select_decomp_table
@@ -40,12 +48,57 @@ def run(args):
                 graph,
                 inputs,
                 decompositions=decompositions,
-                config_patches={"compile_threads": 1, "emulate_precision_casts": True},
+                config_patches=compile_options,
             )
 
     with ExitStack() as stack:
         if args.compile:
             stack.enter_context(torch._dynamo.config.patch(recompile_limit=64))
+        if getattr(args, "cpu_fast", False):
+            from cpu_fast import patches
+
+            stack.enter_context(patches())
+        if getattr(args, "fused_arithmetic", False):
+            from fused_arithmetic import geometry_map, inverse_update
+
+            stack.enter_context(
+                patch.object(sampling, "_map_displacement", geometry_map)
+            )
+            stack.enter_context(patch.object(fields, "_map_displacement", geometry_map))
+            stack.enter_context(patch.object(fields, "_inverse_update", inverse_update))
+        if getattr(args, "box_filter", False):
+            from box_filter import box_sum
+
+            stack.enter_context(patch.object(syn, "_box_sum", box_sum))
+        if getattr(args, "cpu_map", False):
+            from cpu_map import cpu_map
+
+            stack.enter_context(patch.object(sampling, "_map_displacement", cpu_map))
+            stack.enter_context(patch.object(fields, "_map_displacement", cpu_map))
+        if getattr(args, "jacobian_direct", False):
+            from jacobian_direct import jacobian_direct
+
+            stack.enter_context(
+                patch.object(syn, "jacobian_determinant", jacobian_direct)
+            )
+            stack.enter_context(
+                patch.object(fields, "jacobian_determinant", jacobian_direct)
+            )
+        if getattr(args, "smooth_batch", False):
+            from smooth_layout import batch_smooth
+
+            original_smooth = syn.smooth_field
+
+            def layout_smooth(field, grid, *, sigma):
+                if field.is_cuda and len(grid.shape) == 2:
+                    return batch_smooth(field, grid, sigma=sigma)
+                return original_smooth(field, grid, sigma=sigma)
+
+            stack.enter_context(patch.object(syn, "smooth_field", layout_smooth))
+        if getattr(args, "contract_inverse", False):
+            from contract_inverse import contract_inverse
+
+            stack.enter_context(patch.object(syn, "invert_field", contract_inverse))
         if getattr(args, "gradient32", False):
             from gradient_filter import gradient_filter
 
@@ -54,6 +107,29 @@ def run(args):
             from inverse_rsqrt import inverse_update
 
             stack.enter_context(patch.object(fields, "_inverse_update", inverse_update))
+        if getattr(args, "newton_inverse", False) or getattr(args, "newton3d", False):
+            import newton_inverse
+
+            inverse_module = newton_inverse
+            if getattr(args, "newton3d", False):
+                import newton3d
+
+                inverse_module = newton3d
+            stack.enter_context(
+                patch.object(syn, "_final_inverse", inverse_module.final_inverse)
+            )
+            if args.compile:
+                targets["newton"] = [(newton_inverse, "_newton_update")]
+                args.compile = [*args.compile, "newton"]
+                if getattr(args, "newton3d", False):
+                    targets["newton3d"] = [(newton3d, "_newton_update3d")]
+                    args.compile = [*args.compile, "newton3d"]
+        if getattr(args, "maxnorm_squared", False):
+            from maxnorm import candidate_fields
+
+            stack.enter_context(
+                patch.object(syn, "_candidate_fields", candidate_fields)
+            )
         for name in args.compile:
             for module, attribute in targets[name]:
                 function = getattr(module, attribute)
@@ -78,10 +154,7 @@ def run(args):
                             function,
                             fullgraph=True,
                             dynamic=None if name == "update" else True,
-                            options={
-                                "compile_threads": 1,
-                                "emulate_precision_casts": True,
-                            },
+                            options=compile_options,
                         )
 
                 def cuda_only(
@@ -89,16 +162,16 @@ def run(args):
                     _original=function,
                     _compiled=compiled[function],
                     _phase=name,
-                    _backend=backend,
+                    _graphs=graphs,
                     **kw,
                 ):
                     if not a[0].is_cuda:
                         return _original(*a, **kw)
-                    if _backend == "cudagraphs" and _phase == "update":
+                    if _graphs and _phase == "update":
                         # Backward graph buffers must outlive the next capture.
                         a = (*a[:2], a[2].clone(), a[3].clone(), *a[4:])
                     result = _compiled(*a, **kw)
-                    if _backend == "cudagraphs":
+                    if _graphs:
                         if isinstance(result, torch.Tensor):
                             return result.clone()
                         return tuple(value.clone() for value in result)
@@ -108,13 +181,25 @@ def run(args):
         if args.benchmark:
             from landemard import run as benchmark
 
-            args.batch_size = None
+            args.batch_size = getattr(args, "batch_size", None)
             args.fireants_batch_size = 256
             benchmark(args)
             report_path = args.output / "results.json"
             report = json.loads(report_path.read_text())
             report["experimental_compile"] = {
                 "targets": args.compile,
+                "research_source_sha256": research_hashes,
+                "contract_inverse": getattr(args, "contract_inverse", False),
+                "smooth_batch": getattr(args, "smooth_batch", False),
+                "jacobian_direct": getattr(args, "jacobian_direct", False),
+                "inductor_graphs": getattr(args, "inductor_graphs", False),
+                "cpu_fast": getattr(args, "cpu_fast", False),
+                "cpu_map": getattr(args, "cpu_map", False),
+                "maxnorm_squared": getattr(args, "maxnorm_squared", False),
+                "box_filter": getattr(args, "box_filter", False),
+                "newton_inverse": getattr(args, "newton_inverse", False),
+                "newton3d": getattr(args, "newton3d", False),
+                "fused_arithmetic": getattr(args, "fused_arithmetic", False),
                 "recompile_limit": 64,
                 "backend": backend_name,
                 "gradient32": getattr(args, "gradient32", False),
@@ -130,6 +215,20 @@ def run(args):
                     Path(__file__).read_bytes()
                 ).hexdigest(),
             }
+            if getattr(args, "contract_inverse", False):
+                from contract_inverse import COUNTS
+
+                report["inverse_solver_counts"] = COUNTS
+            if getattr(args, "newton_inverse", False) or getattr(
+                args, "newton3d", False
+            ):
+                from newton_inverse import COUNTS
+
+                report["newton_solver_counts"] = COUNTS
+                if getattr(args, "newton3d", False):
+                    from newton3d import COUNTS
+
+                    report["newton_volume_solver_counts"] = COUNTS
             report_path.write_text(json.dumps(report, indent=2) + "\n")
         else:
             _run(args)
@@ -272,6 +371,18 @@ if __name__ == "__main__":
     parser.add_argument("--benchmark", action="store_true")
     parser.add_argument("--gradient32", action="store_true")
     parser.add_argument("--inverse-rsqrt", action="store_true")
+    parser.add_argument("--contract-inverse", action="store_true")
+    parser.add_argument("--cpu-fast", action="store_true")
+    parser.add_argument("--batch-size", type=int)
+    parser.add_argument("--smooth-batch", action="store_true")
+    parser.add_argument("--inductor-graphs", action="store_true")
+    parser.add_argument("--jacobian-direct", action="store_true")
+    parser.add_argument("--cpu-map", action="store_true")
+    parser.add_argument("--maxnorm-squared", action="store_true")
+    parser.add_argument("--box-filter", action="store_true")
+    parser.add_argument("--newton-inverse", action="store_true")
+    parser.add_argument("--newton3d", action="store_true")
+    parser.add_argument("--fused-arithmetic", action="store_true")
     parser.add_argument(
         "--backend",
         choices=["inductor", "inductor-native-grid", "cudagraphs"],

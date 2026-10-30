@@ -2,7 +2,7 @@
 
 import argparse
 import json
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -57,8 +57,29 @@ if __name__ == "__main__":
         "--cases", nargs="+", default=["2d-medium", "3d-medium", "3d-batch8"]
     )
     parser.add_argument("--backends", nargs="+", default=["voxreg-cpu", "fireants-cpu"])
+    parser.add_argument("--jacobian-direct", action="store_true")
+    parser.add_argument("--contract-inverse", action="store_true")
+    parser.add_argument("--cpu-map", action="store_true")
     args = parser.parse_args()
-    with patches():
+    with ExitStack() as stack:
+        stack.enter_context(patches())
+        if args.cpu_map:
+            from cpu_map import cpu_map
+
+            from voxreg import fields
+
+            stack.enter_context(patch.object(sampling, "_map_displacement", cpu_map))
+            stack.enter_context(patch.object(fields, "_map_displacement", cpu_map))
+        if args.jacobian_direct:
+            from jacobian_direct import jacobian_direct
+
+            stack.enter_context(
+                patch.object(syn, "jacobian_determinant", jacobian_direct)
+            )
+        if args.contract_inverse:
+            from contract_inverse import contract_inverse
+
+            stack.enter_context(patch.object(syn, "invert_field", contract_inverse))
         if args.tests:
             import pytest
 
@@ -80,9 +101,16 @@ if __name__ == "__main__":
         report_path = args.output / "results.json"
         if report_path.exists():
             report = json.loads(report_path.read_text())
+            if args.contract_inverse:
+                from contract_inverse import COUNTS
+
+                report["inverse_solver_counts"] = COUNTS
             report["cpu_experiment"] = {
                 "fitting_sampler": "native-double",
                 "state_filter": "scipy-float64",
                 "production": False,
+                "jacobian_direct": args.jacobian_direct,
+                "contract_inverse": args.contract_inverse,
+                "cpu_map": args.cpu_map,
             }
             report_path.write_text(json.dumps(report, indent=2) + "\n")

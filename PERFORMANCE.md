@@ -11,6 +11,19 @@ see [BENCHMARK.md](BENCHMARK.md) for fresh production time/memory comparisons,
 source hashes and regression gates. Historical prototype timings are retained
 here rather than presented as current benchmark results.
 
+## SyN acceleration checkpoint
+
+[The current SyN report](research/syn/SPEED.md) records qualified eager geometry,
+layout, CPU interpolation/smoothing and inverse improvements. Default single-thread
+CPU controls use 25–37% less time than the original CPU baseline; 840 tests and
+32 actual-wheel CPU/CUDA checks pass without relaxed physical gates.
+
+A separate bounded-Newton compiled experiment beats FireANTs on the warm native
+CUDA controls, but cold registrations cost 21–52 seconds. Its complete recording
+takes 127.118 versus 102.979 seconds plus separate warmups; it is not a default
+compiler requirement or a universal parity claim. Eager-only Newton and fused
+pointwise candidates did not earn production promotion from whole-call timings.
+
 ## Single-pair GPU follow-up
 
 [Measured diagnosis](research/performance/SINGLE-PAIR.md): a small real pair remains
@@ -25,8 +38,8 @@ small fraction of the observed warm call. Dtype and stopping policies are unchan
 [DTYPE.md](research/performance/DTYPE.md) records the dtype-preserving output
 contract and the small eager NCC cleanup now in production, with a fresh full
 backend time/memory comparison. Float32 fitting candidates fail existing
-CPU/CUDA gates, so mixed computation precision is retained. The package review
-keeps the four-module runtime and adds no compiler/precision/backend framework.
+CPU/CUDA gates, so mixed computation precision is retained. That historical package review
+kept the four-module runtime and added no compiler/precision/backend framework.
 Earlier CPU/NCC experiments below are historical evidence.
 
 ## CPU follow-up after the sampler rewrite

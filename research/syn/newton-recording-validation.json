@@ -1,0 +1,36 @@
+{
+  "source_sha256": "52207810b8fc1c6649cd153a0c9439c612a8677c97990c8aaaa32dcbed574dbe",
+  "qc_rows": 11310,
+  "qc_finite": true,
+  "source_provenance_verified": true,
+  "exports": {
+    "voxreg": {
+      "sha256": "d5c3516ca1c81d0917ff632f2da7735eb4309f0d8bfbb7e7db7ba892fd6590ce",
+      "shape": [
+        11310,
+        1,
+        145,
+        80
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "reference_exact": true,
+      "times_exact": true,
+      "lattice_tolerance_mm": 1e-08
+    },
+    "fireants": {
+      "sha256": "7545f5794ced2a3a45528c4a36e453bc9b2761eeef103ce291d6fd11351a6b6f",
+      "shape": [
+        11310,
+        1,
+        145,
+        80
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "reference_exact": true,
+      "times_exact": true,
+      "lattice_tolerance_mm": 1e-08
+    }
+  }
+}
