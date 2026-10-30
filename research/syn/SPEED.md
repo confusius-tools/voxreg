@@ -173,6 +173,15 @@ The latest eager/default prefix is **20.315 s versus FireANTs 8.930 s**. No
 whole-recording speedup is inferred from that prefix. Details and failures remain
 under `artifacts/syn-speed/{direct-contract*,cpu-map*,inductor-graphs*}`.
 
+## CPU smoothing precision follow-up
+
+[CPU-SMOOTHING.md](CPU-SMOOTHING.md) isolates Torch float64, float32 gradient
+filtering and float32 filtering of both gradients/states. Each candidate passes
+85 unchanged registration controls, plus 51 independent filter checks. Larger
+CPU workloads show promise, but small 2D calls regress; the laptop was observed
+on battery and reference timings varied. No production precision/backend or cap
+change was made from these exploratory timings.
+
 ## Dense coordinate reorder follow-up
 
 The eight-thread CPU batch profile attributed 6.83% self time to 40 generic
