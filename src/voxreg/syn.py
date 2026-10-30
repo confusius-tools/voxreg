@@ -15,6 +15,7 @@ from confusius._utils.progress import progress_bar
 
 from voxreg.convergence import WindowConvergence
 from voxreg.fields import (
+    _contracted_cpu_inverse,
     _pixel_norm,
     compose_fields,
     invert_field,
@@ -106,6 +107,18 @@ def _candidate_fields(uf, um, gf, gm, grid, learning_rate, update_sigma, total_s
             & (determinant.flatten(1).amin(dim=1) > 0)
         )
     return candidates[0], candidates[1], admissible
+
+
+def _final_inverse(field, grid):
+    if (
+        field.device.type == "cpu"
+        and not field.requires_grad
+        and not torch.compiler.is_compiling()
+    ):
+        contracted = _contracted_cpu_inverse(field, grid, 80)
+        if contracted is not None:
+            return contracted
+    return invert_field(field, grid, iterations=80)
 
 
 def _fit(
@@ -210,8 +223,8 @@ def _fit(
     if metric_callback is not None and iteration < max_iterations:
         metric_callback(steps, torch.where(good, loss.detach(), torch.nan))
     with torch.no_grad():
-        fi, _ = invert_field(bf, grid, iterations=80)
-        mi, _ = invert_field(bm, grid, iterations=80)
+        fi, _ = _final_inverse(bf, grid)
+        mi, _ = _final_inverse(bm, grid)
         forward = compose_fields(bm, fi, grid)
         inverse = compose_fields(bf, mi, grid)
         determinant = jacobian_determinant(forward, grid)

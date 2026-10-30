@@ -6,7 +6,7 @@ basis. These are field operations, not yet a public registration model.
 """
 
 from dataclasses import dataclass
-from math import isfinite
+from math import ceil, isfinite, log
 
 import numpy as np
 import torch
@@ -187,6 +187,40 @@ def _inverse_update(field, inverse, grid, damping):
     )
 
 
+def _contracted_cpu_inverse(field, grid, iterations):
+    """Use fewer fixed-point updates only when a voxel-space bound certifies them."""
+    voxels = _map_displacement(
+        grid.inverse_lattice[None], field, grid.voxel_axes
+    ).movedim(-1, 1)
+    row_bound = voxels.new_zeros(field.shape[:2])
+    for axis in range(len(grid.shape)):
+        row_bound += voxels.diff(dim=axis + 2).abs().flatten(2).amax(2)
+    kappa = float(row_bound.amax())
+    amplitude = float(voxels.abs().amax())
+    if not (isfinite(kappa) and isfinite(amplitude) and kappa < 1):
+        return None
+    if torch.where(grid.boundary, field, 0).any():
+        return None
+    # From -u, the inverse error is at most 2*amplitude*kappa**count.
+    if 2 * amplitude <= 1e-12:
+        count = 0
+    elif kappa == 0:
+        count = 1
+    else:
+        count = max(1, ceil(log(1e-12 / (2 * amplitude)) / log(kappa)))
+    if count >= iterations:
+        return None
+    inverse = -field.clone()
+    for _ in range(count):
+        inverse = -_sample_field(field, inverse, grid)
+    inverse = inverse.masked_fill(grid.boundary, 0)
+    left = _pixel_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(1)
+    if not (left <= 1e-10).all():
+        return None
+    right = _pixel_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(1)
+    return inverse, torch.maximum(left, right)
+
+
 def invert_field(
     field: torch.Tensor,
     grid: FieldGrid,
@@ -243,6 +277,16 @@ def jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
         .reshape(field.shape[0], field.shape[1], *grid.shape, len(grid.shape))
         .movedim(1, -2)
     )
-    return torch.linalg.det(
-        physical + torch.eye(len(grid.shape), dtype=field.dtype, device=field.device)
-    )
+    # Explicit small determinants avoid per-voxel LU workspaces.
+    a = physical[..., 0, 0] + 1
+    b = physical[..., 0, 1]
+    d = physical[..., 1, 0]
+    e = physical[..., 1, 1] + 1
+    if len(grid.shape) == 2:
+        return a * e - b * d
+    c = physical[..., 0, 2]
+    f = physical[..., 1, 2]
+    g = physical[..., 2, 0]
+    h = physical[..., 2, 1]
+    i = physical[..., 2, 2] + 1
+    return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)

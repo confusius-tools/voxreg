@@ -226,6 +226,78 @@ def test_identity_inverse_does_not_couple_to_other_frames(
 
 
 @pytest.mark.parametrize("planar", [False, True])
+def test_cpu_inverse_certificate_preserves_residual_checks(
+    displacement_factory, monkeypatch, planar
+):
+    from voxreg import fields
+    from voxreg.syn import _final_inverse
+
+    data, _, _, values = displacement_factory(planar)
+    grid = make_field_grid(data)
+    field = torch.tensor(values * 0.01)
+    expected, _ = invert_field(
+        field, grid, iterations=80, initial=torch.zeros_like(field)
+    )
+    original = fields._inverse_update
+    calls = []
+
+    def observed(*args):
+        calls.append(1)
+        return original(*args)
+
+    monkeypatch.setattr(fields, "_inverse_update", observed)
+    inverse, error = _final_inverse(field, grid)
+    assert not calls
+    pixels = np.einsum(
+        "ij,bj...->bi...", grid.inverse_lattice.numpy(), (inverse - expected).numpy()
+    )
+    assert np.linalg.norm(pixels, axis=1).max() < 1e-9
+    left = (
+        fields._pixel_norm(compose_fields(field, inverse, grid), grid)
+        .flatten(1)
+        .amax(1)
+    )
+    right = (
+        fields._pixel_norm(compose_fields(inverse, field, grid), grid)
+        .flatten(1)
+        .amax(1)
+    )
+    assert_array_equal(error, torch.maximum(left, right))
+    assert (left < 1e-10).all()
+
+
+@pytest.mark.parametrize("planar", [False, True])
+@pytest.mark.parametrize("reason", ["boundary", "gradient", "noncontractive"])
+def test_cpu_inverse_preserves_original_fallback(
+    displacement_factory, monkeypatch, planar, reason
+):
+    from voxreg import fields
+    from voxreg.syn import _final_inverse
+
+    data, _, _, values = displacement_factory(planar, strided=True)
+    grid = make_field_grid(data)
+    field = torch.tensor(values * (100 if reason == "noncontractive" else 0.01))
+    if reason == "boundary":
+        field[:, :, 0] = 0.001
+    if reason == "gradient":
+        field.requires_grad_()
+    original = fields._inverse_update
+    calls = []
+
+    def observed(*args):
+        calls.append(1)
+        return original(*args)
+
+    monkeypatch.setattr(fields, "_inverse_update", observed)
+    inverse, error = _final_inverse(field, grid)
+    assert len(calls) == 80
+    assert torch.isfinite(inverse).all() and torch.isfinite(error).all()
+    if reason == "gradient":
+        inverse.sum().backward()
+        assert torch.isfinite(field.grad).all()
+
+
+@pytest.mark.parametrize("planar", [False, True])
 def test_field_geometry_ignores_absolute_world_origin(
     displacement_factory, device, planar
 ):
