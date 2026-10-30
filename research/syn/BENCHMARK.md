@@ -22,6 +22,14 @@ Warm wall time, seconds (lower is better):
 | 3D medium | 10.043 | 4.453 | 3.605 | 0.425 | 1.032 |
 | 3D batch eight | 48.405 | 5.210 | 11.769 | 0.671 | 1.774 |
 
+The subsequent small coordinate-reorder/smoothing-buffer changes were measured
+separately at the same thread/update settings: voxreg CPU/CUDA is now
+**0.412 / 0.613 s**, **3.354 / 0.991 s**, and **10.582 / 1.531 s** on these cases.
+All truth/point gates pass; reference arms were not rerun for that isolated
+follow-up. See [layout-eager-results.json](layout-eager-results.json) and
+[SPEED.md](SPEED.md). The table above remains the last complete three-way run,
+not a mixture of rows silently taken from different runs.
+
 ITK here is native CPU SyN; there is no ITK CUDA arm. Its eight-volume adapter
 runs frames sequentially with eight ITK threads, not an additional eight-worker
 frame scheduler. These accuracy controls request dense transforms and original

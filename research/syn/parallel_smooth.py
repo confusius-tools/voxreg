@@ -1,11 +1,13 @@
 """Measure independent CPU frame filters with a bounded, scoped thread pool."""
 
 import argparse
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 from time import perf_counter
+from unittest.mock import patch
 
 import confusius as cf
 import numpy as np
@@ -25,13 +27,62 @@ def parallel_smooth(field, grid, *, sigma, pool):
                 axes=tuple(range(1, field.ndim - 1)),
                 mode="nearest",
             ),
-            field.numpy(),
+            field.detach().numpy(),
         )
     )
     return torch.from_numpy(np.stack(values)).masked_fill(grid.boundary, 0)
 
 
+def threaded_smooth(field, grid, *, sigma):
+    if (
+        field.device.type != "cpu"
+        or len(grid.shape) != 3
+        or len(field) < 2
+        or torch.get_num_threads() < 2
+        or sigma <= 0
+        or not np.isfinite(sigma)
+        or (torch.is_grad_enabled() and field.requires_grad)
+    ):
+        return smooth_field(field, grid, sigma=sigma)
+    from voxreg.fields import _check_field
+
+    _check_field(field, grid)
+    with ThreadPoolExecutor(
+        max_workers=min(len(field), torch.get_num_threads())
+    ) as pool:
+        return parallel_smooth(field, grid, sigma=sigma, pool=pool)
+
+
+def benchmark(args):
+    from compare import run as compare
+
+    from voxreg import fields, syn
+
+    args.backends = ["voxreg-cpu", "fireants-cpu"]
+    args.iterations = 120
+    with (
+        patch.object(fields, "smooth_field", threaded_smooth),
+        patch.object(syn, "smooth_field", threaded_smooth),
+    ):
+        compare(args)
+    path = args.output / "results.json"
+    report = json.loads(path.read_text())
+    report["parallel_smoothing"] = {
+        "pool_lifetime": "one filter call",
+        "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    }
+    path.write_text(json.dumps(report, indent=2) + "\n")
+    assert all(
+        arm.get("truth_gate_pass")
+        for case in report["cases"].values()
+        for arm in case["backends"].values()
+    )
+
+
 def run(args):
+    if args.benchmark:
+        benchmark(args)
+        return
     args.output.mkdir(parents=True, exist_ok=False)
     torch.set_num_threads(args.threads)
     rows = []
@@ -91,5 +142,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--threads", type=int, default=8)
-    parser.add_argument("--repeats", type=int, default=20)
-    run(parser.parse_args())
+    parser.add_argument("--repeats", type=int)
+    parser.add_argument("--benchmark", action="store_true")
+    parser.add_argument(
+        "--cases",
+        nargs="+",
+        choices=["2d-medium", "3d-medium", "3d-batch8"],
+        default=["3d-medium", "3d-batch8"],
+    )
+    args = parser.parse_args()
+    if args.repeats is None:
+        args.repeats = 2 if args.benchmark else 20
+    run(args)

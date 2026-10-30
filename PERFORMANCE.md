@@ -15,7 +15,7 @@ here rather than presented as current benchmark results.
 
 [The current SyN report](research/syn/SPEED.md) records qualified eager geometry,
 layout, CPU interpolation/smoothing and inverse improvements. Default single-thread
-CPU controls use 25–37% less time than the original CPU baseline; 840 tests and
+CPU controls use 25–37% less time than the original CPU baseline; 847 tests and
 32 actual-wheel CPU/CUDA checks pass without relaxed physical gates.
 
 A separate bounded-Newton compiled experiment beats FireANTs on the warm native

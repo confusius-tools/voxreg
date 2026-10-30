@@ -141,7 +141,8 @@ def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch
             axes=tuple(range(2, field.ndim)),
             mode="nearest",
         )
-        return torch.from_numpy(values).masked_fill(grid.boundary, 0)
+        # SciPy allocated a fresh output, so boundary masking need not copy it.
+        return torch.from_numpy(values).masked_fill_(grid.boundary, 0)
     radius = int(3 * sigma + 0.5)
     positions = torch.arange(
         -radius, radius + 1, dtype=field.dtype, device=field.device
@@ -150,20 +151,21 @@ def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch
     kernel = kernel / kernel.sum()
     dimensions = len(grid.shape)
     convolution = F.conv2d if dimensions == 2 else F.conv3d
-    result = field
+    channels = 1 if field.is_cuda and dimensions == 2 else dimensions
+    result = field.reshape(-1, 1, *grid.shape) if channels == 1 else field
     for axis in range(dimensions):
         shape = [1] * dimensions
         shape[axis] = len(kernel)
-        weights = kernel.reshape(1, 1, *shape).expand(dimensions, 1, *shape)
+        weights = kernel.reshape(1, 1, *shape).expand(channels, 1, *shape)
         padding = [0] * (2 * dimensions)
         padding[2 * (dimensions - axis - 1) : 2 * (dimensions - axis)] = [
             radius,
             radius,
         ]
         result = convolution(
-            F.pad(result, padding, mode="replicate"), weights, groups=dimensions
+            F.pad(result, padding, mode="replicate"), weights, groups=channels
         )
-    return result.masked_fill(grid.boundary, 0)
+    return result.reshape_as(field).masked_fill(grid.boundary, 0)
 
 
 def _pixel_norm(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:

@@ -120,7 +120,7 @@ is unsnapped with double weights. The legacy linear sampler remains unchanged.
 
 ## Proof, preserved failures and limits
 
-The current acceleration checkpoint passes **840 tests**, with **32 actual-wheel
+The current acceleration checkpoint passes **847 tests**, with **32 actual-wheel
 CPU/CUDA API checks**; see [SPEED.md](SPEED.md) for default versus experimental
 paths, full-recording timings and cold compilation costs. The initial milestone
 passed 675 tests: 585 previous checks, 49 field checks, 40 SyN/comparison checks,

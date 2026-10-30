@@ -32,6 +32,9 @@ The default/eager checkout has these qualified changes:
 8. Reverse dense coordinate components with `flip`, not advanced indexing.
    This removes generic index-scatter backward work while preserving component
    values and gradients; planar queries first exclude the normal component.
+9. Enforce CPU Gaussian boundaries in its fresh output buffer, avoiding a clone.
+   On CUDA **2D only**, filter independent components as batch entries; 3D keeps
+   grouped filtering because channel-as-batch was substantially slower there.
 
 All coordinates, displacement states, field operations and CC statistics remain
 float64. Fitting image samples remain float32; final interpolation remains genuine
@@ -187,6 +190,28 @@ CPU/CUDA point gates pass. Raw results are in `reorder-eager-results.json`.
 Reference-library rows from the preceding three-way comparison were not rerun
 for this isolated change.
 
+## Smoothing buffer/layout follow-up
+
+The next small checkpoint passes **847 tests**, 1,098 warnings, in 129.58 seconds
+(`smoothing-core-full-suite-01.log`). CPU Gaussian outputs remain independent of
+the input; CPU/GPU gradient, SciPy boundary and physical-point gates pass.
+Native warm voxreg CPU/CUDA times are **0.412 / 0.613 s**, **3.354 / 0.991 s**,
+and **10.582 / 1.531 s** for 2D / 3D / batch eight at eight CPU threads
+(`layout-eager-results.json`). Compared with the original latest three-way
+checkout, the cumulative dense-reorder/buffer changes save about **10% CPU and
+14% CUDA time** on the batch.
+
+For the larger recording grid, a baseline/layout/baseline sequence measured
+**24.056 / 23.474 / 24.119 s** on the 1,024-frame prefix (FireANTs
+10.419 / 10.456 / 10.475 s). The new default measured **23.550 / 10.501 s**
+voxreg/FireANTs (`layout-prefix-results.json`). These are small gains, not parity;
+absolute timings vary with the machine's thermal/power state.
+
+A scoped SciPy thread-pool candidate passed seven exact independent controls and
+sped up some isolated 3D filters, but did not establish a convincing whole-call
+win (3.754 s single 3D / 11.030 s batch). It remains research-only; the library
+does not create a global thread pool or change the user's Torch thread count.
+
 ## Bounded Newton inverse candidate: qualified, not a compiler default
 
 A separate research solver converts each halfway field to float64 voxel
@@ -325,6 +350,8 @@ checks are retained. Its qualification is separate from the default-path proof.
 
 ## Verification and evidence
 
+- Final smoothing/layout checkout: **847 passed**, 1,098 warnings, 129.58 s
+  (`smoothing-core-full-suite-01.log`), including seven threaded-candidate controls.
 - Contiguous CPU-GEMM checkout: **840 passed**, 1098 existing warnings, 135.56 s
   (`cpu-map-core-full-suite-01.log`), including expanded independent matrix/field
   broadcast controls and four Newton inverse research controls.
@@ -347,7 +374,10 @@ checks are retained. Its qualification is separate from the default-path proof.
   unchanged displacement-state smoothing (`gradient32-range-02.log`).
 - Scoped Ruff and `git diff --check` pass. `ty check src` retains the **38**
   baseline diagnostics; it is not a clean type-check claim.
-- Latest offline wheel/sdist rebuilt under `artifacts/syn-speed/overnight-package-01/`.
+- Latest native-grid/Newton compiled qualification: **89 passed**, 23 warnings,
+  222.77 s (`final-compiled-qualification-01.log`); the seven additional warnings
+  are Triton's Python-AST deprecation for future Python 3.15, not numerical failures.
+- Latest offline wheel/sdist rebuilt under `artifacts/syn-speed/final-package-01/`.
   All eight wheel modules match the checkout; **32 actual-wheel CPU/CUDA checks**
   cover all four models, native 2D/3D, double transforms and output-off/opt-in parity.
 - Both complete experimental recording exports passed finite/float32/shape,

@@ -1,0 +1,116 @@
+{
+  "source": "/home/sdiebolt/.cache/confusius/landemard-2026-bids/1.0.0/sub-ALD001/fusi/sub-ALD001_task-awake_acq-ref20_pwd.nii.gz",
+  "shape": [
+    1024,
+    1,
+    145,
+    80
+  ],
+  "iterations": 100,
+  "voxreg_batch_size_override": null,
+  "fireants_batch_size": 256,
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "versions": {
+    "voxreg": "0.1.0",
+    "torch": "2.14.1",
+    "fireants": "1.5.1",
+    "numpy": "2.5.4",
+    "confusius": "0.8.0"
+  },
+  "fireants_fused": false,
+  "source_sha256": {
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/fields.py": "c7764c780dcd79704d0c6f9f89473aadaf2ca1ff636452d5ed3b65dbe742e17d",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "f6f3b46f11439b4ec0114d2dd11fb23de12480d8c34d961761ea21b49276ff78",
+    "src/voxreg/sampling.py": "e59555fd9e62ba7d4c60384fa6930fbf4c054f874ac90f36a04991ed60f007a6",
+    "src/voxreg/syn.py": "a366178274c31bb074a7dc81ac4d7adcdee1f48a73410afe47b96d6b2ed7bfc4",
+    "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/research/syn/landemard.py": "7c1fb3470ad8a0436715653f9084cb46183e9b6c313d8865b3e0d126dea48ae8",
+    "/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg/research/syn/compare.py": "c9875b1c8b20b78e9a1bad321a80039bb7dd02f4f735a2f7bc5d2df20555c340"
+  },
+  "notes": "Same original float32 images/reference, dB preprocessing, shared per-frame affine seeds, single resolution, radius-2 CC, sigma 1.5/0.5 voxels, nominal learning rate 0.1 and fixed update budget. Voxreg uses float64 state/compositive GD/best halfway pose; FireANTs uses native float32/Adam. No dense CPU outputs. FireANTs has no internal recording batch option, so its public API is called per batch. Original-power bilinear output/support/minimum fill included; voxreg also computes inverse/regularity diagnostics. Imports, dataset loading, shared seed fitting, QC and disk export excluded from SyN timing. No anatomical oracle. CPU RSS is whole-process high-water mark, not a per-backend allocation measurement.",
+  "backends": {
+    "voxreg": {
+      "seconds": 23.550110101001337,
+      "allocated_peak_bytes": 385276928,
+      "reserved_peak_bytes": 459276288,
+      "batch_size": 32,
+      "status_counts": {
+        "max_iterations": 1023,
+        "reference": 1
+      },
+      "stage_seconds": {
+        "prepare": 0.06635980900318827,
+        "upload": 0.005624262979836203,
+        "optimize": 23.37040380598046,
+        "resample_download": 0.09099274702020921
+      },
+      "median_pearson_r_db_excluding_reference": 0.9852534177048183
+    },
+    "fireants": {
+      "seconds": 10.500637082004687,
+      "allocated_peak_bytes": 736186368,
+      "reserved_peak_bytes": 1086324736,
+      "median_pearson_r_db_excluding_reference": 0.9859305790626195
+    }
+  },
+  "prealignment_seconds": {
+    "rigid": 2.3030234890029533,
+    "affine": 1.9412223390099825
+  },
+  "process_peak_rss_bytes": 3010674688,
+  "warmup_seconds": {
+    "voxreg": 0.3720901620108634,
+    "fireants": 0.5013222410052549
+  },
+  "raw_median_pearson_r_db_excluding_reference": 0.9772964052334157,
+  "experimental_compile": {
+    "targets": [],
+    "research_source_sha256": {
+      "box_filter.py": "9f80ce0dc9f70be349aea024e9c50bb8200c3807080716c11a5157ecf2a0b410",
+      "compare.py": "c9875b1c8b20b78e9a1bad321a80039bb7dd02f4f735a2f7bc5d2df20555c340",
+      "contract_inverse.py": "0c133df021e801d46bd5728ba7eb2f9c7c10d781c5da2eb074e66406deec94bd",
+      "cpu_fast.py": "4ca72f67e340523c568ae34732b56ea955db230915ca41b28b36e18e7b28252b",
+      "cpu_map.py": "350fa4dfd01b787fa77422f5a9018d37a5f6b51982e75305daa25022e2f5d38b",
+      "fused_arithmetic.py": "d2f607a3cc0db28b63cd192dabcfc226bd3be448f0854780c639db07dfa7e5d6",
+      "gradient_filter.py": "c39a18365e804e4e94d772720f87c87d5b5141f4b3b7edfda31333aa9d21698b",
+      "inverse_rsqrt.py": "959e83e2a60953bb1f33919dfe93245347fef4d20b8e40e67339301cd6275a57",
+      "jacobian_direct.py": "e0b9533c3eb3a5fc9197350d48a4aae983940a16d934fd2c274d2d117ff56599",
+      "landemard.py": "7c1fb3470ad8a0436715653f9084cb46183e9b6c313d8865b3e0d126dea48ae8",
+      "maxnorm.py": "d49937b88865e390ef8a757ab636bc88ca5a877f4abf9b2d44047b11c4a98968",
+      "native_sampler.py": "c721a3dc203c2702029b85f74a4430b0a9d6cd3601878cd58384ee4329c00fcc",
+      "newton3d.py": "b73abf46082ccb0cd6b9dacc7c00162f71c79aed0eb0cf220026b45c137bd061",
+      "newton_benchmark.py": "77789af40b890015f3bb285cb36e9c2af80eb1ee1bf7e73425a166468c331146",
+      "newton_inverse.py": "ee53b1e6f64a0d70a06a8f770a6b7c302a16cda4a4c60470b9280c3ccb0daa46",
+      "parallel_smooth.py": "3c450e5e47c9eaf81764c9260164d22b58987babb9147fc2469732c4420fcb0c",
+      "profile_cpu.py": "24acd170413332120dd4f4e929543bf600cc4140d0a2c4f7ae4cedc6d86b7999",
+      "profile_syn.py": "8eda438d0d68cd90773defd4663a50cd3747911a8adafcb60cc6ad6ef3be8379",
+      "qualify_compiled.py": "918858b6477fd9299e56b5f610148986515806759200e581afc2b43993dea59f",
+      "smooth_layout.py": "1bf4bf81156a8f5a2622ad5e23586d4cf8165b1eb26206106ebed36c58555784"
+    },
+    "contract_inverse": false,
+    "smooth_batch": false,
+    "jacobian_direct": false,
+    "inductor_graphs": false,
+    "cpu_fast": false,
+    "cpu_map": false,
+    "maxnorm_squared": false,
+    "box_filter": false,
+    "newton_inverse": false,
+    "newton3d": false,
+    "fused_arithmetic": false,
+    "recompile_limit": 64,
+    "backend": "inductor",
+    "gradient32": false,
+    "inverse_rsqrt": false,
+    "dynamic": {
+      "update": null,
+      "other_targets": true
+    },
+    "compile_threads": 1,
+    "emulate_precision_casts": true,
+    "runner_sha256": "8eda438d0d68cd90773defd4663a50cd3747911a8adafcb60cc6ad6ef3be8379"
+  }
+}

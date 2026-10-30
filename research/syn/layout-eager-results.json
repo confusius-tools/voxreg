@@ -1,0 +1,295 @@
+{
+  "versions": {
+    "voxreg": "0.1.0",
+    "torch": "2.14.1",
+    "itk": "5.4.7",
+    "fireants": "1.5.1",
+    "numpy": "2.5.4"
+  },
+  "python": "3.14.8",
+  "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "fireants_fused": false,
+  "iterations": 120,
+  "repeats": 2,
+  "cpu_threads": 8,
+  "cases": {
+    "2d-medium": {
+      "shape": [
+        1,
+        64,
+        80
+      ],
+      "frames": 1,
+      "provenance": null,
+      "backends": {
+        "voxreg-cpu": {
+          "ncc_squared": [
+            0.9875392466775746
+          ],
+          "min_residual_jacobian": [
+            0.8844192607782019
+          ],
+          "truth_rms_px": [
+            0.07618182557197298
+          ],
+          "truth_max_px": [
+            0.18958231426118646
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 0.40675568699953146,
+          "warm_seconds": [
+            0.4106590449955547,
+            0.4129973230010364
+          ],
+          "warm_median_seconds": 0.41182818399829557,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.07627469333968921
+          ]
+        },
+        "voxreg-cuda": {
+          "ncc_squared": [
+            0.9875392462355163
+          ],
+          "min_residual_jacobian": [
+            0.8844193381890895
+          ],
+          "truth_rms_px": [
+            0.07618181547387505
+          ],
+          "truth_max_px": [
+            0.18958246425549083
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 1.201476876012748,
+          "warm_seconds": [
+            0.6115979390015127,
+            0.6140486009971937
+          ],
+          "warm_median_seconds": 0.6128232699993532,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.07627468264964726
+          ]
+        }
+      },
+      "cpu_cuda_max_point_px": 4.963697937744213e-07,
+      "precision_gate_pass": true
+    },
+    "3d-medium": {
+      "shape": [
+        32,
+        40,
+        48
+      ],
+      "frames": 1,
+      "provenance": null,
+      "backends": {
+        "voxreg-cpu": {
+          "ncc_squared": [
+            0.9805606159887106
+          ],
+          "min_residual_jacobian": [
+            0.7566134062538659
+          ],
+          "truth_rms_px": [
+            0.10010696724321616
+          ],
+          "truth_max_px": [
+            0.40176390592928507
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 3.407104323996464,
+          "warm_seconds": [
+            3.355195890995674,
+            3.352727926001535
+          ],
+          "warm_median_seconds": 3.3539619084986043,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.10044217882498489
+          ]
+        },
+        "voxreg-cuda": {
+          "ncc_squared": [
+            0.9805605800715627
+          ],
+          "min_residual_jacobian": [
+            0.7566141333553202
+          ],
+          "truth_rms_px": [
+            0.10010722714814885
+          ],
+          "truth_max_px": [
+            0.4017641989653546
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 0.9962459100061096,
+          "warm_seconds": [
+            0.9911618629994337,
+            0.9911777620000066
+          ],
+          "warm_median_seconds": 0.9911698124997201,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.10044236295263732
+          ]
+        }
+      },
+      "cpu_cuda_max_point_px": 8.331158881769115e-05,
+      "precision_gate_pass": true
+    },
+    "3d-batch8": {
+      "shape": [
+        32,
+        32,
+        32
+      ],
+      "frames": 8,
+      "provenance": null,
+      "backends": {
+        "voxreg-cpu": {
+          "ncc_squared": [
+            0.9838492496469463,
+            0.9835655739514906,
+            0.9828742082496592,
+            0.982462192580068,
+            0.9821184576491663,
+            0.9818111901188856,
+            0.9815575715700315,
+            0.9813180125616267
+          ],
+          "min_residual_jacobian": [
+            0.8131383903425526,
+            0.7971945489276194,
+            0.7897678844868903,
+            0.7781429077710286,
+            0.7503810035373725,
+            0.7515381798257641,
+            0.7375806581403287,
+            0.699152938507698
+          ],
+          "truth_rms_px": [
+            0.06247284926064599,
+            0.06108010964363371,
+            0.064393025290633,
+            0.06515625235433482,
+            0.0698228926652573,
+            0.06773732130745781,
+            0.07048634553160621,
+            0.0763048337557701
+          ],
+          "truth_max_px": [
+            0.16209604661224186,
+            0.17581386441900115,
+            0.17868756030439237,
+            0.18129307248636445,
+            0.2645970284498563,
+            0.17263755768946157,
+            0.23815255104859026,
+            0.2866874550027905
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 10.41286755198962,
+          "warm_seconds": [
+            10.559277431006194,
+            10.6050364630064
+          ],
+          "warm_median_seconds": 10.582156947006297,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.06273288319291657,
+            0.061492172913490656,
+            0.06462379038968354,
+            0.06536539439656124,
+            0.07019332616543603,
+            0.06798013084609932,
+            0.07066927340671522,
+            0.07664792553747436
+          ]
+        },
+        "voxreg-cuda": {
+          "ncc_squared": [
+            0.9838492503940242,
+            0.9835656148861688,
+            0.9828742087388668,
+            0.9824621913453926,
+            0.9821184582288626,
+            0.9818112457831392,
+            0.9815575578664425,
+            0.9813180384377522
+          ],
+          "min_residual_jacobian": [
+            0.8131383612574324,
+            0.797194917195354,
+            0.7897679395246906,
+            0.7781429254667686,
+            0.7503808153235596,
+            0.7515382664676058,
+            0.7375791321273951,
+            0.6991524918821318
+          ],
+          "truth_rms_px": [
+            0.0624728408544377,
+            0.06107965497335162,
+            0.06439302043720767,
+            0.06515626265637522,
+            0.06982296111802479,
+            0.0677368818218831,
+            0.07048643678201938,
+            0.07630456202228875
+          ],
+          "truth_max_px": [
+            0.16209592446995708,
+            0.1758143629256286,
+            0.17868761163793276,
+            0.18129297110521755,
+            0.26459741314219065,
+            0.1726102081864872,
+            0.23815277082586273,
+            0.2866867065308463
+          ],
+          "truth_gate_pass": true,
+          "cold_seconds": 1.5211666410032194,
+          "warm_seconds": [
+            1.5490165399969555,
+            1.5128733009914868
+          ],
+          "warm_median_seconds": 1.5309449204942212,
+          "repeat_max_world_mm": 0.0,
+          "finite": true,
+          "inverse_truth_rms_px": [
+            0.06273287414365748,
+            0.06149172377796293,
+            0.06462378564698712,
+            0.06536540371035736,
+            0.07019341172984349,
+            0.06797971593819785,
+            0.07066934416104487,
+            0.07664771955847524
+          ]
+        }
+      },
+      "cpu_cuda_max_point_px": 5.790708204927406e-05,
+      "precision_gate_pass": true
+    }
+  },
+  "source_sha256": {
+    "src/voxreg/__init__.py": "f70fb3e3fa37c4662d441a126b8b886a50e8184248f5a2a649efa4721b3d317b",
+    "src/voxreg/convergence.py": "95287d7fa8f9d6a35b50ef840c11ab67fe6e4c69718a472b727845483853c4d4",
+    "src/voxreg/fields.py": "c7764c780dcd79704d0c6f9f89473aadaf2ca1ff636452d5ed3b65dbe742e17d",
+    "src/voxreg/geometry.py": "1d23d3bc0972153e37a589ae18b76327b7b5062110dfa228a3cf9dcd1573e680",
+    "src/voxreg/rigid.py": "f6f3b46f11439b4ec0114d2dd11fb23de12480d8c34d961761ea21b49276ff78",
+    "src/voxreg/sampling.py": "e59555fd9e62ba7d4c60384fa6930fbf4c054f874ac90f36a04991ed60f007a6",
+    "src/voxreg/syn.py": "a366178274c31bb074a7dc81ac4d7adcdee1f48a73410afe47b96d6b2ed7bfc4",
+    "src/voxreg/transforms.py": "b0dd2ad526c86e160793aa91aa9ff476385689e72202f765fbb42fbbb328cf8d",
+    "tests/conftest.py": "6baee74601d74c57cdcabdbb8eeb8fad846a242aae1f0b9502d0ae6180c6d1af",
+    "research/syn/compare.py": "c9875b1c8b20b78e9a1bad321a80039bb7dd02f4f735a2f7bc5d2df20555c340"
+  }
+}

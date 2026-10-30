@@ -1,7 +1,7 @@
 # Registration validation
 
-Current acceleration checkpoint: **840 tests pass**, with 1,098 existing warnings
-in 135.56 seconds on CPU/CUDA with one CPU thread. The unchanged truth and physical
+Current acceleration checkpoint: **847 tests pass**, with 1,098 existing warnings
+in 129.58 seconds on CPU/CUDA with one CPU thread. The unchanged truth and physical
 point gates, cold/warm costs, preserved failures and actual-wheel checks are in
 [the SyN acceleration report](research/syn/SPEED.md). The production path remains
 eager; experimental compilation is not a new public requirement.
