@@ -318,8 +318,9 @@ def test_field_geometry_ignores_absolute_world_origin(
 
 @pytest.mark.parametrize("planar", [False, True])
 @pytest.mark.parametrize("broadcast", [False, True])
+@pytest.mark.parametrize("field_broadcast", [False, True])
 def test_tiny_geometry_maps_match_numpy(
-    displacement_factory, device, planar, broadcast
+    displacement_factory, device, planar, broadcast, field_broadcast
 ):
     from voxreg.sampling import _map_displacement
 
@@ -330,6 +331,8 @@ def test_tiny_geometry_maps_match_numpy(
     matrices = np.stack([matrix * (1 + 0.1 * n) for n in range(len(values))])
     if broadcast:
         matrices = matrices[:1]
+    if field_broadcast:
+        values = values[:1]
     # A noncontiguous field must not change the component/batch convention.
     field = torch.tensor(values, device=device).transpose(-1, -2)
     expected = np.einsum("boc,bc...->b...o", matrices, values.swapaxes(-1, -2))

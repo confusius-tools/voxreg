@@ -461,6 +461,20 @@ def _sample_prepared(images, displacement, prepared, interpolation="linear"):
 
 def _map_displacement(matrix, field, axes=None):
     """Apply tiny geometry matrices without strided, per-voxel batched GEMMs."""
+    if (
+        field.device.type == "cpu"
+        and axes is None
+        and not torch.compiler.is_compiling()
+    ):
+        batch = max(matrix.shape[0], field.shape[0])
+        values = field.reshape(*field.shape[:2], -1).expand(batch, -1, -1)
+        mapped = torch.bmm(matrix.expand(batch, -1, -1), values)
+        # Downstream samplers and norms need the original contiguous component-last layout.
+        return (
+            mapped.reshape(batch, matrix.shape[1], *field.shape[2:])
+            .movedim(1, -1)
+            .contiguous()
+        )
     expand = (-1,) + (1,) * (field.ndim - 2)
     components = []
     for row in range(matrix.shape[-2]):

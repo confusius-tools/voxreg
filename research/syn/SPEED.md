@@ -11,6 +11,8 @@ The default/eager checkout has these qualified changes:
 
 1. Replace per-voxel tiny double-precision batched GEMMs with explicit component
    arithmetic. The measured baseline spent 76.79% of device time in `aten::bmm`.
+   General CPU maps now use one GEMM per image, explicitly restoring contiguous
+   component-last output; sparse maps retain exact component arithmetic.
 2. Prepare complete seed queries and displacement-to-sampling matrices **once per
    batch**, rather than rebuilding constant geometry every optimizer update.
    Images are still sampled from the originals, not from prewarped intermediates.
@@ -30,7 +32,7 @@ The default/eager checkout has these qualified changes:
 
 All coordinates, displacement states, field operations and CC statistics remain
 float64. Fitting image samples remain float32; final interpolation remains genuine
-float64. Iteration budgets, convergence, inverse iterations, regularity checks,
+float64. Fitting budgets, convergence, two-sided inverse diagnostics, regularity checks,
 callbacks and optional-output behavior have not been removed to win a timing.
 
 Compilation, CUDA native-double fitting interpolation, scaled float32 gradient
@@ -105,7 +107,11 @@ FireANTs parity**. With direct Jacobians and the CPU-only SyN inverse shortcut,
 actual default-path times are **0.326 / 5.797 / 31.319 s**; matched FireANTs is
 **0.206 / 4.449 / 19.398 s**. Relative to the original CPU baseline this is about
 21%, 25% and 28% less time, respectively. Results are retained in
-`contract-core-cpu-01/`. All truth gates pass. Medium 3D RMS changes from 0.1001063 to
+`contract-core-cpu-01/`. Restoring contiguous one-GEMM-per-image CPU maps further
+reduces those default-path times to **0.308 / 5.282 / 27.651 s**, versus matched
+FireANTs **0.214 / 4.327 / 19.556 s** (`cpu-map-core-cpu-01/`). That is about
+**25%, 31% and 37% less CPU time** than the original CPU baseline, without changing
+the fitting budget. All truth gates pass. Medium 3D RMS changes from 0.1001063 to
 0.1001070 pixels; native ITK's corresponding RMS is 0.0797510 pixels. That is not
 identical accuracy, but the optimization has negligible measured effect and
 retains the 0.25-pixel RMS gate. CPU/CUDA point gates also remain unchanged.
@@ -250,6 +256,9 @@ checks are retained. Its qualification is separate from the default-path proof.
 
 ## Verification and evidence
 
+- Contiguous CPU-GEMM checkout: **840 passed**, 1098 existing warnings, 135.56 s
+  (`cpu-map-core-full-suite-01.log`), including expanded independent matrix/field
+  broadcast controls and four Newton inverse research controls.
 - Jacobian/CPU-SyN-inverse checkout: **828 passed**, 1098 existing warnings,
   152.31 s, CPU and CUDA, one CPU thread (`contract-core-full-suite-02.log`),
   including 40 norm/box research controls. No existing tolerance was loosened.
