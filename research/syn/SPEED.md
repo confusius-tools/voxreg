@@ -29,6 +29,9 @@ The default/eager checkout has these qualified changes:
 7. At SyN finalization on CPU, use a shorter inverse solve only when a conservative
    contraction bound and residual check certify it. The public field primitive's
    iteration, initial-seed, resume and autograd behavior remain unchanged.
+8. Reverse dense coordinate components with `flip`, not advanced indexing.
+   This removes generic index-scatter backward work while preserving component
+   values and gradients; planar queries first exclude the normal component.
 
 All coordinates, displacement states, field operations and CC statistics remain
 float64. Fitting image samples remain float32; final interpolation remains genuine
@@ -166,6 +169,23 @@ the prefix versus **12.76 s** for their precursor. Neither is promoted.
 The latest eager/default prefix is **20.315 s versus FireANTs 8.930 s**. No
 whole-recording speedup is inferred from that prefix. Details and failures remain
 under `artifacts/syn-speed/{direct-contract*,cpu-map*,inductor-graphs*}`.
+
+## Dense coordinate reorder follow-up
+
+The eight-thread CPU batch profile attributed 6.83% self time to 40 generic
+index-scatter calls in coordinate-reorder backward. Replacing two advanced
+component indices with slice/flip removes those calls; it does not change the
+coordinate arithmetic or introduce compilation.
+
+The unchanged suite passes **840 tests**, 1,098 warnings, in 124.10 seconds
+(`flip-core-full-suite-01.log`). Native warm voxreg CPU/CUDA times at eight threads
+are now **0.411 / 0.612 s** (2D), **3.421 / 0.992 s** (3D), and
+**10.729 / 1.531 s** (eight volumes). The prior matched checkout was
+0.421 / 0.625, 3.605 / 1.032 and 11.769 / 1.774 s, respectively. The batch is
+about **9% faster on CPU and 14% on CUDA** in this follow-up; all truth and
+CPU/CUDA point gates pass. Raw results are in `reorder-eager-results.json`.
+Reference-library rows from the preceding three-way comparison were not rerun
+for this isolated change.
 
 ## Bounded Newton inverse candidate: qualified, not a compiler default
 

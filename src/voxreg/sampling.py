@@ -386,7 +386,7 @@ def _sample_grid(
         mapped < grid.upper if grid.slice_basis is not None else mapped <= grid.upper
     )
     valid = ((mapped >= grid.lower) & upper_valid).all(dim=-1)
-    sampler_grid = mapped[..., [2, 1] if grid.planar else [2, 1, 0]]
+    sampler_grid = (mapped[..., 1:] if grid.planar else mapped).flip(-1)
     sampled = F.grid_sample(
         images[:, None],
         sampler_grid.to(images.dtype),
@@ -451,7 +451,7 @@ def _sample_prepared(images, displacement, prepared, interpolation="linear"):
             else mapped <= geometry.upper
         )
         valid = ((mapped >= geometry.lower) & upper).all(dim=-1)
-        query = mapped[..., [2, 1] if geometry.planar else [2, 1, 0]]
+        query = (mapped[..., 1:] if geometry.planar else mapped).flip(-1)
     else:
         tolerance = geometry.support_tolerance
         valid = ((mapped >= -1 - tolerance) & (mapped <= 1 + tolerance)).all(dim=-1)
