@@ -1,7 +1,11 @@
 # Registration validation
 
-Current acceleration checkpoint: **847 tests pass**, with 1,098 existing warnings
-in 129.58 seconds on CPU/CUDA with one CPU thread. The unchanged truth and physical
+Current acceleration checkpoint: **920 tests pass**, with 1,098 existing warnings
+in 124.01 seconds on CPU/CUDA with one CPU thread. An additional real eight-thread
+SyN/output run passes 85 unchanged controls; 73 filter checks cover scaled ranges,
+exact boundaries, input ownership and unqualified-path fallbacks. The
+[AC CPU smoothing checkpoint](research/syn/AC-CPU-SMOOTHING.md) preserves the
+0.25-pixel truth and 0.001-pixel maximum CPU/CUDA point gates. The unchanged truth and physical
 point gates, cold/warm costs, preserved failures and actual-wheel checks are in
 [the SyN acceleration report](research/syn/SPEED.md). The production path remains
 eager; experimental compilation is not a new public requirement.

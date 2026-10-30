@@ -452,6 +452,13 @@ Adam state, NCC and world matrices remain float64. Integer/float64 preprocessing
 runs in float64 and uses NCC's intensity-offset/scale invariance to retain
 low-contrast detail before conversion to fitting tensors.
 
+Multithreaded CPU 3D SyN uses scaled float32 Gaussian convolutions for its two
+regularizers, restoring float64 fields afterward. Coordinates, field storage,
+composition, NCC statistics, inversion and Jacobians remain float64. Planar,
+single-threaded, differentiable and compiled paths retain their prior smoothing;
+there is no new precision option. See the [AC-qualified comparison with ITK and
+FireANTs](research/syn/AC-CPU-SMOOTHING.md).
+
 Final resampling uses the **original values**, once, independently of fitting:
 
 - Float64 images are interpolated in float64 and returned as float64—not sampled

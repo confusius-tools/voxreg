@@ -3,8 +3,10 @@
 ## Question and boundary
 
 Can Torch filtering improve CPU SyN without loosening the existing 0.25-pixel
-RMS truth or 0.001-pixel maximum CPU/CUDA point gates? This is research only;
-production defaults, input/output dtype contracts and batching caps are unchanged.
+RMS truth or 0.001-pixel maximum CPU/CUDA point gates? This initial battery-powered
+phase was research only and did not change production defaults. The subsequent
+[AC-qualified follow-up](AC-CPU-SMOOTHING.md) promotes a scoped CPU volumetric path;
+input/output dtype contracts and batching caps remain unchanged.
 
 Smoothing operates on vector fields, not the returned intensity image:
 

@@ -5,6 +5,7 @@ physical updates compose with the accumulated maps. Inversion uses the ITK-style
 field solver. No vendor implementation or optimizer source is transplanted.
 """
 
+from functools import lru_cache
 from time import perf_counter
 
 import numpy as np
@@ -15,6 +16,7 @@ from confusius._utils.progress import progress_bar
 
 from voxreg.convergence import WindowConvergence
 from voxreg.fields import (
+    _check_field,
     _contracted_cpu_inverse,
     _pixel_norm,
     compose_fields,
@@ -22,7 +24,9 @@ from voxreg.fields import (
     jacobian_determinant,
     make_field_grid,
     sample_field_at,
-    smooth_field,
+)
+from voxreg.fields import (
+    smooth_field as _smooth_field,
 )
 from voxreg.geometry import position_to_world
 from voxreg.sampling import (
@@ -33,6 +37,46 @@ from voxreg.sampling import (
     sample_rigid,
     world_matrices,
 )
+
+
+@lru_cache(maxsize=2)
+def _cpu_smoothing_weights(sigma):
+    """Two immutable CPU kernels for SyN's fixed update/total sigmas."""
+    radius = int(3 * sigma + 0.5)
+    positions = torch.arange(-radius, radius + 1, dtype=torch.float32, device="cpu")
+    kernel = torch.exp(-0.5 * (positions / sigma).square())
+    kernel = kernel / kernel.sum()
+    weights = []
+    for axis in range(3):
+        shape = [1, 1, 1]
+        shape[axis] = len(kernel)
+        weights.append(kernel.reshape(1, 1, *shape).expand(3, 1, *shape).contiguous())
+    return radius, tuple(weights)
+
+
+def smooth_field(field, grid, *, sigma):
+    """Filter CPU SyN volumes in scaled float32; keep physical field state double."""
+    # shortcut: keep planar/serial SciPy until their whole-call crossovers are qualified.
+    if (
+        torch.compiler.is_compiling()
+        or field.device.type != "cpu"
+        or len(grid.shape) != 3
+        or torch.get_num_threads() == 1
+        or (torch.is_grad_enabled() and field.requires_grad)
+        or sigma not in (0.5, 1.5)
+    ):
+        return _smooth_field(field, grid, sigma=sigma)
+    _check_field(field, grid)
+    radius, weights = _cpu_smoothing_weights(sigma)
+    scale = field.abs().flatten(1).amax(1).reshape(-1, 1, 1, 1, 1)
+    scale = scale.clamp_min(torch.finfo(field.dtype).tiny)
+    result = (field / scale).float()
+    for axis, weight in enumerate(weights):
+        padding = [0] * 6
+        padding[2 * (2 - axis) : 2 * (3 - axis)] = [radius, radius]
+        result = F.conv3d(F.pad(result, padding, mode="replicate"), weight, groups=3)
+    result = result.masked_fill(grid.boundary, 0)
+    return result.clamp(-1, 1).double() * scale
 
 
 def _box_sum(values, radius):

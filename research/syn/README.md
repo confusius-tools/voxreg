@@ -108,6 +108,11 @@ zero contribution outside. Smoothing is a separable sampled Gaussian in voxel
 units with zero active boundaries; sigma zero bypasses smoothing/boundary handling
 in the primitive. The optimizer still holds its update boundary fixed. These
 filters are not claimed identical to ITK's discrete Gaussian/small-variance blend.
+Multithreaded CPU 3D SyN performs its two fixed Gaussian convolutions in
+magnitude-scaled float32, restoring float64 fields. Coordinates, composition,
+statistics, inversion and Jacobians remain double. The standalone field primitive
+and planar/serial/differentiable/compiled/CUDA smoothing retain their prior behavior;
+see [AC-CPU-SMOOTHING.md](AC-CPU-SMOOTHING.md).
 
 Inversion uses clipped/damped ITK-style residual updates and independent per-frame
 reductions without per-iteration host polling. Endpoint construction uses 80
@@ -120,7 +125,7 @@ is unsnapped with double weights. The legacy linear sampler remains unchanged.
 
 ## Proof, preserved failures and limits
 
-The current acceleration checkpoint passes **847 tests**, with **32 actual-wheel
+The current acceleration checkpoint passes **920 tests**, with **32 actual-wheel
 CPU/CUDA API checks**; see [SPEED.md](SPEED.md) for default versus experimental
 paths, full-recording timings and cold compilation costs. The initial milestone
 passed 675 tests: 585 previous checks, 49 field checks, 40 SyN/comparison checks,

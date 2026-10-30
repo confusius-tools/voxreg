@@ -2,6 +2,12 @@
 
 ## Scope and status
 
+**Latest checkpoint:** [AC-qualified CPU smoothing](AC-CPU-SMOOTHING.md), **920
+passing tests**, 85 real eight-thread registration/output checks and 32 actual-wheel
+CPU/CUDA checks. A fresh complete ITK–FireANTs–voxreg comparison records CPU times
+of **0.431/2.956/8.133 s** for 2D/3D/batch8, with unchanged truth and point gates.
+Earlier measurements below remain historical checkpoints, not current mixed rows.
+
 The target is FireANTs-class recording throughput **without relaxing** the
 0.25-native-pixel RMS truth gate or the 0.001-pixel maximum CPU/CUDA point gate.
 Identical scores are not an anatomical oracle. Native optimizer, arithmetic and
@@ -36,12 +42,18 @@ The default/eager checkout has these qualified changes:
    On CUDA **2D only**, filter independent components as batch entries; 3D keeps
    grouped filtering because channel-as-batch was substantially slower there.
 
-All coordinates, displacement states, field operations and CC statistics remain
-float64. Fitting image samples remain float32; final interpolation remains genuine
+10. On multithreaded CPU 3D SyN, use magnitude-scaled float32 convolutions for
+    the fixed update/total Gaussian filters, then restore float64 fields. Planar,
+    serial, differentiable, compiled and CUDA paths keep their prior smoothing.
+    Kernel extent, padding, fixed boundaries and public field primitives are unchanged.
+
+Coordinates, stored displacement fields, composition, inversion, Jacobians and CC
+statistics remain float64; the scoped CPU convolutions are the explicit exception.
+Fitting image samples remain float32; float64-image final interpolation stays genuine
 float64. Fitting budgets, convergence, two-sided inverse diagnostics, regularity checks,
 callbacks and optional-output behavior have not been removed to win a timing.
 
-Compilation, CUDA native-double fitting interpolation, scaled float32 gradient
+Compilation, CUDA native-double fitting interpolation, CUDA float32 gradient
 filtering and squared-norm inverse updates are **research-only monkeypatches**.
 There is no new compiler dependency or public compiler switch.
 

@@ -15,8 +15,12 @@ here rather than presented as current benchmark results.
 
 [The current SyN report](research/syn/SPEED.md) records qualified eager geometry,
 layout, CPU interpolation/smoothing and inverse improvements. Default single-thread
-CPU controls use 25–37% less time than the original CPU baseline; 847 tests and
-32 actual-wheel CPU/CUDA checks pass without relaxed physical gates.
+CPU controls use 25–37% less time than the original CPU baseline. The latest
+[AC-qualified multithreaded CPU 3D smoothing](research/syn/AC-CPU-SMOOTHING.md)
+uses scaled float32 convolutions with double field storage and unchanged physical
+checks; fresh CPU 2D/3D/batch8 times are 0.431/2.956/8.133 s. The checkpoint passes
+920 tests, 85 real eight-thread registration checks and 32 actual-wheel CPU/CUDA
+checks. Planar, serial, differentiable, compiled and CUDA smoothing are unchanged.
 
 A separate bounded-Newton compiled experiment beats FireANTs on the warm native
 CUDA controls, but cold registrations cost 21–52 seconds. Its complete recording
