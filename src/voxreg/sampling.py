@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from itertools import product
+from typing import TypedDict
 
 import numpy as np
 import numpy.typing as npt
@@ -18,11 +19,16 @@ from voxreg.transforms import (
 )
 
 
+class _TensorOptions(TypedDict):
+    device: str
+    dtype: torch.dtype
+
+
 @dataclass(frozen=True)
 class Plane:
     """Resident intrinsic-plane geometry and host-side world embedding.
 
-    Parameters
+    Attributes
     ----------
     inverse_lattice : torch.Tensor
         Plane distance to pixel-offset map (2, 2).
@@ -86,7 +92,7 @@ def make_plane(
 
     Returns
     -------
-    plane : Plane
+    Plane
         Geometry for physical rotation/translation and world matrix export.
 
     Raises
@@ -116,7 +122,7 @@ def make_plane(
         points = points + rotation_offset
     radius = np.sqrt(np.mean(np.sum(points**2, axis=-1)))
     ell = np.linalg.norm(pixels, axis=0).min()
-    options = {"device": device, "dtype": dtype}
+    options: _TensorOptions = {"device": device, "dtype": dtype}
     inverse_lattice = torch.tensor(np.linalg.inv(lattice), **options)
     half = torch.tensor(center_pixel, **options)
     bounds = 2 * half
@@ -180,6 +186,26 @@ def make_grid(
     Slice pairs require a plane-compatible seed when not initially coplanar.
     A fixed slice against a moving volume uses its full 3D pose and samples only
     the slice domain. Optional center controls the pivot and physical scales.
+
+    Parameters
+    ----------
+    fixed : xarray.DataArray
+        Native VoxelData grid defining the output sampling domain.
+    moving : xarray.DataArray
+        Native VoxelData grid whose original intensities are sampled.
+    device : str, default: "cpu"
+        Torch device holding the geometry tensors.
+    dtype : torch.dtype, default: torch.float64
+        Coordinate and physical-parameter precision.
+    center : numpy.ndarray, optional
+        Physical world z/y/x transform pivot in millimetres.
+    plane_seed : array-like, optional
+        Homogeneous world pull used to align initially noncoplanar slices.
+
+    Returns
+    -------
+    Plane or SpatialGrid
+        Resident geometry retaining independent fixed and moving lattices.
     """
     fs = np.array([fixed.sizes[d] for d in ("k", "j", "i")])
     ms = np.array([moving.sizes[d] for d in ("k", "j", "i")])
@@ -218,6 +244,7 @@ def make_grid(
                 raise ValueError(
                     "Noncoplanar slices need a plane-compatible initial_transform or initialization='align_planes'; centering alone cannot correct tilt."
                 )
+            assert seeds is not None
             plane_rotation, plane_shift = _plane_alignment(
                 fixed, moving, seeds[0, :3, :3] @ normal
             )
@@ -252,7 +279,7 @@ def make_grid(
                 1 if size > 1 else 0
             )
         coordinates.append(coordinate.reshape(shape))
-    options = {"device": device, "dtype": dtype}
+    options: _TensorOptions = {"device": device, "dtype": dtype}
     tolerance = 1e-5 / half
     slice_basis = (
         make_plane(fixed if slice_volume else moving, device=device, dtype=dtype).basis
@@ -300,7 +327,18 @@ def make_grid(
 
 
 def rotation_vectors(vectors: torch.Tensor) -> torch.Tensor:
-    """Right-handed XYZ axis-angle rotations, with vector/matrix axes stored z/y/x."""
+    """Compute right-handed XYZ rotations with axes stored in z/y/x order.
+
+    Parameters
+    ----------
+    vectors : torch.Tensor
+        Axis-angle rotation vectors in radians, shaped (batch, 3).
+
+    Returns
+    -------
+    torch.Tensor
+        Rotation matrices shaped (batch, 3, 3).
+    """
     x, y, z = vectors.flip(-1).unbind(-1)
     zero = torch.zeros_like(x)
     skew = torch.stack((zero, -z, y, z, zero, -x, -y, x, zero), -1).reshape(-1, 3, 3)
@@ -572,7 +610,7 @@ def rotation_matrices(angles: torch.Tensor) -> torch.Tensor:
 
     Returns
     -------
-    rotations : (B, 2, 2) torch.Tensor
+    (B, 2, 2) torch.Tensor
         Physical plane rotations.
     """
     c, s = angles.cos(), angles.sin()
@@ -812,7 +850,20 @@ def _model_world_matrices(
 
 
 def world_matrices(parameters, plane):
-    """Export the complete fixed-world-to-moving-world pull, including plane placement."""
+    """Export the complete fixed-world-to-moving-world pull, including plane placement.
+
+    Parameters
+    ----------
+    parameters : array-like
+        Physical model parameters, shaped (batch, parameters_per_frame).
+    plane : Plane or SpatialGrid
+        Resident geometry, model and optional seeded plane placement.
+
+    Returns
+    -------
+    numpy.ndarray
+        Complete homogeneous world z/y/x pulls, shaped (batch, 4, 4).
+    """
     matrices = _model_world_matrices(parameters, plane)
     if isinstance(plane, SpatialGrid) and plane.plane_rotation is not None:
         displacement = (

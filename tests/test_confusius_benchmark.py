@@ -12,6 +12,7 @@ PATH = (
     / "research/confusius-examples/benchmark_examples.py"
 )
 spec = importlib.util.spec_from_file_location("example_benchmark", PATH)
+assert spec is not None and spec.loader is not None
 benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
 
@@ -27,7 +28,7 @@ def test_public_motion_table_matrix_roundtrip():
     fixed = cf.create_voxeldata(
         np.ones((3, 4, 5)), dims=("k", "j", "i"), voxel_to_world=np.eye(4)
     )
-    frame = create_motion_dataframe(list(matrices), fixed)
+    frame = create_motion_dataframe([np.asarray(matrix) for matrix in matrices], fixed)
     assert_allclose(benchmark.matrices_from_motion(frame), matrices, atol=1e-14, rtol=0)
 
 

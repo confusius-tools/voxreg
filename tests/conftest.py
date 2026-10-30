@@ -109,7 +109,10 @@ def recording_factory():
         data = create_voxeldata(
             np.array(values, dtype=np.float32)[:, None],
             dims=("time", "k", "j", "i"),
-            **coords,
+            k=coords["k"],
+            j=coords["j"],
+            i=coords["i"],
+            time=coords["time"],
             voxel_to_world=affine,
             attrs={"units": "power"},
         )
@@ -210,6 +213,7 @@ def slice_volume_pair_factory():
             rng.uniform(0.3, 2, 18),
             strict=True,
         ):
+            center, widths = np.asarray(center), np.asarray(widths)
             values += weight * np.exp(
                 -0.5
                 * (((coordinates - center[:, None]) / widths[:, None]) ** 2).sum(axis=0)

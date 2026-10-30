@@ -29,6 +29,7 @@ def assert_mapping_close(data, actual, expected, tolerance_pixels):
 def test_known_rigid_recovery(recording_factory, oblique, strided, scaling):
     data, truth, affine = recording_factory(oblique=oblique, strided=strided)
     result = register(data, return_transforms=True, intensity_scaling=scaling)
+    assert result.transforms is not None
     validate_voxeldata(result.registered)
     validate_voxeldata(result.valid)
     j, i = np.mgrid[6:58:3, 6:74:3]
@@ -81,6 +82,7 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
     with_bad = register(
         failed, return_transforms=True, intensity_scaling="none", max_iterations=140
     )
+    assert with_bad.transforms is not None
     assert with_bad.diagnostics.status[1] == "invalid_metric"
     assert with_bad.diagnostics.n_iterations[1] == 0
     assert np.isnan(with_bad.diagnostics.objective[1])
@@ -125,6 +127,7 @@ def test_explicit_fixed_and_low_overlap(recording_factory):
     explicit = register(
         data, return_transforms=True, fixed=fixed, intensity_scaling="none"
     )
+    assert explicit.transforms is not None
     assert explicit.diagnostics.status[0] != "reference"
     assert_allclose(explicit.transforms[0], np.eye(4), atol=1e-3)
     failed = register(
@@ -134,6 +137,7 @@ def test_explicit_fixed_and_low_overlap(recording_factory):
         learning_rate=200,
         max_iterations=3,
     )
+    assert failed.transforms is not None
     assert np.all(failed.diagnostics.status[1:].values == "insufficient_overlap")
     assert np.all(failed.diagnostics.valid_fraction.values >= 0.9)
     assert_allclose(
@@ -202,6 +206,7 @@ def test_nonzero_constant_frame_is_not_optimized(recording_factory):
     data, _, _ = recording_factory()
     data.values[1] = 1
     result = register(data, return_transforms=True, intensity_scaling="none")
+    assert result.transforms is not None
     assert result.diagnostics.status[1] == "invalid_metric"
     assert result.diagnostics.n_iterations[1] == 0
     assert np.isnan(result.diagnostics.objective[1])

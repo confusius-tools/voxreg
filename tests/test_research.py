@@ -18,6 +18,7 @@ def test_single_pair_trace_summary_counts_union_not_overlapping_kernel_sum():
     spec = importlib.util.spec_from_file_location(
         "pair_profile", SCRIPTS / "profile_pair.py"
     )
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     events = [

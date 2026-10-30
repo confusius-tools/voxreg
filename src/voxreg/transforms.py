@@ -9,7 +9,22 @@ from voxreg.geometry import position_to_world
 
 
 def configure_transform(grid, fixed, transform):
-    """Keep rigid geometry verbatim; scale other models by physical RMS shifts."""
+    """Keep rigid geometry verbatim; scale other models by physical RMS shifts.
+
+    Parameters
+    ----------
+    grid : Plane or SpatialGrid
+        Centered sampling geometry to configure.
+    fixed : xarray.DataArray
+        Fixed VoxelData defining physical parameter scales.
+    transform : {"translation", "rigid", "affine"}
+        Linear model to optimize.
+
+    Returns
+    -------
+    Plane or SpatialGrid
+        Geometry carrying the selected model and its physical parameter scales.
+    """
     if transform == "rigid":
         return grid
     dimensions = grid.basis.shape[1]
@@ -39,7 +54,22 @@ def configure_transform(grid, fixed, transform):
 
 
 def intrinsic_linear(parameters, grid):
-    """Return centered intrinsic linear map and center displacement (non-rigid models)."""
+    """Return centered intrinsic linear maps and shifts for non-rigid models.
+
+    Parameters
+    ----------
+    parameters : torch.Tensor
+        Physical translation or affine parameters, with frames on the first axis.
+    grid : Plane or SpatialGrid
+        Geometry and selected model, including mixed-dimensional completion.
+
+    Returns
+    -------
+    linear : torch.Tensor
+        Batched linear maps in the model's intrinsic coordinates.
+    displacement : torch.Tensor
+        Batched physical center displacements in millimetres.
+    """
     dimensions = grid.basis.shape[1]
     if grid.transform == "affine" and getattr(grid, "slice_basis", None) is not None:
         basis = grid.resident_slice_basis.to(parameters)
@@ -70,6 +100,20 @@ def affine_properties(parameters, grid):
 
     Normalize before the small determinant to avoid overflow/underflow. A
     normalized determinant <= 1e-8 is treated as numerically singular.
+
+    Parameters
+    ----------
+    parameters : torch.Tensor
+        Batched physical model parameters.
+    grid : Plane or SpatialGrid
+        Resident geometry and selected non-rigid linear model.
+
+    Returns
+    -------
+    valid : torch.Tensor
+        Per-frame finite, nonsingular-map mask.
+    orientation : torch.Tensor
+        Per-frame sign of the normalized linear determinant.
     """
     linear, _ = intrinsic_linear(parameters.detach(), grid)
     largest = linear.abs().amax(dim=(-2, -1), keepdim=True)
@@ -91,7 +135,27 @@ def affine_properties(parameters, grid):
 
 
 def validate_matrices(transforms, count):
-    """Copy and validate common homogeneous world-pull seed structure."""
+    """Copy and validate common homogeneous world-pull seed structure.
+
+    Parameters
+    ----------
+    transforms : array-like
+        One (4, 4) pull or a (count, 4, 4) array of world z/y/x pulls.
+    count : int
+        Number of moving frames after broadcasting a shared matrix.
+
+    Returns
+    -------
+    numpy.ndarray
+        Finite float64 homogeneous matrices, shaped (count, 4, 4).
+
+    Raises
+    ------
+    TypeError
+        If matrix values are not real numeric data.
+    ValueError
+        If shape, finiteness or homogeneous last rows are invalid.
+    """
     values = np.asarray(transforms)
     if values.dtype.kind not in "iuf":
         raise TypeError("initial_transform must contain real numeric matrices.")
@@ -110,7 +174,25 @@ def validate_matrices(transforms, count):
 
 
 def initial_linear_parameters(values, grid):
-    """Recover the complete optimized translation/affine seed, never a frozen chain."""
+    """Recover the complete optimized translation/affine seed, never a frozen chain.
+
+    Parameters
+    ----------
+    values : numpy.ndarray
+        Validated homogeneous world pull matrices, shaped (batch, 4, 4).
+    grid : Plane or SpatialGrid
+        Resident geometry and selected translation or affine model.
+
+    Returns
+    -------
+    numpy.ndarray
+        Complete physical seed parameters in the model's intrinsic coordinates.
+
+    Raises
+    ------
+    ValueError
+        If the seed is singular or cannot be represented by the selected model.
+    """
     linear = values[:, :3, :3]
     translation = (
         np.einsum("bij,j->bi", linear - np.eye(3), grid.center) + values[:, :3, 3]
@@ -176,7 +258,20 @@ def initial_linear_parameters(values, grid):
 
 
 def linear_world_matrices(parameters, grid):
-    """Export full centered world pulls, including affine scale/shear/reflection."""
+    """Export full centered world pulls, including affine scale/shear/reflection.
+
+    Parameters
+    ----------
+    parameters : array-like
+        Batched physical translation or affine parameters.
+    grid : Plane or SpatialGrid
+        Centered model geometry and world embedding.
+
+    Returns
+    -------
+    numpy.ndarray
+        Float64 homogeneous world z/y/x pulls, shaped (batch, 4, 4).
+    """
     values = np.asarray(parameters, dtype=np.float64)
     dimensions = grid.basis.shape[1]
     if grid.transform == "affine" and getattr(grid, "slice_basis", None) is not None:
@@ -200,7 +295,21 @@ def linear_world_matrices(parameters, grid):
 
 
 def linear_diagnostics(parameters, grid):
-    """Actual linear coefficients (not identity deltas) and physical center shifts."""
+    """Report actual linear coefficients and physical center shifts.
+
+    Parameters
+    ----------
+    parameters : numpy.ndarray
+        Batched physical translation or affine parameters.
+    grid : Plane or SpatialGrid
+        Geometry defining intrinsic axes and model parameterization.
+
+    Returns
+    -------
+    dict
+        Labeled per-frame coefficients and millimetre center displacements,
+        suitable for constructing an xarray diagnostic dataset.
+    """
     axes = ["i", "j"] if grid.basis.shape[1] == 2 else ["z", "y", "x"]
     dimensions = len(axes)
     motion = {}

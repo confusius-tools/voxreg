@@ -81,6 +81,7 @@ def test_native_domains_and_nonidentity_seed_match_sitk_value(
         max_iterations=1,
         progress=False,
     )
+    assert result.transforms is not None
     source_shape, target_shape, sampled_shape, pivot, decoded = records[0]
     assert source_shape == moving.shape and target_shape == sampled_shape == fixed.shape
     assert_allclose(
@@ -177,6 +178,7 @@ def test_slice_affine_constraint_is_on_recording_to_volume_map(
         torch.tensor(moving.values[None], device=device), p, grid
     )
     sampled[valid].square().mean().backward()
+    assert p.grad is not None
     assert torch.isfinite(p.grad).all() and p.grad.abs().max() > 0
     collapsed = p.detach().clone()
     collapsed[:, :6] = -torch.tensor(grid.slice_basis.reshape(-1), device=device)

@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import xarray as xr
 
 from voxreg import register, syn
@@ -19,7 +20,7 @@ def test_optional_transforms(
             [moving, moving.copy(data=np.roll(moving.values, 1, axis=-1)), moving],
             dim=xr.IndexVariable("time", [2.0, 2.1, 2.2]),
         )
-    options = {
+    options: RegistrationOptions = {
         "transform": model,
         "device": device,
         "max_iterations": 2,

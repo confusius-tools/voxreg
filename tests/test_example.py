@@ -16,6 +16,7 @@ spec = importlib.util.spec_from_file_location(
     "motion_example",
     Path(__file__).parents[1] / "examples/notebook_motion_correction.py",
 )
+assert spec is not None and spec.loader is not None
 example = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(example)
 

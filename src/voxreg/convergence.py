@@ -8,6 +8,15 @@ class WindowConvergence:
 
     Only finite, active losses enter the history. Stopped frames retain their
     history and accumulated absolute energy; no tensors are read on the host.
+
+    Parameters
+    ----------
+    batch_size : int
+        Number of independent frames.
+    window_size : int
+        Number of active loss samples in each convergence window.
+    device : torch.device
+        Device holding the per-frame histories and convergence values.
     """
 
     def __init__(self, batch_size: int, window_size: int, device: torch.device):
@@ -34,7 +43,21 @@ class WindowConvergence:
 
     @torch.no_grad()
     def update(self, loss: torch.Tensor, active: torch.Tensor) -> torch.Tensor:
-        """Return convergence values, or double max until a full window exists."""
+        """Return convergence values, or double max until a full window exists.
+
+        Parameters
+        ----------
+        loss : torch.Tensor
+            Per-frame objective values, with shape (batch_size,).
+        active : torch.Tensor
+            Boolean mask selecting frames whose histories should advance.
+
+        Returns
+        -------
+        torch.Tensor
+            Float64 convergence values, with the largest finite double used
+            until a frame has accumulated a complete window.
+        """
         self.history = torch.where(
             active[:, None],
             torch.cat((self.history[:, 1:], loss.detach()[:, None]), dim=1),

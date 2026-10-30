@@ -1,7 +1,10 @@
 """Physical centering uses original intensities, not fitting/display scaling."""
 
+from typing import Literal
+
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 from confusius import create_voxeldata
 from scipy.ndimage import map_coordinates
@@ -9,7 +12,9 @@ from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
 
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+DEVICES: list[Literal["cpu", "cuda"]] = (
+    ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
 
 
 def volume_pair():
@@ -28,7 +33,9 @@ def volume_pair():
     fixed = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=affine)
     shifted = affine.copy()
     shifted[:3, 3] += [20, -12, 8]
-    moving = create_voxeldata(values.copy(), dims=fixed.dims, voxel_to_world=shifted)
+    moving = create_voxeldata(
+        values.copy(), dims=("k", "j", "i"), voxel_to_world=shifted
+    )
     return fixed, moving
 
 
@@ -46,8 +53,8 @@ def native_centers(fixed, moving, mode):
         image.SetOrigin(tuple(affine[:3, 3]))
         image.SetDirection(itk.matrix_from_array(affine[:3, :3] / spacing))
         images.append(image)
-    transform = itk.VersorRigid3DTransform[itk.D].New()
-    initializer = itk.CenteredTransformInitializer[
+    transform = getattr(itk, "VersorRigid3DTransform")[itk.D].New()
+    initializer = getattr(itk, "CenteredTransformInitializer")[
         type(transform), type(images[0]), type(images[1])
     ].New(Transform=transform, FixedImage=images[0], MovingImage=images[1])
     if mode == "center_geometry":
@@ -85,6 +92,7 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
         progress=False,
         device=device,
     )
+    assert r.transforms is not None
     expected = np.eye(4)
     expected[:3, 3] = translation
     np.testing.assert_allclose(r.transforms, expected, atol=3e-13, rtol=0)
@@ -150,6 +158,7 @@ def test_moments_pivot_sampling_and_scales(
         progress=False,
         device=device,
     )
+    assert r.transforms is not None
     plane = captured["plane"]
     if kind == "volume":
         rotation = Rotation.from_rotvec([0.02, -0.03, 0.04]).as_matrix()[::-1, ::-1]
@@ -195,9 +204,15 @@ def test_moments_pivot_sampling_and_scales(
 @pytest.mark.parametrize("mode", ["center_geometry", "center_moments"])
 def test_series_reference_batch_and_fitting_scaling(recording_factory, mode):
     data, _, _ = recording_factory(oblique=True, strided=True)
-    options = {"initialization": mode, "max_iterations": 100, "progress": False}
+    options: RegistrationOptions = {
+        "initialization": mode,
+        "max_iterations": 100,
+        "progress": False,
+    }
     combined = register(data, return_transforms=True, batch_size=3, **options)
+    assert combined.transforms is not None
     serial = register(data, return_transforms=True, batch_size=1, **options)
+    assert serial.transforms is not None
     np.testing.assert_allclose(
         combined.transforms, serial.transforms, atol=1e-9, rtol=0
     )
@@ -279,6 +294,7 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
             progress=False,
             device=device,
         )
+        assert r.transforms is not None
         error = (
             np.linalg.norm(((r.transforms.values - truth) @ points)[:3], axis=0) / ell
         )
@@ -286,6 +302,7 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
         assert r.diagnostics.objective < -0.999
         results.append(r)
     if len(results) == 2:
+        assert results[0].transforms is not None and results[1].transforms is not None
         error = (
             (results[0].transforms.values - results[1].transforms.values) @ points
         )[:3]

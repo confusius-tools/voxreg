@@ -1,7 +1,10 @@
 """3D slice placement with affine-defined singleton voxel extent."""
 
+from typing import Literal
+
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 from confusius import create_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
@@ -13,7 +16,9 @@ from voxreg import position_to_world, register
 from voxreg.sampling import _initial_parameters, make_grid, sample_rigid, world_matrices
 from voxreg.transforms import configure_transform
 
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+DEVICES: list[Literal["cpu", "cuda"]] = (
+    ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
@@ -22,7 +27,7 @@ def test_slice_volume_directions_use_their_own_native_fixed_grid(
     slice_volume_pair_factory, model, device
 ):
     target, volume, truth = slice_volume_pair_factory(model)
-    kwargs = {
+    kwargs: RegistrationOptions = {
         "transform": model,
         "intensity_scaling": "none",
         "max_iterations": 400,
@@ -31,7 +36,9 @@ def test_slice_volume_directions_use_their_own_native_fixed_grid(
         "progress": False,
     }
     result = register(volume, target, return_transforms=True, **kwargs)
+    assert result.transforms is not None
     reverse = register(target, volume, return_transforms=True, **kwargs)
+    assert reverse.transforms is not None
     assert result.registered.shape == target.shape
     assert reverse.registered.shape == volume.shape
     assert result.registered.dtype == reverse.registered.dtype == np.float64
@@ -61,6 +68,7 @@ def test_slice_volume_directions_use_their_own_native_fixed_grid(
     assert np.all(reverse.registered.values[~valid] == target.values.min())
     assert_allclose(reverse.diagnostics.valid_fraction, valid.mean(), atol=1e-8)
     for fitted in [result, reverse]:
+        assert fitted.transforms is not None
         center = np.asarray(fitted.diagnostics.attrs["rotation_center_zyx_mm"])
         matrix = fitted.transforms.values
         shift = matrix[:3, 3] + (matrix[:3, :3] - np.eye(3)) @ center
@@ -93,7 +101,7 @@ def test_slice_volume_cpu_cuda_unchanged_precision_gate(
     if not torch.cuda.is_available():
         pytest.skip("CUDA unavailable")
     target, volume, _ = slice_volume_pair_factory(model)
-    kwargs = {
+    kwargs: RegistrationOptions = {
         "transform": model,
         "intensity_scaling": "none",
         "max_iterations": 400,
@@ -104,6 +112,7 @@ def test_slice_volume_cpu_cuda_unchanged_precision_gate(
         register(volume, target, return_transforms=True, device=device, **kwargs)
         for device in DEVICES
     )
+    assert a.transforms is not None and b.transforms is not None
     points = position_to_world(target) @ np.vstack(
         (np.indices(target.shape).reshape(3, -1), np.ones((1, target.size)))
     )
@@ -203,6 +212,7 @@ def test_nonparallel_slice_planes_need_an_explicit_alignment_choice(model, mode)
         max_iterations=1,
         progress=False,
     )
+    assert result.transforms is not None
     assert_allclose(result.transforms, truth, atol=1e-12, rtol=0)
     assert result.diagnostics.objective < -0.999999
     assert_allclose(
@@ -230,7 +240,7 @@ def test_batched_slice_targets_seeds_failures_and_chunk_independence(
     )
     seeds = np.linalg.inv(np.stack((truth, second, truth)))
     original = movie.values.copy()
-    kwargs = {
+    kwargs: RegistrationOptions = {
         "transform": model,
         "intensity_scaling": "none",
         "initialization": seeds,
@@ -240,7 +250,9 @@ def test_batched_slice_targets_seeds_failures_and_chunk_independence(
         "progress": False,
     }
     a = register(movie, volume, return_transforms=True, batch_size=1, **kwargs)
+    assert a.transforms is not None
     b = register(movie, volume, return_transforms=True, batch_size=3, **kwargs)
+    assert b.transforms is not None
     assert list(a.diagnostics.status.values) == [
         "max_iterations",
         "max_iterations",
@@ -276,6 +288,7 @@ def test_mixed_no_overlap_retains_public_seed(slice_volume_pair_factory, model):
             max_iterations=2,
             progress=False,
         )
+        assert result.transforms is not None
         assert result.diagnostics.status == "insufficient_overlap"
         assert result.diagnostics.n_iterations == 0
         assert_allclose(result.transforms, seed, atol=1e-12, rtol=0)
@@ -298,6 +311,7 @@ def test_reversed_strided_slice_and_volume_grids(slice_volume_pair_factory, mode
         max_iterations=1,
         progress=False,
     )
+    assert result.transforms is not None
     expected, valid = sample(volume, target, result.transforms.values)
     assert_array_equal(result.valid, valid)
     assert_allclose(
@@ -323,6 +337,7 @@ def test_plane_seed_can_select_the_opposite_normal_orientation(angle):
         max_iterations=1,
         progress=False,
     )
+    assert result.transforms is not None
     assert_allclose(result.transforms, pose, atol=1e-12, rtol=0)
     assert result.diagnostics.objective < -0.999999
 
@@ -343,7 +358,7 @@ def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(
     grid = configure_transform(make_grid(target, volume), target, model)
     parameters = _initial_parameters(truth, grid, 1)
     actual = world_matrices(parameters, grid)[0]
-    native = itk.AffineTransform[itk.D, 3].New()
+    native = getattr(itk, "AffineTransform")[itk.D, 3].New()
     native.SetMatrix(itk.matrix_from_array(actual[:3, :3]))
     native.SetOffset(tuple(actual[:3, 3]))
     points = position_to_world(target) @ np.vstack(
@@ -363,6 +378,7 @@ def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(
         max_iterations=1,
         progress=False,
     )
+    assert result.transforms is not None
     expected, valid = sample(volume, target, result.transforms.values)
     assert_allclose(
         result.registered.values[valid], expected[valid], atol=2e-11, rtol=0
@@ -389,6 +405,7 @@ def test_integer_mixed_output_retains_rounding_and_original_dtype(
         max_iterations=1,
         progress=False,
     )
+    assert result.transforms is not None
     assert result.registered.dtype == np.uint16
     values, valid = sample(integer.astype(float), target, result.transforms.values)
     assert_array_equal(
@@ -434,7 +451,7 @@ def test_mixed_centering_seed_is_direction_consistent(
 
     monkeypatch.setattr(rigid, "_optimize", seed_only)
     target, volume, _ = slice_volume_pair_factory("rigid")
-    kwargs = {
+    kwargs: RegistrationOptions = {
         "initialization": mode,
         "intensity_scaling": "none",
         "max_iterations": 2,
@@ -442,7 +459,9 @@ def test_mixed_centering_seed_is_direction_consistent(
         "progress": False,
     }
     a = register(volume, target, return_transforms=True, **kwargs)
+    assert a.transforms is not None
     b = register(target, volume, return_transforms=True, **kwargs)
+    assert b.transforms is not None
     assert_allclose(a.transforms, np.linalg.inv(b.transforms), atol=1e-12, rtol=0)
 
 
@@ -460,6 +479,7 @@ def test_volume_grid_centers_within_singleton_voxel_extent_are_valid(
         max_iterations=1,
         progress=False,
     )
+    assert result.transforms is not None
     assert result.valid.any()
     assert not result.valid.values[:12].any()
     assert not result.valid.values[13:].any()
@@ -487,5 +507,6 @@ def test_parallel_plane_centering_and_translation_model():
         max_iterations=1,
         progress=False,
     )
+    assert result.transforms is not None
     assert_allclose(result.transforms, af, atol=1e-12, rtol=0)
     assert result.diagnostics.objective < -0.999999

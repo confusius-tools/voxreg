@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 
@@ -79,7 +80,11 @@ def test_stops_before_next_update_and_disabled_window_reaches_limit(
 
     monkeypatch.setattr(rigid, "global_ncc", flat_metric)
     data, _, _ = recording_factory()
-    options = {"device": device, "max_iterations": 8, "progress": False}
+    options: RegistrationOptions = {
+        "device": device,
+        "max_iterations": 8,
+        "progress": False,
+    }
     stopped = register(
         data,
         return_transforms=True,
@@ -135,7 +140,11 @@ def test_terminal_check_preserves_frozen_full_budget_results(
         return sample(*args, **kwargs)
 
     monkeypatch.setattr(rigid, "sample_rigid", counted_sample)
-    options = {"device": device, "max_iterations": 400, "progress": False}
+    options: RegistrationOptions = {
+        "device": device,
+        "max_iterations": 400,
+        "progress": False,
+    }
     stopped = register(data, return_transforms=True, **options)
     stopped_calls = len(calls)
     calls.clear()
@@ -168,7 +177,11 @@ def test_polling_is_batch_wide_bounded_and_absent_in_fixed_budget_controls(
     monkeypatch.setattr(rigid, "global_ncc", metric)
     monkeypatch.setattr(rigid, "_all_frames_stopped", not_finished)
     data, _, _ = recording_factory()
-    options = {"device": device, "max_iterations": 40, "progress": False}
+    options: RegistrationOptions = {
+        "device": device,
+        "max_iterations": 40,
+        "progress": False,
+    }
     register(data, **options, convergence_window_size=4, convergence_minimum_value=1)
     assert polls == list(range(4, 40, 10 if device == "cuda" else 1))
     polls.clear()
@@ -182,6 +195,7 @@ def test_calibration_report_uses_identical_controls_and_common_support(
     spec = importlib.util.spec_from_file_location(
         "calibrate", Path(__file__).parents[1] / "research/convergence/calibrate.py"
     )
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(

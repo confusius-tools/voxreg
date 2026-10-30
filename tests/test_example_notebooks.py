@@ -17,6 +17,7 @@ def reports():
         / "research/confusius-examples/render_notebooks.py"
     )
     spec = importlib.util.spec_from_file_location("example_reports", path)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

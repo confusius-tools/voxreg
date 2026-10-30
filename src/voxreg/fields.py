@@ -33,7 +33,20 @@ class FieldGrid:
 
 
 def make_field_grid(data: xr.DataArray, *, device: str = "cpu") -> FieldGrid:
-    """Build a float64 physical field lattice for a volume or native k=1 plane."""
+    """Build a float64 physical field lattice for a volume or native k=1 plane.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        Spatial VoxelData defining the field shape and millimetre geometry.
+    device : str, default: "cpu"
+        Torch device holding the resident lattice.
+
+    Returns
+    -------
+    FieldGrid
+        Geometry for component-first physical displacement fields.
+    """
     _validate_registration_geometry(data)
     geometry = make_grid(data, data, device=device)
     planar = data.sizes["k"] == 1
@@ -94,7 +107,22 @@ def _sample_field(
 def sample_field_at(
     field: torch.Tensor, mapped: torch.Tensor, grid: FieldGrid
 ) -> torch.Tensor:
-    """Evaluate a resident field at batched voxel positions on any query grid."""
+    """Evaluate a resident field at batched voxel positions on any query grid.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Float64 millimetre field, shaped (batch, components, *grid.shape).
+    mapped : torch.Tensor
+        Voxel query positions with components last; may broadcast over frames.
+    grid : FieldGrid
+        Resident source-field lattice.
+
+    Returns
+    -------
+    torch.Tensor
+        Component-first sampled displacements, zero outside field support.
+    """
     sizes = 2 * grid.half + 1
     valid = ((mapped >= -0.5) & (mapped < sizes - 0.5)).all(dim=-1)
     normalized = (mapped / grid.half - 1).flip(-1)
@@ -108,7 +136,22 @@ def sample_field_at(
 def compose_fields(
     outer: torch.Tensor, inner: torch.Tensor, grid: FieldGrid
 ) -> torch.Tensor:
-    """Return outer ∘ inner: inner(x) + outer(x + inner(x)), not vector addition."""
+    """Return outer ∘ inner: inner(x) + outer(x + inner(x)), not vector addition.
+
+    Parameters
+    ----------
+    outer : torch.Tensor
+        Outer float64 millimetre displacement field.
+    inner : torch.Tensor
+        Inner field with the same shape, applied first.
+    grid : FieldGrid
+        Shared resident field lattice.
+
+    Returns
+    -------
+    torch.Tensor
+        Component-first displacement for the complete composed pull.
+    """
     _check_field(outer, grid)
     _check_field(inner, grid)
     if outer.shape != inner.shape:
@@ -121,6 +164,20 @@ def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch
 
     As in ITK SyN, sigma=0 bypasses smoothing/boundary enforcement. A plane has
     only two active boundaries; its singleton acquisition axis is never expanded.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Float64 millimetre field, shaped (batch, components, *grid.shape).
+    grid : FieldGrid
+        Resident lattice and fixed active-boundary mask.
+    sigma : float
+        Finite, nonnegative Gaussian standard deviation in voxel units.
+
+    Returns
+    -------
+    torch.Tensor
+        Smoothed field with fixed boundaries, or the original field for sigma zero.
     """
     _check_field(field, grid)
     if not isfinite(sigma) or sigma < 0:
@@ -236,6 +293,24 @@ def invert_field(
     No per-iteration host polling. Intended for the zero-boundary smooth fields
     used by compositive SyN; a finite iteration budget does not guarantee an inverse.
     Callers must inspect the returned error and Jacobians before accepting a warp.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Float64 millimetre field to invert.
+    grid : FieldGrid
+        Resident field lattice.
+    iterations : int, default: 20
+        Positive number of clipped residual updates.
+    initial : torch.Tensor, optional
+        Starting inverse with the same shape as the field; copied before updates.
+
+    Returns
+    -------
+    inverse : torch.Tensor
+        Estimated component-first inverse displacement in millimetres.
+    error : torch.Tensor
+        Per-frame maximum two-sided composition residual in native pixels.
     """
     _check_field(field, grid)
     if (
@@ -263,6 +338,18 @@ def jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
     """Finite-difference det(I + du/dphysical) on oblique/sheared/reversed grids.
 
     Positive sampled determinants alone do not prove global invertibility.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Float64 millimetre field, shaped (batch, components, *grid.shape).
+    grid : FieldGrid
+        Resident lattice, including shear and axis orientation.
+
+    Returns
+    -------
+    torch.Tensor
+        Determinant at each field voxel, shaped (batch, *grid.shape).
     """
     _check_field(field, grid)
     derivative = torch.stack(

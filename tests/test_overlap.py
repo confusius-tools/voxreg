@@ -32,6 +32,7 @@ def test_aligned_smaller_moving_image_is_not_rejected(shape, model, device):
         progress=False,
         device=device,
     )
+    assert result.transforms is not None
     assert result.diagnostics.status == "max_iterations"
     assert 0 < float(result.diagnostics.valid_fraction) < 0.5
     assert result.diagnostics.objective < -0.999999
@@ -106,6 +107,7 @@ def test_no_overlap_keeps_seed_and_original_fill(model):
         max_iterations=2,
         progress=False,
     )
+    assert result.transforms is not None
     assert result.diagnostics.status == "insufficient_overlap"
     assert result.diagnostics.n_iterations == 0
     assert not result.valid.any()

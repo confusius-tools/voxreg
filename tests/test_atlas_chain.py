@@ -22,6 +22,7 @@ def harness():
     sys.path.insert(0, str(path.parent))
     try:
         spec = importlib.util.spec_from_file_location("atlas_chain", path)
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         yield module

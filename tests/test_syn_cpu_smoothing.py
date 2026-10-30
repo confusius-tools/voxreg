@@ -18,6 +18,7 @@ def smoother(mode):
         return syn.smooth_field
     path = Path(__file__).resolve().parents[1] / "research/syn/cpu_smoothing.py"
     spec = importlib.util.spec_from_file_location("cpu_smoothing_research", path)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.CPUSmoother(mode)

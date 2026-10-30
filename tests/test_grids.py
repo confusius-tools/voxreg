@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from confusius import create_voxeldata
@@ -31,7 +32,9 @@ def grid_data(shape, angles, spacing, *, seed=3):
         np.random.default_rng(seed).uniform(1, 3, shape),
         dims=("k", "j", "i"),
         voxel_to_world=affine,
-        **coords,
+        k=coords["k"],
+        j=coords["j"],
+        i=coords["i"],
     )
 
 
@@ -184,6 +187,7 @@ def test_single_pair_output_uses_fixed_grid_and_original_dtype(
         max_iterations=1,
         progress=False,
     )
+    assert r.transforms is not None
     assert r.registered.dims == fixed.dims and r.registered.shape == fixed.shape
     assert r.registered.dtype == dtype
     assert r.registered.xindexes["z"].equals(fixed.xindexes["z"])
@@ -258,6 +262,7 @@ def test_3d_known_motion_recovery_on_independent_grids(device):
         max_iterations=180,
         progress=False,
     )
+    assert r.transforms is not None
     indices = np.indices(fixed.shape)
     points = position_to_world(fixed) @ np.concatenate(
         (indices, np.ones((1, *fixed.shape))), axis=0
@@ -284,14 +289,16 @@ def test_3d_batch_and_cpu_cuda_independence(linear_pair_factory, model):
         **{dim: moving[dim] for dim in moving.dims},
     )
     data = data.assign_coords(acquisition=("time", [70, 73]))
-    options = {
+    options: RegistrationOptions = {
         "transform": model,
         "intensity_scaling": "none",
         "max_iterations": 120,
         "progress": False,
     }
     together = register(data, fixed, return_transforms=True, batch_size=2, **options)
+    assert together.transforms is not None
     alone = register(data, fixed, return_transforms=True, batch_size=1, **options)
+    assert alone.transforms is not None
     np.testing.assert_allclose(together.transforms, alone.transforms, atol=1e-8, rtol=0)
     np.testing.assert_array_equal(
         together.diagnostics.n_iterations, alone.diagnostics.n_iterations
@@ -311,6 +318,7 @@ def test_3d_batch_and_cpu_cuda_independence(linear_pair_factory, model):
     assert np.sqrt(np.mean(np.sum(truth_error**2, axis=1))) / ell < 0.25
     if torch.cuda.is_available():
         cuda = register(data, fixed, return_transforms=True, device="cuda", **options)
+        assert cuda.transforms is not None
         indices = np.indices(fixed.shape)
         points = position_to_world(fixed) @ np.concatenate(
             (indices, np.ones((1, *fixed.shape))), axis=0
@@ -344,6 +352,7 @@ def test_3d_reference_and_float64_detail_along_k_are_preserved(model):
         max_iterations=1,
         progress=False,
     )
+    assert r.transforms is not None
     assert r.registered.dtype == np.float64
     np.testing.assert_array_equal(r.registered[0], data[0])
     np.testing.assert_array_equal(r.transforms[0], np.eye(4))

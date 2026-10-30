@@ -294,6 +294,7 @@ def test_cpu_inverse_preserves_original_fallback(
     assert torch.isfinite(inverse).all() and torch.isfinite(error).all()
     if reason == "gradient":
         inverse.sum().backward()
+        assert field.grad is not None
         assert torch.isfinite(field.grad).all()
 
 
@@ -435,6 +436,7 @@ def test_research_scaled_gradient_filter_preserves_range(
         "gradient_filter_research",
         Path(__file__).parents[1] / "research/syn/gradient_filter.py",
     )
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     gradient_filter = module.gradient_filter
@@ -489,7 +491,7 @@ def test_field_options_and_geometry_validation(displacement_factory):
             smooth_field(field, grid, sigma=sigma)
     for iterations in [0, True, 1.5]:
         with pytest.raises(ValueError, match="iterations"):
-            invert_field(field, grid, iterations=iterations)
+            invert_field(field, grid, iterations=iterations)  # ty: ignore[invalid-argument-type] -- deliberate invalid-input coverage.
     with pytest.raises(ValueError, match="shape"):
         compose_fields(field[:1], field, grid)
     with pytest.raises(ValueError, match="float64"):

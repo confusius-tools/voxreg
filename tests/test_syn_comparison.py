@@ -18,6 +18,7 @@ def test_reference_zero_updates_preserve_complete_seed(
     pytest.importorskip(backend)
     path = Path(__file__).parents[1] / "research/syn/compare.py"
     spec = importlib.util.spec_from_file_location("syn_comparison", path)
+    assert spec is not None and spec.loader is not None
     comparison = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(comparison)
     shape = (40, 48) if planar else (32, 32, 32)

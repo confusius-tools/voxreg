@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from confusius import create_voxeldata
@@ -91,7 +92,7 @@ def test_inverse_parameterization_including_pi(angle):
 @pytest.mark.parametrize("device", DEVICES)
 def test_initial_pose_enables_large_displacement_and_is_refined(device):
     fixed, moving, truth = posed_pair()
-    options = {
+    options: RegistrationOptions = {
         "intensity_scaling": "none",
         "progress": False,
         "max_iterations": 150,
@@ -109,6 +110,7 @@ def test_initial_pose_enables_large_displacement_and_is_refined(device):
     result = register(
         moving, fixed, return_transforms=True, initial_transform=seed, **options
     )
+    assert result.transforms is not None
     np.testing.assert_array_equal(seed, untouched)
     points = world_points(fixed)
     ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
@@ -158,6 +160,7 @@ def test_failed_fit_retains_initial_not_identity(device, failure):
         progress=False,
         device=device,
     )
+    assert r.transforms is not None
     assert r.diagnostics.status == (
         "invalid_metric" if failure == "constant" else "insufficient_overlap"
     )
@@ -173,14 +176,16 @@ def test_slice_per_frame_initialization_and_reference(
 ):
     data, truth, _ = recording_factory(oblique=oblique, strided=strided)
     seed = truth.copy()
-    options = {
+    options: RegistrationOptions = {
         "initial_transform": seed,
         "intensity_scaling": "none",
         "max_iterations": 100,
         "progress": False,
     }
     combined = register(data, return_transforms=True, batch_size=3, **options)
+    assert combined.transforms is not None
     serial = register(data, return_transforms=True, batch_size=1, **options)
+    assert serial.transforms is not None
     np.testing.assert_allclose(
         combined.transforms, serial.transforms, atol=1e-9, rtol=0
     )
@@ -206,7 +211,11 @@ def test_slice_per_frame_initialization_and_reference(
 @pytest.mark.parametrize("device", DEVICES)
 def test_identity_seed_preserves_default_bitwise(recording_factory, device):
     data, _, _ = recording_factory(oblique=True, strided=True)
-    options = {"max_iterations": 65, "progress": False, "device": device}
+    options: RegistrationOptions = {
+        "max_iterations": 65,
+        "progress": False,
+        "device": device,
+    }
     default = register(data, return_transforms=True, **options)
     seeded = register(
         data, return_transforms=True, initial_transform=np.eye(4), **options
@@ -267,6 +276,7 @@ def test_reference_and_labeled_seed_validation(recording_factory):
             data, return_transforms=True, initial_transform=truth[1], progress=False
         )
     result = register(data, return_transforms=True, max_iterations=1, progress=False)
+    assert result.transforms is not None
     labeled = result.transforms.copy(data=truth)
     for wrong in [
         labeled.isel(time=slice(None, None, -1)),
@@ -316,7 +326,11 @@ def test_3d_seed_batch_and_device_independence():
     seeds = np.stack([seed, seed])
     seeds[0, :3, 3] += [0.06, -0.04, 0.05]
     seeds[1, :3, 3] += [-0.03, 0.05, -0.02]
-    options = {"intensity_scaling": "none", "max_iterations": 110, "progress": False}
+    options: RegistrationOptions = {
+        "intensity_scaling": "none",
+        "max_iterations": 110,
+        "progress": False,
+    }
     together = register(
         data,
         fixed,
@@ -325,6 +339,7 @@ def test_3d_seed_batch_and_device_independence():
         batch_size=2,
         **options,
     )
+    assert together.transforms is not None
     alone = register(
         data,
         fixed,
@@ -350,6 +365,7 @@ def test_3d_seed_batch_and_device_independence():
         if torch.cuda.is_available()
         else []
     ):
+        assert other.transforms is not None
         error = np.einsum(
             "bij,jp->bip", other.transforms.values - together.transforms.values, points
         )[:, :3]
@@ -387,11 +403,16 @@ def test_unlabeled_dataarray_seeds_follow_position(recording_factory):
         max_iterations=1,
         progress=False,
     )
+    assert r.transforms is not None
     np.testing.assert_allclose(r.transforms, truth, atol=1e-12)
     # Selecting one time leaves scalar provenance, not a per-frame index.
     shared = r.transforms.isel(time=1)
     fixed = data.isel(time=0, drop=True)
-    options = {"intensity_scaling": "none", "max_iterations": 1, "progress": False}
+    options: RegistrationOptions = {
+        "intensity_scaling": "none",
+        "max_iterations": 1,
+        "progress": False,
+    }
     labeled = register(
         data, fixed, return_transforms=True, initial_transform=shared, **options
     )
@@ -417,7 +438,7 @@ def test_itk_initial_transform_inplaceoff_oracle():
     import itk
 
     fixed, moving, seed = posed_pair()
-    image_type = itk.Image[itk.D, 3]
+    image_type = getattr(itk, "Image")[itk.D, 3]
     images = []
     for data in [fixed, moving]:
         image = itk.image_from_array(data.values.astype(np.float64))
@@ -428,20 +449,22 @@ def test_itk_initial_transform_inplaceoff_oracle():
         image.SetOrigin(tuple(affine[:3, 3][::-1]))
         image.SetDirection(itk.matrix_from_array(linear / spacing))
         images.append(image)
-    initial = itk.Euler3DTransform[itk.D].New()
+    initial = getattr(itk, "Euler3DTransform")[itk.D].New()
     initial.SetCenter((3.0, 2.0, 1.0))
     initial.SetMatrix(itk.matrix_from_array(seed[:3, :3][::-1, ::-1].copy()))
     initial.SetOffset(tuple(seed[:3, 3][::-1]))
     untouched = np.asarray(initial.GetParameters()).copy()
-    optimizer = itk.GradientDescentOptimizerv4.New()
+    optimizer = getattr(itk, "GradientDescentOptimizerv4").New()
     optimizer.SetNumberOfIterations(0)
-    registration = itk.ImageRegistrationMethodv4[image_type, image_type].New()
+    registration = getattr(itk, "ImageRegistrationMethodv4")[
+        image_type, image_type
+    ].New()
     registration.SetFixedImage(images[0])
     registration.SetMovingImage(images[1])
     registration.SetInitialTransform(initial)
     registration.InPlaceOff()
     registration.SetMetric(
-        itk.CorrelationImageToImageMetricv4[image_type, image_type].New()
+        getattr(itk, "CorrelationImageToImageMetricv4")[image_type, image_type].New()
     )
     registration.SetOptimizer(optimizer)
     registration.SetNumberOfLevels(1)
@@ -459,6 +482,7 @@ def test_itk_initial_transform_inplaceoff_oracle():
         max_iterations=1,
         progress=False,
     )
+    assert result.transforms is not None
     points = world_points(fixed)[:, ::100]
     expected = np.array(
         [
@@ -493,7 +517,11 @@ def test_initialization_matrix_alias_matches_initial_transform(representation):
     elif representation == "batch":
         seed = seed[None]
     untouched = np.array(seed, copy=True)
-    options = {"intensity_scaling": "none", "max_iterations": 3, "progress": False}
+    options: RegistrationOptions = {
+        "intensity_scaling": "none",
+        "max_iterations": 3,
+        "progress": False,
+    }
     expected = register(
         moving, fixed, return_transforms=True, initial_transform=seed, **options
     )

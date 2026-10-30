@@ -5,6 +5,7 @@ from io import StringIO
 import confusius._utils.progress as cf_progress
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from confusius import create_voxeldata
@@ -30,7 +31,11 @@ def test_batch_progress_is_silent_and_preserves_results(
         original()
 
     monkeypatch.setattr(torch.cuda, "synchronize", synchronize)
-    options = {"device": device, "batch_size": batch_size, "max_iterations": 3}
+    options: RegistrationOptions = {
+        "device": device,
+        "batch_size": batch_size,
+        "max_iterations": 3,
+    }
     baseline = register(data, return_transforms=True, **options, progress=False)
     baseline_syncs = len(synchronizations)
     synchronizations.clear()
@@ -119,7 +124,11 @@ def test_default_rich_progress_preserves_results_and_syncs(
     if device == "cuda" and not torch.cuda.is_available():
         pytest.skip("CUDA is unavailable")
     data, _, _ = recording_factory()
-    options = {"device": device, "batch_size": batch_size, "max_iterations": 3}
+    options: RegistrationOptions = {
+        "device": device,
+        "batch_size": batch_size,
+        "max_iterations": 3,
+    }
     synchronizations = []
     original = torch.cuda.synchronize
 
@@ -175,7 +184,7 @@ def test_rich_display_is_closed_on_registration_error(
 def test_spatial_pair_progress_is_auto_quiet(shape, mode, rich_bars):
     values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape) + 1
     data = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
-    options = {"intensity_scaling": "none", "max_iterations": 2}
+    options: RegistrationOptions = {"intensity_scaling": "none", "max_iterations": 2}
     quiet = register(data, data, return_transforms=True, progress=False, **options)
     kwargs = {} if mode == "default" else {"progress": mode}
     result = register(data, data, return_transforms=True, **kwargs, **options)

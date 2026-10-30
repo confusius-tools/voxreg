@@ -25,13 +25,39 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "codespell>=2.4.3",
     "fireants",
     "itk>=5.4.7",
+    "numpydoc>=1.11.0",
+    "prek>=0.4.8",
     "pytest>=9.1.1",
-    "ruff>=0.17.2",
+    "ruff>=0.17.3",
     "scipy>=1.18.1",
-    "ty>=0.0.94",
+    "ty>=0.0.95,<0.1.0",
 ]
 
 [tool.uv.sources]
 fireants = { url = "https://github.com/rohitrango/FireANTs/archive/f8a9cc259ab9113fc43bd99797000fa8fc34eb59.tar.gz" }
+
+[tool.numpydoc_validation]
+exclude = [
+    '\.__init__$',
+    '\._.*$',
+]
+checks = [
+    "all",
+    "GL01",
+    "ES01",
+    "SA01",
+    "EX01",
+]
+numpydoc_validation_checks = ["all", "GL01", "ES01", "SA01", "EX01"]
+
+[tool.ruff]
+exclude = ["research/*"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.ty.environment]
+extra-paths = ["research/confusius-examples"]

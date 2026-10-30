@@ -55,6 +55,7 @@ def test_global_ncc_masks_outside_without_nan(experiment):
     image.requires_grad_(True)
     value = experiment.masked_global_ncc(image, image.detach())
     value.backward()
+    assert image.grad is not None
     assert value.item() == 0 and torch.isfinite(image.grad).all()
 
 

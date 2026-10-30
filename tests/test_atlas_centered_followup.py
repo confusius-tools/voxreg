@@ -76,7 +76,9 @@ def test_unsupported_display_is_gray_not_nearest_extrapolation(followup, pair):
         plane.values, {"Unsupported": values}, "Support check"
     )
     image = plt.gcf().axes[0].images[0].get_array()
-    np.testing.assert_allclose(image, 0.25, rtol=0, atol=0)
+    assert image is not None
+    assert not np.ma.getmaskarray(image).any()
+    np.testing.assert_allclose(np.asarray(image), 0.25, rtol=0, atol=0)
     plt.close(plt.gcf())
 
 

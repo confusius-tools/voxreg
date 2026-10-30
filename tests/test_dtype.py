@@ -108,6 +108,7 @@ def test_dtype_preserving_fit_recovers_known_motion(recording_factory, dtype):
         values = np.rint(values * 1000)
     data = data.copy(data=values.astype(dtype))
     result = register(data, return_transforms=True, intensity_scaling="none")
+    assert result.transforms is not None
     affine = position_to_world(data)
     j, i = np.indices(data.shape[-2:])
     points = affine @ np.stack((np.zeros_like(j), j, i, np.ones_like(j))).reshape(4, -1)

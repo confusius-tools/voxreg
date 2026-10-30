@@ -4,7 +4,7 @@ import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from time import perf_counter
-from typing import Literal
+from typing import Literal, TypedDict
 
 import numpy as np
 import numpy.typing as npt
@@ -36,11 +36,16 @@ from voxreg.transforms import (
 )
 
 
+class _MetricOptions(TypedDict, total=False):
+    metric_callback: Callable[[torch.Tensor, torch.Tensor], None]
+    metric_interval: int
+
+
 @dataclass(frozen=True)
 class RegistrationResult:
     """Labeled registration outputs, not a replacement spatial container.
 
-    Parameters
+    Attributes
     ----------
     registered : xarray.DataArray
         Original intensities resampled on the fixed grid, retaining moving dtype.
@@ -455,7 +460,7 @@ def register(
 
     Returns
     -------
-    result : RegistrationResult
+    RegistrationResult
         Registered intensities and validity on the fixed grid, diagnostics, and
         optional world pull transforms (None by default). Spatial-only input has no synthetic time
         label: linear transforms are (4, 4), SyN fields are (k, j, i, world_component).
@@ -813,7 +818,7 @@ def register(
                 torch.cuda.synchronize()
             timings["upload"] += perf_counter() - start
             start = perf_counter()
-            metric_options = {}
+            metric_options: _MetricOptions = {}
             if metric_callback is not None:
 
                 def report_metrics(clocks, objective, first=first, last=last):

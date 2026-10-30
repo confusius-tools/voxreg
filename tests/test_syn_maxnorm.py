@@ -20,6 +20,7 @@ def test_maximum_squared_norm_matches_numpy(
 ):
     path = Path(__file__).resolve().parents[1] / "research/syn/maxnorm.py"
     spec = importlib.util.spec_from_file_location("maximum_norm_research", path)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     data, _, _, values = displacement_factory(planar)
@@ -45,6 +46,7 @@ def test_native_box_sum_and_adjoint_match_scipy(device, dimensions, radius):
 
     path = Path(__file__).resolve().parents[1] / "research/syn/box_filter.py"
     spec = importlib.util.spec_from_file_location("box_filter_research", path)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     shape = (2, 3, *([7, 9, 11][-dimensions:]))

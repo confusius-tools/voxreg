@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from numpy.testing import assert_allclose, assert_array_equal
@@ -28,6 +29,9 @@ def test_syn_known_nonlinear_recovery(
         planar, axis_aligned=axis_aligned
     )
     source = moving.copy(deep=True)
+    budget: RegistrationOptions = (
+        {"max_iterations": 120, "convergence_window_size": 1000} if fixed_budget else {}
+    )
     result = register(
         moving,
         fixed,
@@ -35,11 +39,7 @@ def test_syn_known_nonlinear_recovery(
         transform="syn",
         intensity_scaling="none",
         device=device,
-        **(
-            {"max_iterations": 120, "convergence_window_size": 1000}
-            if fixed_budget
-            else {}
-        ),
+        **budget,
     )
     ell = _ell(fixed)
     points = np.indices(fixed.shape).reshape(3, -1).T
@@ -55,6 +55,7 @@ def test_syn_known_nonlinear_recovery(
         (result.transforms, truth),
         (result.inverse_transforms, inverse),
     ]:
+        assert actual is not None
         assert actual.dims == ("k", "j", "i", "world_component")
         assert actual.dtype == np.float64
         assert list(actual.world_component.values) == ["z", "y", "x"]
@@ -80,6 +81,9 @@ def test_syn_cpu_cuda_point_gate(
     nonlinear_pair_factory, planar, fixed_budget, axis_aligned
 ):
     fixed, moving, _, _ = nonlinear_pair_factory(planar, axis_aligned=axis_aligned)
+    budget: RegistrationOptions = (
+        {"max_iterations": 120, "convergence_window_size": 1000} if fixed_budget else {}
+    )
     results = [
         register(
             moving,
@@ -88,13 +92,9 @@ def test_syn_cpu_cuda_point_gate(
             transform="syn",
             intensity_scaling="none",
             device=d,
-            **(
-                {"max_iterations": 120, "convergence_window_size": 1000}
-                if fixed_budget
-                else {}
-            ),
+            **budget,
         )
-        for d in ["cpu", "cuda"]
+        for d in ("cpu", "cuda")
     ]
     for name in ["transforms", "inverse_transforms"]:
         difference = getattr(results[0], name).values - getattr(results[1], name).values
@@ -126,6 +126,8 @@ def test_syn_complete_seed_and_original_output(
         max_iterations=1,
         learning_rate=1e-12,
     )
+    assert r.inverse_transforms is not None
+    assert r.transforms is not None
     points = position_to_world(fixed) @ np.vstack(
         (np.indices(fixed.shape).reshape(3, -1), np.ones((1, fixed.size)))
     )
@@ -188,6 +190,7 @@ def test_syn_reference_failure_isolation_and_chunks(
             batch_size=batch,
             progress=lambda n, total, events=events: events.append((n, total)),
         )
+        assert result.transforms is not None
         results.append(result)
         assert events[-1] == (3, 3)
         assert_array_equal(result.registered[0], recording[0])
@@ -208,6 +211,7 @@ def test_syn_reference_failure_isolation_and_chunks(
             / _ell(fixed)
             < 0.25
         )
+    assert results[0].transforms is not None and results[1].transforms is not None
     assert (
         np.linalg.norm(
             results[0].transforms.values - results[1].transforms.values, axis=-1
@@ -298,7 +302,7 @@ def test_displaced_interpolation_identity_and_gradients(
 @pytest.mark.parametrize("planar", [True, False])
 def test_syn_exchange_symmetry_is_not_one_way(nonlinear_pair_factory, device, planar):
     fixed, moving, _, _ = nonlinear_pair_factory(planar)
-    options = {
+    options: RegistrationOptions = {
         "transform": "syn",
         "intensity_scaling": "none",
         "device": device,
@@ -306,7 +310,9 @@ def test_syn_exchange_symmetry_is_not_one_way(nonlinear_pair_factory, device, pl
         "convergence_window_size": 1000,
     }
     forward = register(moving, fixed, return_transforms=True, **options)
+    assert forward.inverse_transforms is not None
     backward = register(fixed, moving, return_transforms=True, **options)
+    assert backward.transforms is not None
     # A same-domain mathematical symmetry check, not anatomical accuracy evidence.
     assert (
         np.linalg.norm(

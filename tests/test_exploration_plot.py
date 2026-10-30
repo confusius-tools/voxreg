@@ -7,6 +7,7 @@ import confusius as cf
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 from numpy.testing import assert_allclose, assert_array_equal
 
@@ -45,7 +46,7 @@ def test_plot_preserves_outputs_and_displays_returned_pose(
     moving, fixed = (plane, volume) if moving_slice else (volume, plane)
     seed = np.eye(4)
     seed[:3, 3] = [0, 0.02, -0.01]
-    options = {
+    options: RegistrationOptions = {
         "transform": model,
         "initialization": seed,
         "intensity_scaling": "none",
@@ -97,7 +98,7 @@ def test_best_update_line_preserves_sparse_metric_trace(plotting, pair):
     volume, plane = pair
     seed = np.eye(4)
     seed[1, 3] = 0.08
-    options = {
+    options: RegistrationOptions = {
         "transform": "translation",
         "initialization": seed,
         "intensity_scaling": "none",

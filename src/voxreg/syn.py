@@ -55,7 +55,22 @@ def _cpu_smoothing_weights(sigma):
 
 
 def smooth_field(field, grid, *, sigma):
-    """Filter CPU SyN volumes in scaled float32; keep physical field state double."""
+    """Filter CPU SyN volumes in scaled float32; keep physical field state double.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Component-first float64 millimetre displacement field.
+    grid : FieldGrid
+        Resident physical field lattice and fixed boundary mask.
+    sigma : float
+        Gaussian standard deviation in voxel units.
+
+    Returns
+    -------
+    torch.Tensor
+        Float64 field with the same smoothing boundary and support conventions.
+    """
     # shortcut: keep planar/serial SciPy until their whole-call crossovers are qualified.
     if (
         torch.compiler.is_compiling()
@@ -97,7 +112,26 @@ def _box_sum(values, radius):
 
 
 def local_ncc(moving, fixed, valid, radius):
-    """Masked squared neighborhood correlation; lower is better, per frame."""
+    """Compute masked squared neighborhood correlation independently per frame.
+
+    Parameters
+    ----------
+    moving : torch.Tensor
+        Sampled moving images, shaped (batch, *spatial_shape).
+    fixed : torch.Tensor
+        Sampled fixed images with the same shape.
+    valid : torch.Tensor
+        Boolean common-support mask.
+    radius : int
+        Neighborhood radius in active voxel axes.
+
+    Returns
+    -------
+    loss : torch.Tensor
+        Per-frame negative mean squared correlation; lower is better.
+    meaningful : torch.Tensor
+        Whether each frame has sufficient support and nonconstant neighborhoods.
+    """
     x, y = moving.double(), fixed.double()
     w = valid.double()
     stats = _box_sum(
@@ -413,6 +447,64 @@ def register_syn(
     total_sigma,
     radius,
 ):
+    """Register prepared native images with batched compositive midpoint fields.
+
+    Parameters
+    ----------
+    moving : xarray.DataArray
+        Original moving VoxelData with a leading frame dimension.
+    fixed : xarray.DataArray
+        Spatial-only fixed VoxelData defining the output grid.
+    fit : numpy.ndarray
+        Normalized float32 moving fitting images.
+    target : numpy.ndarray
+        Normalized float32 fixed fitting image.
+    plane : Plane or SpatialGrid
+        Prepared independent-grid sampling geometry and seed parameterization.
+    initial : numpy.ndarray, optional
+        Physical parameters for the fixed affine prealignment.
+    implicit_fixed : bool
+        Whether the first moving frame is the exact reference.
+    return_transforms : bool
+        Whether to export complete forward and inverse displacement fields.
+    spatial_input : bool
+        Whether the caller supplied a volume without a time dimension.
+    same_grid : bool
+        Whether moving and fixed use the same native spatial lattice.
+    timings : dict
+        Accumulated upload, optimization and resampling times; updated in place.
+    batch_size : int
+        Number of resident moving frames per fitting batch.
+    max_iterations : int
+        Maximum number of field updates per frame.
+    learning_rate : float
+        Maximum normalized update magnitude in native pixels.
+    convergence_window_size : int
+        Number of active objective samples in the convergence window.
+    convergence_minimum_value : float
+        Minimum convergence value before a frame stops.
+    device : str
+        Torch execution device.
+    progress : bool or callable or None
+        Whether to display progress, or a frame-completion callback.
+    metric_callback : callable, optional
+        Callback receiving frame indices, update counts and objective values.
+    metric_interval : int
+        Number of updates between metric callback reports.
+    interpolation : {"linear", "nearest"}
+        Final original-intensity sampling rule; fitting remains linear.
+    update_sigma : float
+        Update-gradient Gaussian standard deviation in voxels.
+    total_sigma : float
+        Accumulated-field Gaussian standard deviation in voxels.
+    radius : int
+        Local correlation neighborhood radius in active voxel axes.
+
+    Returns
+    -------
+    RegistrationResult
+        Calibrated original intensities, validity, diagnostics and optional fields.
+    """
     from voxreg.rigid import RegistrationResult, _output_template
 
     grid = make_field_grid(fixed, device=device)

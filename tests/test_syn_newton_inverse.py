@@ -20,6 +20,7 @@ def test_newton_inverse_preserves_physical_residuals(
     monkeypatch.syspath_prepend(str(directory))
     path = directory / ("newton_inverse.py" if planar else "newton3d.py")
     spec = importlib.util.spec_from_file_location("newton_inverse_research", path)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     data, _, lattice, values = displacement_factory(planar)

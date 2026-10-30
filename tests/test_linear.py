@@ -1,7 +1,10 @@
 """Shared translation/rigid/affine engine: physical pulls, not frozen chains."""
 
+from typing import Literal
+
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from confusius import create_voxeldata
@@ -12,7 +15,9 @@ from voxreg import position_to_world, register
 from voxreg.sampling import _initial_parameters, make_grid, sample_rigid, world_matrices
 from voxreg.transforms import affine_properties, configure_transform
 
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+DEVICES: list[Literal["cpu", "cuda"]] = (
+    ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
 
 
 def points(data):
@@ -51,7 +56,7 @@ def test_nonparallel_planes_refine_image_motion_after_geometry_alignment(
         voxel_to_world=placement @ position_to_world(moving),
     )
     truth = placement @ truth
-    kwargs = {
+    kwargs: RegistrationOptions = {
         "transform": model,
         "initialization": "align_planes",
         "intensity_scaling": "none",
@@ -75,7 +80,7 @@ def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
     fixed, moving, truth = linear_pair_factory(planar, model)
     grid = configure_transform(make_grid(fixed, moving), fixed, model)
     parameters = _initial_parameters(truth, grid, 1)
-    native = itk.AffineTransform[itk.D, 3].New()
+    native = getattr(itk, "AffineTransform")[itk.D, 3].New()
     native.SetCenter(tuple(grid.center))
     native.SetMatrix(itk.matrix_from_array(truth[:3, :3]))
     native.SetTranslation(
@@ -98,6 +103,7 @@ def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
         intensity_scaling="none",
         max_iterations=1,
     )
+    assert r.transforms is not None
     np.testing.assert_allclose(r.transforms, actual, atol=3e-14, rtol=0)
     assert r.diagnostics.status == "invalid_metric"
     for key in ("linear_ii", "linear_zz"):
@@ -201,7 +207,7 @@ def test_fitting_truth_and_cpu_cuda_precision(linear_pair_factory, planar, model
 @pytest.mark.parametrize("device", DEVICES)
 def test_series_batch_reference_and_explicit_seed(recording_factory, model, device):
     data, _, _ = recording_factory(oblique=True, strided=True)
-    options = {
+    options: RegistrationOptions = {
         "transform": model,
         "max_iterations": 100,
         "convergence_window_size": 101,
@@ -210,7 +216,9 @@ def test_series_batch_reference_and_explicit_seed(recording_factory, model, devi
         "device": device,
     }
     a = register(data, return_transforms=True, batch_size=1, **options)
+    assert a.transforms is not None
     b = register(data, return_transforms=True, batch_size=3, **options)
+    assert b.transforms is not None
     np.testing.assert_allclose(a.transforms, b.transforms, atol=1e-9, rtol=0)
     np.testing.assert_array_equal(
         a.diagnostics.n_iterations, b.diagnostics.n_iterations
@@ -326,6 +334,7 @@ def test_affine_seed_is_refined_as_full_pose_not_frozen_prefix(
         convergence_window_size=161,
         progress=False,
     )
+    assert r.transforms is not None
     before = np.sqrt(np.mean(error(seed, truth, fixed) ** 2))
     after = np.sqrt(np.mean(error(r.transforms, truth, fixed) ** 2))
     assert after < 0.25 and after < before / 4
@@ -349,6 +358,7 @@ def test_affine_final_interpolation_preserves_float64_detail(
         max_iterations=1,
         progress=False,
     )
+    assert r.transforms is not None
     coordinates = (
         np.linalg.inv(position_to_world(moving)) @ r.transforms.values @ points(fixed)
     )[:3]
@@ -374,6 +384,7 @@ def test_reflecting_affine_seed_is_preserved(linear_pair_factory):
         max_iterations=1,
         progress=False,
     )
+    assert r.transforms is not None
     np.testing.assert_allclose(r.transforms, truth, atol=3e-14, rtol=0)
 
 
@@ -424,6 +435,7 @@ def test_affine_candidate_guard_is_per_frame_and_keeps_best(
         intensity_scaling="none",
         progress=False,
     )
+    assert r.transforms is not None
     assert np.isfinite(r.transforms).all()
     assert np.all(np.abs(np.linalg.det(r.transforms.values[:, :3, :3])) > 1e-8)
     assert set(r.diagnostics.status.values) <= {
@@ -461,6 +473,7 @@ def test_invalid_affine_frame_does_not_stop_companions(
         intensity_scaling="none",
         progress=False,
     )
+    assert result.transforms is not None
     np.testing.assert_array_equal(result.diagnostics.n_iterations, [0, 2])
     np.testing.assert_array_equal(
         result.diagnostics.status, ["invalid_transform", "max_iterations"]

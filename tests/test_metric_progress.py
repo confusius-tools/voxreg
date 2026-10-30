@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from registration_options import RegistrationOptions
 import torch
 from numpy.testing import assert_array_equal
 
@@ -16,7 +17,7 @@ def test_metric_callback_preserves_results_and_reports_frame_clocks(
     recording_factory, device, transform
 ):
     data, _, _ = recording_factory()
-    options = {
+    options: RegistrationOptions = {
         "device": device,
         "transform": transform,
         "batch_size": 2,
@@ -64,7 +65,7 @@ def test_metric_callback_arrays_are_owned_and_invalid_metrics_are_nan(
     data, _, _ = recording_factory()
     data = data.copy(deep=True)
     data.values[1] = 0
-    options = {
+    options: RegistrationOptions = {
         "device": device,
         "batch_size": 2,
         "max_iterations": 3,
@@ -108,7 +109,7 @@ def test_metric_callback_validation_and_errors_propagate(recording_factory):
     data, _, _ = recording_factory()
     before = data.values.copy()
     with pytest.raises(TypeError, match="metric_callback"):
-        register(data, metric_callback=False)
+        register(data, metric_callback=False)  # ty: ignore[invalid-argument-type] -- deliberate invalid-input coverage.
 
     def fail(*_args):
         raise RuntimeError("metric display failed")

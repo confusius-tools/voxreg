@@ -154,7 +154,7 @@ def position_to_world(data: xr.DataArray) -> npt.NDArray[np.float64]:
 
     Returns
     -------
-    affine : (4, 4) numpy.ndarray
+    (4, 4) numpy.ndarray
         Array-position k/j/i to world z/y/x map, accounting for crop and stride.
     """
     _validate_registration_geometry(data)

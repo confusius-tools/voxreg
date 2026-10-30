@@ -15,6 +15,7 @@ spec = importlib.util.spec_from_file_location(
     "benchmark_example",
     Path(__file__).parents[1] / "examples/benchmark_registration.py",
 )
+assert spec is not None and spec.loader is not None
 benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
 
@@ -99,6 +100,7 @@ def test_memory_monitor_includes_child_process():
         text=True,
     )
     try:
+        assert process.stdout is not None
         assert process.stdout.readline().strip() == "ready"
         child_rss, child_pss, _ = benchmark.tree_memory(process.pid)
         root_rss = benchmark.rss_kib(os.getpid())
