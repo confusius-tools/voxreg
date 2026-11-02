@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from itertools import product
+from math import prod
 from typing import TypedDict
 
 import numpy as np
@@ -170,6 +171,7 @@ class SpatialGrid:
     resident_shift: torch.Tensor | None = None
     rotation_offset: torch.Tensor | None = None
     transform: str = "rigid"
+    resident_coordinates: torch.Tensor | None = None
 
 
 def make_grid(
@@ -294,6 +296,16 @@ def make_grid(
             world_to_normalized @ center_offset - normalized_center, **options
         ),
         coordinates=tuple(coordinates),
+        resident_coordinates=(
+            torch.stack(torch.broadcast_tensors(*coordinates), dim=1).reshape(1, 3, -1)
+            if (
+                not planar
+                and not mixed
+                and scales.device.type == "cpu"
+                and moving.sizes.get("time", 1) > 1
+            )
+            else None
+        ),
         lower=torch.tensor(
             -normalized_center - (0.5 / half if mixed else tolerance), **options
         ),
@@ -383,7 +395,7 @@ def _physical_transform(parameters, grid):
     return linear, translation
 
 
-def _grid_coordinates(parameters, grid, dimensions):
+def _grid_coordinates(parameters, grid, dimensions, *, sampler_order=False):
     rotation, translation = _physical_transform(parameters, grid)
     identity = torch.eye(3, device=parameters.device, dtype=parameters.dtype)
     linear = (
@@ -397,6 +409,15 @@ def _grid_coordinates(parameters, grid, dimensions):
             + ((rotation - identity) @ grid.rotation_offset)
             @ grid.world_to_normalized.T
         )
+    if sampler_order:
+        assert grid.resident_coordinates is not None
+        # Share one lattice and generate native x/y/z directly, avoiding a dense flip.
+        mapped = torch.bmm(
+            linear.flip(1), grid.resident_coordinates.expand(len(parameters), -1, -1)
+        )
+        mapped.add_(offset.flip(1)[..., None])
+        shape = tuple(coordinate.numel() for coordinate in grid.coordinates)
+        return mapped.transpose(1, 2).reshape(len(parameters), *shape, 3), rotation
     expand = (slice(None),) + (None,) * dimensions
     components = []
     for axis in range(3):
@@ -414,24 +435,60 @@ def _sample_grid(
     interpolation: str,
     displacement: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    mapped, rotation = _grid_coordinates(parameters, grid, images.ndim - 1)
+    cpu_volume = (
+        images.device.type == "cpu"
+        and not grid.planar
+        and grid.slice_basis is None
+        and not torch.compiler.is_compiling()
+    )
+    native_order = (
+        cpu_volume
+        and grid.resident_coordinates is not None
+        and len(parameters) > 1
+        and displacement is None
+        and interpolation == "linear"  # Preserve nearest-neighbor tie arithmetic.
+    )
+    mapped, rotation = _grid_coordinates(
+        parameters, grid, images.ndim - 1, sampler_order=native_order
+    )
     if displacement is not None:
         mapping = grid.world_to_normalized @ rotation @ grid.resident_basis
         return _sample_prepared(
             images, displacement, (mapped, mapping, grid), interpolation
         )
-    upper_valid = (
-        mapped < grid.upper if grid.slice_basis is not None else mapped <= grid.upper
+    lower = grid.lower.flip(0) if native_order else grid.lower
+    upper = grid.upper.flip(0) if native_order else grid.upper
+    upper_valid = mapped < upper if grid.slice_basis is not None else mapped <= upper
+    valid = ((mapped >= lower) & upper_valid).all(dim=-1)
+    sampler_grid = (
+        mapped
+        if native_order
+        else (mapped[..., 1:] if grid.planar else mapped).flip(-1)
+    ).to(images.dtype)
+    output_shape = sampler_grid.shape[:-1]
+    points = prod(output_shape)
+    tiles = (
+        min(torch.get_num_threads(), points)
+        if cpu_volume and len(images) == 1 and not images.requires_grad
+        else 1
     )
-    valid = ((mapped >= grid.lower) & upper_valid).all(dim=-1)
-    sampler_grid = (mapped[..., 1:] if grid.planar else mapped).flip(-1)
+    if tiles > 1:
+        # CPU grid_sample partitions its batch, not its voxels; expand shares the image.
+        length = (points + tiles - 1) // tiles
+        sampler_grid = sampler_grid.reshape(points, 3)
+        if tiles * length != points:
+            sampler_grid = F.pad(sampler_grid, (0, 0, 0, tiles * length - points))
+        sampler_grid = sampler_grid.reshape(tiles, 1, 1, length, 3)
+        images = images.expand(tiles, -1, -1, -1)
     sampled = F.grid_sample(
         images[:, None],
-        sampler_grid.to(images.dtype),
+        sampler_grid,
         mode={"linear": "bilinear", "nearest": "nearest"}[interpolation],
         padding_mode="border",
         align_corners=True,
     )[:, 0]
+    if tiles > 1:
+        sampled = sampled.reshape(-1)[:points].reshape(output_shape)
     return sampled, valid
 
 

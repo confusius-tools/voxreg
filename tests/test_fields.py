@@ -425,41 +425,6 @@ def test_exact_sparse_lattice_keeps_general_field_math(
 
 
 @pytest.mark.parametrize("planar", [False, True])
-@pytest.mark.parametrize("scale", [0, 1e-200, 1, 1e200])
-def test_research_scaled_gradient_filter_preserves_range(
-    displacement_factory, device, planar, scale
-):
-    import importlib.util
-    from pathlib import Path
-
-    spec = importlib.util.spec_from_file_location(
-        "gradient_filter_research",
-        Path(__file__).parents[1] / "research/syn/gradient_filter.py",
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    gradient_filter = module.gradient_filter
-    data, _, _, values = displacement_factory(planar)
-    grid = make_field_grid(data, device=device)
-    field = torch.tensor(values * scale, device=device)
-    expected = smooth_field(field, grid, sigma=1.5)
-    actual = gradient_filter(field, grid, sigma=1.5)
-    assert actual.dtype == torch.float64 and torch.isfinite(actual).all()
-    denominator = scale or 1
-    assert_allclose(
-        (actual / denominator).cpu(),
-        (expected / denominator).cpu(),
-        rtol=2e-6,
-        atol=2e-8,
-    )
-    assert_array_equal(
-        gradient_filter(field, grid, sigma=0.5).cpu(),
-        smooth_field(field, grid, sigma=0.5).cpu(),
-    )
-
-
-@pytest.mark.parametrize("planar", [False, True])
 def test_smoothing_keeps_differentiable_tensor_path(
     displacement_factory, device, planar
 ):

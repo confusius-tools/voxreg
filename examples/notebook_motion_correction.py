@@ -319,16 +319,10 @@ def main() -> None:
     parser.add_argument("--reference", type=Path)
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument(
-        "--repeats",
-        type=int,
-        default=0,
-        help="Warm timing repetitions; zero is quality/export only.",
-    )
     parser.add_argument("--threads", type=int, default=1)
     args = parser.parse_args()
-    if args.repeats < 0 or args.threads < 1:
-        parser.error("repeats must be nonnegative and threads positive")
+    if args.threads < 1:
+        parser.error("threads must be positive")
     torch.set_num_threads(args.threads)
     start = perf_counter()
     data = load_recording(args.input, slice(220, 340))
@@ -338,17 +332,6 @@ def main() -> None:
     result = register(
         data, return_transforms=True, device=args.device, batch_size=args.batch_size
     )
-    elapsed = []
-    for _ in range(args.repeats):
-        start = perf_counter()
-        result = register(
-            data,
-            return_transforms=True,
-            device=args.device,
-            batch_size=args.batch_size,
-            progress=False,
-        )
-        elapsed.append(perf_counter() - start)
     args.output.mkdir(parents=True, exist_ok=True)
     reference = None
     if args.reference is not None:
@@ -388,10 +371,9 @@ def main() -> None:
         "batch_size": args.batch_size,
         "torch_threads": args.threads,
         "load_seconds": load_seconds,
-        "warm_seconds": elapsed,
         "stage_seconds": result.diagnostics.attrs["timings_seconds"],
         "statuses": dict(zip(status.tolist(), counts.tolist(), strict=True)),
-        "timing_note": "No clean benchmark claimed. Use --repeats only on an otherwise idle machine. No compilation; initial CUDA/context work excluded from warm repetitions.",
+        "timing_note": "Example diagnostics only; use examples/benchmark.py for performance measurements.",
     }
     comparison = {}
     if reference is not None:

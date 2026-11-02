@@ -1,5 +1,9 @@
 # Symmetric compositive SyN
 
+> Historical qualification record. Exploratory Python runners were removed;
+> commands below describe the original checkpoint. Use the [current benchmark](../../BENCHMARK.md)
+> for new measurements; see the [archive scope](../README.md) for retained source/evidence.
+
 `register(..., transform="syn")` now supports native **2D–2D and 3D–3D** pairs
 and recordings. It shares linear registration's validation, initialization,
 preprocessing, physical sampling and original-intensity output contracts, without

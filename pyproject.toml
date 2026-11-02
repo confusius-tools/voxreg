@@ -3,11 +3,11 @@ name = "voxreg"
 version = "0.1.0"
 description = "Batched physical-space image registration using xarray-based VoxelData."
 readme = "README.md"
-requires-python = ">=3.14,<3.15"
+requires-python = ">=3.11,<3.15"
 dependencies = [
     "confusius>=0.8.0",
     "numpy>=2.3.4",
-    "scipy>=1.18.1",
+    "scipy>=1.16.3",
     "torch>=2.14.1",
     "xarray>=2026.9.0",
 ]
@@ -16,7 +16,7 @@ dependencies = [
 examples = [
     "matplotlib>=3.11.2",
     "nibabel>=5.4.2",
-    "scipy>=1.18.1",
+    "scipy>=1.16.3",
 ]
 
 [build-system]
@@ -31,8 +31,9 @@ dev = [
     "numpydoc>=1.11.0",
     "prek>=0.4.8",
     "pytest>=9.1.1",
+    "rich>=14.2.0",
     "ruff>=0.17.3",
-    "scipy>=1.18.1",
+    "scipy>=1.16.3",
     "ty>=0.0.95,<0.1.0",
 ]
 
@@ -53,11 +54,9 @@ checks = [
 ]
 numpydoc_validation_checks = ["all", "GL01", "ES01", "SA01", "EX01"]
 
-[tool.ruff]
-exclude = ["research/*"]
-
 [tool.ty.src]
 include = ["src", "tests"]
 
 [tool.ty.environment]
-extra-paths = ["research/confusius-examples"]
+# Match .python-version: the installed NumPy 2.5 stubs require Python >=3.12.
+python-version = "3.14"

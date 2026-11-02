@@ -6,9 +6,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import torch
 import xarray as xr
+from registration_options import RegistrationOptions
 
 from voxreg import register
 from voxreg.convergence import WindowConvergence
@@ -193,7 +193,7 @@ def test_calibration_report_uses_identical_controls_and_common_support(
     recording_factory, monkeypatch
 ):
     spec = importlib.util.spec_from_file_location(
-        "calibrate", Path(__file__).parents[1] / "research/convergence/calibrate.py"
+        "calibrate", Path(__file__).parent / "calibration_reference.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

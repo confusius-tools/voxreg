@@ -1,4 +1,8 @@
-# Shared 3D-pair and motion-correction benchmark
+# Historical shared 3D-pair and motion-correction benchmark
+
+> Superseded. The runners and script-specific tests below were removed.
+> Use the [one current benchmark](../../BENCHMARK.md); see [archive scope](../README.md)
+> for retained source/evidence and [native ANTs results](ANTS.md).
 
 **Protocol:** `standardized-v1`, implemented by the existing
 `examples/benchmark_registration.py` runner with workload helpers in

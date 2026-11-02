@@ -1,42 +1,26 @@
-"""Independent range, boundary and ownership checks for CPU filter experiments."""
-
-import importlib.util
-from pathlib import Path
+"""Independent range, boundary and ownership checks for production CPU smoothing."""
 
 import numpy as np
 import pytest
 import torch
 from scipy.ndimage import gaussian_filter
 
+from voxreg import syn
 from voxreg.fields import make_field_grid, smooth_field
 
 
-def smoother(mode):
-    if mode == "production":
-        from voxreg import syn
-
-        return syn.smooth_field
-    path = Path(__file__).resolve().parents[1] / "research/syn/cpu_smoothing.py"
-    spec = importlib.util.spec_from_file_location("cpu_smoothing_research", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.CPUSmoother(mode)
-
-
-@pytest.mark.parametrize("mode", ["torch64", "gradient32", "all32", "production"])
 @pytest.mark.parametrize("planar", [False, True])
 @pytest.mark.parametrize("sigma", [0.5, 1.5])
 @pytest.mark.parametrize("scale", [0, 1, 1e-200, 1e200])
 def test_cpu_filter_range_and_boundaries(
-    displacement_factory, monkeypatch, mode, planar, sigma, scale
+    displacement_factory, monkeypatch, planar, sigma, scale
 ):
     monkeypatch.setattr(torch, "get_num_threads", lambda: 8)
     data, _, _, values = displacement_factory(planar)
     grid = make_field_grid(data)
     source = values * scale
     field = torch.tensor(source)
-    actual = smoother(mode)(field, grid, sigma=sigma)
+    actual = syn.smooth_field(field, grid, sigma=sigma)
     expected = gaussian_filter(
         values if scale else np.zeros_like(values),
         sigma=sigma,
@@ -45,12 +29,7 @@ def test_cpu_filter_range_and_boundaries(
         mode="nearest",
     )
     expected = np.where(grid.boundary.numpy(), 0, expected)
-    low_precision = (
-        mode == "all32"
-        or (mode == "gradient32" and sigma == 1.5)
-        or (mode == "production" and not planar)
-    )
-    tolerance = np.abs(values).max() * (2e-6 if low_precision else 2e-14)
+    tolerance = np.abs(values).max() * (2e-6 if not planar else 2e-14)
     np.testing.assert_allclose(
         actual.numpy() / (scale or 1), expected, rtol=0, atol=tolerance
     )
@@ -59,12 +38,11 @@ def test_cpu_filter_range_and_boundaries(
     assert not actual.masked_select(grid.boundary).any()
 
 
-@pytest.mark.parametrize("mode", ["torch64", "gradient32", "all32", "production"])
-def test_cpu_filter_preserves_bypass_and_autograd(displacement_factory, mode):
+def test_cpu_filter_preserves_bypass_and_autograd(displacement_factory):
     data, _, _, values = displacement_factory(False)
     grid = make_field_grid(data)
     field = torch.tensor(values, requires_grad=True)
-    function = smoother(mode)
+    function = syn.smooth_field
     assert function(field, grid, sigma=0) is field
     actual = function(field, grid, sigma=0.5)
     expected = smooth_field(field, grid, sigma=0.5)

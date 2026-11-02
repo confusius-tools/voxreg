@@ -1,6 +1,29 @@
 # Registration validation
 
-Current acceleration checkpoint: **920 tests pass**, with 1,098 existing warnings
+Benchmark-cleanup checkpoint: **683 tests pass**, with 1,095 warnings in 78.67 s
+on CPU/CUDA. Removed tests exercised deleted benchmark/exploration scripts and
+experimental-only variants; production sampling, smoothing range/boundary/autograd
+controls, numerical gates and the independent stopping-policy reference remain.
+The latter now lives in `tests/calibration_reference.py`, without its old CLI.
+
+The consolidated five-run benchmark was **not started** during cleanup. Bounded
+checks cover CLI planning, unchanged fixture arrays, analytical versus dense RMS,
+existing native motion/pair output reconstruction and fresh-process control flow
+with a fake fitter. No new benchmark/example tests were added. Retained native
+pair output scores 0.678209 voxels RMS, failing 0.25 despite good image correlation;
+[the historical native report](research/registration/ANTS.md) records this failure.
+The new pipeline has not been qualified by a full matrix run.
+
+Prior CPU volume checkpoint: **936 tests pass**, with 1,098 warnings in
+132.94 seconds on CPU/CUDA. The 16 additional production-sampler cases cover
+cached and single-volume partitioned sampling, values, support, gradients,
+nearest-neighbor fallback and cache ownership. No benchmark/example tests were
+added. [Full-size 100-update evidence](research/performance/CPU-VOLUME.md) records
+0.003284-pixel worst truth RMS and 2.26e-8-pixel maximum updated-CPU/CUDA point
+disagreement, with unchanged 0.25/0.001-pixel gates. The full 60-case synthetic
+matrix and anatomical datasets were not rerun.
+
+Earlier SyN acceleration checkpoint: **920 tests pass**, with 1,098 existing warnings
 in 124.01 seconds on CPU/CUDA with one CPU thread. An additional real eight-thread
 SyN/output run passes 85 unchanged controls; 73 filter checks cover scaled ranges,
 exact boundaries, input ownership and unqualified-path fallbacks. The
@@ -736,3 +759,27 @@ source snapshots and cost/precision caveats. Both complete NIfTIs passed finite,
 dtype, shape, reference, acquisition-time and physical-lattice reload checks.
 Historical linear fixed-budget motion precision failures and anatomical/capture
 limitations remain; no numerical gate was relaxed or old evidence overwritten.
+
+## Python and SciPy compatibility expansion
+
+Package metadata now accepts Python >=3.11,<3.15 and SciPy >=1.16.3, matching
+ConfUSIus's effective minimums. The development interpreter and its type-checking
+environment stay on Python 3.14; NumPy 2.5's installed stubs require Python >=3.12.
+No registration arithmetic changed. A test-only type alias and three historical
+example exception handlers were rewritten into equivalent Python 3.11 syntax.
+
+All 112 Python files under `src`, `tests`, `examples` and `research` parse with
+Python 3.11.17. Isolated `uv sync --dry-run --locked` plans resolve the complete
+dev group on Python 3.11, 3.12, 3.13 and 3.14. Wheel/sdist builds pass and carry
+the broadened metadata; these commands do not sync the active benchmark venv.
+
+An isolated Python 3.11.17 / NumPy 2.4.6 / SciPy 1.16.3 environment exercised the
+actual `gaussian_filter` kwargs used by voxreg: float64 planar and volumetric
+fields, sigma 0.5/1.5, explicit radius, spatial axes and nearest boundaries. All
+four outputs exactly matched the SciPy 1.18.1 reference (maximum absolute
+difference zero). This is a primitive/API compatibility check, **not** a full
+registration qualification on older Python/SciPy combinations. Those numerical
+suites are deferred while the full synthetic registration benchmark is active.
+
+ANTsPy is not installed: its SciPy <1.16 requirement still conflicts with
+ConfUSIus's >=1.16.3 requirement. No dependency override was introduced.

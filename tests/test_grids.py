@@ -1,5 +1,7 @@
 """Independent physical grids, 3D rotations and volume-to-volume registration."""
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from registration_options import RegistrationOptions
@@ -11,7 +13,13 @@ from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
-from voxreg.sampling import make_grid, rotation_vectors, sample_rigid, world_matrices
+from voxreg.sampling import (
+    SpatialGrid,
+    make_grid,
+    rotation_vectors,
+    sample_rigid,
+    world_matrices,
+)
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
@@ -136,6 +144,72 @@ def test_volume_sampler_gradients_including_zero_rotation(zero):
         return (sampled * weights).sum()
 
     assert torch.autograd.gradcheck(objective, (p,), eps=1e-6, atol=2e-5, rtol=1e-4)
+
+
+@pytest.mark.parametrize("batch", [1, 3])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("image_grad", [False, True])
+@pytest.mark.parametrize("interpolation", ["linear", "nearest"])
+def test_cached_cpu_volume_sampler_matches_untiled_geometry(
+    batch, dtype, image_grad, interpolation
+):
+    fixed, moving = pair()
+    geometry = make_grid(fixed, moving.expand_dims(time=np.arange(batch)))
+    assert isinstance(geometry, SpatialGrid)
+    cached = (
+        geometry.resident_coordinates.clone()
+        if geometry.resident_coordinates is not None
+        else None
+    )
+    assert (cached is not None) == (batch > 1)
+    images = torch.tensor(
+        np.repeat(moving.values[None], batch, axis=0),
+        dtype=dtype,
+        requires_grad=image_grad,
+    )
+    parameters = torch.tensor(
+        [[0.03, -0.02, 0.04, 0.05, -0.08, 0.06]] * batch, dtype=torch.float64
+    )
+    if batch > 1:
+        parameters[-1, 3] = 100  # Include unsupported points and border extension.
+    parameters.requires_grad_()
+    inputs = (parameters, images) if image_grad else (parameters,)
+    weights = torch.linspace(0.1, 1, fixed.size).reshape(fixed.shape)
+    previous = torch.get_num_threads()
+    try:
+        torch.set_num_threads(1)
+        expected, expected_valid = sample_rigid(
+            images,
+            parameters,
+            replace(geometry, resident_coordinates=None),
+            interpolation=interpolation,
+        )
+        expected_gradients = torch.autograd.grad((expected * weights).sum(), inputs)
+        torch.set_num_threads(4)
+        actual, valid = sample_rigid(
+            images, parameters, geometry, interpolation=interpolation
+        )
+        gradients = torch.autograd.grad((actual * weights).sum(), inputs)
+    finally:
+        torch.set_num_threads(previous)
+    torch.testing.assert_close(
+        actual, expected, rtol=0, atol=2e-6 if dtype == torch.float32 else 2e-12
+    )
+    assert torch.equal(valid, expected_valid)
+    if interpolation == "nearest":
+        assert torch.equal(actual, expected)
+    for actual_gradient, expected_gradient in zip(
+        gradients, expected_gradients, strict=True
+    ):
+        torch.testing.assert_close(
+            actual_gradient,
+            expected_gradient,
+            rtol=2e-6,
+            atol=2e-5 if dtype == torch.float32 else 2e-11,
+        )
+    if geometry.resident_coordinates is not None:
+        assert cached is not None
+        assert torch.equal(geometry.resident_coordinates, cached)
 
 
 def test_volume_parameter_scales_use_per_axis_physical_lever_arms():

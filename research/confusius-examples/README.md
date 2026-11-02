@@ -1,4 +1,8 @@
-# ConfUSIus examples: current exploration and historical validation
+# ConfUSIus examples: historical exploration and validation
+
+> Historical record. The exploration scripts and their script-specific tests
+> were removed. Use the [current benchmark](../../BENCHMARK.md) for new runs;
+> see [archive scope](../README.md) for retained source/evidence.
 
 **Start here:** [native-pair live/headless exploration](EXPLORATION.md), using
 `explore_atlas.py` and the reusable research-only `plot_registration.py` helper.

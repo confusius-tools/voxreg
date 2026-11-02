@@ -1,5 +1,8 @@
 # Slice geometry extension
 
+> Historical qualification record; exploratory Python runners were removed.
+> See the [archive scope](../README.md) and [current benchmark](../../BENCHMARK.md).
+
 **Historical native-slice-domain report.** Current mixed registration samples the
 caller's native fixed grid without role reversal or replicated data; see
 [NATIVE-FIXED.md](NATIVE-FIXED.md). The older protocol/results below are retained,

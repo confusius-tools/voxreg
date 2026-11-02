@@ -1,5 +1,9 @@
 # ITK-style, independent-frame convergence
 
+> Historical calibration record. The exploratory CLIs were removed; the native
+> oracle and production common-support reference remain. See [archive scope](../README.md)
+> and the [current benchmark](../../BENCHMARK.md).
+
 The production monitor is `src/voxreg/convergence.py`. It implements ITK v4's
 `WindowConvergenceMonitoringFunction<double>` calculation, not a generic linear
 regression or absolute change test. Registration still uses voxreg's Adam:

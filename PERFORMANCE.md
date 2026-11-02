@@ -1,5 +1,9 @@
 # Performance investigation: threads, dense grids and CUDA
 
+At benchmark cleanup, the [consolidated five-run pipeline](BENCHMARK.md) was ready
+but had not been run. Measurements below remain historical qualification evidence,
+not its median/range scorecard.
+
 **Finding:** the largest identified bottleneck is generic matrix multiplication
 on dense float64 coordinate fields, including unfavorable shapes/layout and
 associated copies/backpropagation. It is not xarray overhead, and reducing
@@ -7,9 +11,20 @@ precision is not necessary to remove it.
 
 This is the historical investigation of baseline commit `83b6dd6`. The float64
 scalar-affine candidate described below has **now been brought into the engine**;
-see [BENCHMARK.md](BENCHMARK.md) for fresh production time/memory comparisons,
-source hashes and regression gates. Historical prototype timings are retained
+see [BENCHMARK.md](BENCHMARK.md) for the current production measurement protocol,
+source capture and regression gates. Historical prototype timings are retained
 here rather than presented as current benchmark results.
+
+## CPU volume follow-up
+
+[The CPU volume report](research/performance/CPU-VOLUME.md) records the latest
+precision-preserving changes: a shared float64 lattice/native coordinate layout
+for batched CPU volumes, and zero-copy query partitioning for single volumes.
+On full-size rigid controls with 100 updates, one first 32-volume call fell from
+97.861 to 77.694 s, and one pair from 5.877 to 2.689 s. NCC precision, production
+batch caps and CUDA arithmetic are unchanged. The FireANTs benchmark adapter now
+uses 32 linear-model volumes after separate CPU/CUDA batch and memory checks;
+historical four-volume timings retain their old scheduling label.
 
 ## SyN acceleration checkpoint
 

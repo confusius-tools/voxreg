@@ -12,9 +12,10 @@ Translation, rigid and affine fitting are joined by **symmetric compositive SyN*
 for native 2D–2D and 3D–3D pairs/recordings. This is not a complete ConfUSIus
 replacement or a claim of anatomical validation. See the new
 [SyN implementation and measured ITK/FireANTs comparison](research/syn/README.md).
-The historical performance benchmarks below measure rigid registration only. A [shared benchmark protocol](research/registration/README.md) now
-covers 3D pairs and motion correction against ITK/FireANTs, including 64³/128³
-phantoms and a real-template known-pose control—not a natural 3D session pair.
+Use the [single synthetic benchmark](BENCHMARK.md) for translation, rigid, affine
+and SyN comparisons across voxreg/FireANTs CPU/CUDA and native ITK CPU: a volume
+pair, 100-frame slice recording and 100-frame volume recording. Earlier measured
+ITK/FireANTs comparisons remain available as historical evidence.
 
 See [DESIGN.md](DESIGN.md) for conventions and scope, and
 [VALIDATION.md](VALIDATION.md) for the measured quality checks and remaining gates.
@@ -25,9 +26,13 @@ manual rigid→affine staging; these do not change optimizer defaults.
 
 ## Install and test
 
-Requires Python **3.14** (`>=3.14,<3.15`, matching the temporary ConfUSIus dependency). CUDA execution has been checked on Linux with an RTX
-5080 Laptop GPU. The default PyTorch distribution includes large CUDA runtime
-packages; a CPU-only package source is not configured here.
+Accepts Python **3.11–3.14** (`>=3.11,<3.15`). `.python-version` keeps **3.14** as
+the preferred development interpreter, not the minimum supported version. Full
+registration/CUDA qualification remains on Python 3.14; older interpreters have
+syntax and dependency-resolution checks, not a complete numerical qualification.
+CUDA execution has been checked on Linux with an RTX 5080 Laptop GPU. The default
+PyTorch distribution includes large CUDA runtime packages; a CPU-only package
+source is not configured here.
 
 ```bash
 uv sync
@@ -46,7 +51,10 @@ VoxelData** (`confusius>=0.8.0`). `uv sync` installs the released package; no
 sibling checkout is required. ConfUSIus brings its full dependency stack,
 including ITK/napari and Rich. The NumPy minimum matches ConfUSIus (2.3.4) to
 keep its platform dependency constraints resolvable; this Linux environment
-uses NumPy 2.5.4 and xarray 2026.9.0.
+uses NumPy 2.5.4 and xarray 2026.9.0. The SciPy floor is **1.16.3**, also matching
+ConfUSIus; voxreg's Gaussian-filter calls do not require 1.18.1. ANTsPy's current
+`scipy<1.16` requirement still conflicts with ConfUSIus, even on Python 3.11, so
+it cannot share this dev environment without an upstream compatibility change.
 
 FireANTs remains a pinned development-only comparison dependency. Matplotlib,
 nibabel and SciPy are listed in the `examples` extra, although ConfUSIus also
@@ -609,109 +617,43 @@ exact timing sidecars, transforms/diagnostics in NPZ and CSV, and motion, voxel
 trace and raster PNGs. Open the NIfTI outputs in napari with a NIfTI reader.
 Artifacts stay local and are ignored by Git.
 
-### Optional frozen ITK comparison
+The example can still compare against an existing frozen ITK archive with
+`--reference path/to/itk_reference.npz`, using independent SciPy sampling and common
+valid support. The old reference exporter and example timing repetitions have
+been removed; historical evidence remains in [research records](research/README.md).
 
-The reference exporter uses **an existing ConfUSIus environment**, solely to run
-its original public registration functions. ConfUSIus is also installed into
-voxreg for shared VoxelData; the reference still runs a separate numerical pipeline. With the neighboring checkout layout used during development:
+## Registration benchmark
 
-```bash
-# Run with ConfUSIus's interpreter; quality export only, no timing repetitions.
-uv run --directory ../../confusius-tools/confusius python \
-    "$PWD/examples/freeze_itk_reference.py" "$INPUT" \
-    "$PWD/artifacts/notebook/itk_reference.npz"
-
-# Back in voxreg's environment: registration still uses voxreg's PyTorch engine.
-uv run --extra examples python examples/notebook_motion_correction.py \
-    "$INPUT" --device cuda --output artifacts/notebook \
-    --reference artifacts/notebook/itk_reference.npz
-```
-
-The frozen reference records source hashes, resolved ITK registration settings,
-input arrays/coordinates, pull matrices and original-power registered outputs.
-The comparison uses one independent SciPy bilinear sampler on dB inputs and
-**common valid support**, not each implementation's internal optimizer score.
-Both outputs retain the source's decoded intensity dtype. Voxreg uses float32
-working fitting images with float64 NCC statistics, then resamples the original
-float64 intensities for this NIfTI example.
-
-Timing repetitions default to **zero**. Only on an otherwise idle machine, add
-`--repeats 3` to the respective scripts. The reference exporter measures the warm
-public pipeline at `n_jobs=1` and `--jobs 8`, using its default joblib backend.
-Run each configuration separately; do not infer speedups from contested timings.
-
-## Standalone time and memory comparisons
-
-The motion-correction example also writes `artifacts/notebook/input.npz`. This
-neutral input artifact lets the ITK/FireANTs benchmark run entirely in voxreg's
-Python environment, without calling ConfUSIus's registration pipeline:
+**One pipeline, 41 configurations:** rigid, affine and SyN on three synthetic
+workloads across voxreg/FireANTs CPU/CUDA, plus separately labeled native ANTs
+workflows. Native motion retains both **dense/default and explicit random 5%**.
 
 ```bash
-# Practical subset; run only on an otherwise idle machine.
-uv run python examples/benchmark_registration.py \
-    --cases itk-1-t8 itk-8 cpu-32-t8 cuda-120 \
-            fireants-cpu-32-t8 fireants-cuda-120
-
-# Omitting --cases also includes deliberately slow unbatched controls.
-# The full suite can take more than ten minutes.
+uv run --extra examples python examples/benchmark.py \
+    --runs 5 \
+    --ants-bin artifacts/ants-install-2.6.5/ants-2.6.5/bin \
+    --output artifacts/benchmark-01
 ```
 
-Each configuration uses fresh interpreters, with **separate time and memory
-passes**. Warm timings include preprocessing, original-power resampling and
-return to host. Memory reporting includes process-tree RSS/PSS, exact PyTorch
-CUDA allocator peaks, and sampled per-process GPU VRAM including context memory.
-Process-parallel ITK includes scheduling and result-transfer overhead. Startup
-costs and loaded-input/warm memory baselines are recorded separately.
+The default workloads are **100 × 1 × 150 × 128** slice recordings, an
+**80 × 150 × 80** volume pair and **100 × 80 × 150 × 80** volume recordings, in
+elevation × axial × lateral order. No download or separate preparation is needed.
 
-See [BENCHMARK.md](BENCHMARK.md) for measured timings, memory, quality and caveats.
-The historical float32-input benchmark takes **0.219 s on full-batch CUDA** and
-**2.128 s on eight-thread CPU**. Fresh FireANTs controls take 0.355 s and 0.963 s
-respectively: CUDA is competitive, while CPU remains slower than native float32
-FireANTs. These are not precision-
-matched solvers or universal speedup guarantees. Comparisons use direct 2D APIs,
-not the ConfUSIus pipeline or its earlier frozen-reference optimizer configuration.
-See the report for memory, quality, source hashes and the pinned FireANTs archive.
+The scorecard contains **wall-time median [min–max] over five registrations**
+(first call included), **peak RAM/VRAM from a separate run**, and **worst fitted-
+frame transformation RMS against independent truth** from the complete workload.
+There are no warm-up scores or separately refitted truth probes. Sources, hashes,
+settings and failures are preserved; native CLI and resident-array timings are
+kept in distinct tables.
 
-[PERFORMANCE.md](PERFORMANCE.md) preserves the profiler investigation that led to
-this rewrite. Float64 physical geometry/state/NCC and independent frame policies
-are unchanged; only dense coordinate evaluation was reorganized.
+The full serial matrix takes many hours. Use `--list`, `--plan-only` or quoted
+`--configs` patterns to inspect/select configurations. See [BENCHMARK.md](BENCHMARK.md)
+for exact boundaries, numerical differences and memory limitations.
 
-### Consistent 3D-pair and series comparisons
-
-Use the same runner with an explicit standardized workload. Historical commands
-without `--workload` retain their older configuration; historical results are not
-overwritten or mixed with the new measurements.
-
-```bash
-# Prepare independent 3D grids and analytic known motion (outside timing).
-uv run python examples/prepare_registration_benchmark.py \
-    --size 128 --independent-grids --output artifacts/registration-inputs/pair128.npz
-
-# Native ITK / voxreg / FireANTs, CPU and CUDA; one cold + three warm calls,
-# with separate fresh-process memory passes. Output directory must be new/empty.
-uv run python examples/benchmark_registration.py \
-    --workload pair --policy fixed \
-    --input artifacts/registration-inputs/pair128.npz \
-    --output artifacts/registration-results/pair128-fixed
-
-# Same protocol, existing motion-correction input and explicit batches.
-uv run python examples/benchmark_registration.py \
-    --workload series --policy convergence --intensity-scaling db \
-    --input artifacts/notebook/input.npz \
-    --cases itk-1-t8 cpu-32-t8 cuda-120 fireants-cpu-32-t8 fireants-cuda-120 \
-    --output artifacts/registration-results/series-convergence
-```
-
-`fixed` compares a common update budget, not identical optimizers. `convergence`
-uses explicitly recorded backend stopping rules; native FireANTs stops too early
-on two 3D controls and fails their unchanged RMS truth screen. Its shorter times
-are not equal-quality speedups. Independent SciPy quality uses common support;
-known physical truth error, versions, precision, source/input hashes, update
-counts, statuses and power-state snapshots are recorded in the shared schema.
-
-See [the AC-powered results and reproduction guide](research/registration/README.md)
-for latency, memory, timing ranges and limitations. Earlier uncontrolled-power
-runs are kept separately, not mixed into the AC tables.
+Inputs are resident NumPy arrays. The 100-frame 3D input alone occupies 384 MB;
+internal batching does not bound full input/output storage. **Dask-backed inputs
+and streamed outputs are not supported yet.** Older runners and exploratory
+scripts were removed, not silently reused as current results.
 
 ## Current limits
 

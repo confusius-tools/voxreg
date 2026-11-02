@@ -1,5 +1,8 @@
 # Removing the fixed coverage cutoff
 
+> Historical qualification record. See [archive scope](../README.md) and the
+> [current benchmark](../../BENCHMARK.md); production overlap checks remain.
+
 The former requirement that a moving image cover at least 90% of the fixed image
 was a voxreg policy, not a requirement of the ITK correlation metric. It rejected
 valid smaller moving fields of view and blocked the real same-subject alignment.

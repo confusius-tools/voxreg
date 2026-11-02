@@ -1,5 +1,8 @@
 # Bounded linear-model qualification
 
+> Historical qualification record. The exploratory runner was removed; numerical
+> production tests remain. See [archive scope](../README.md) and the [current benchmark](../../BENCHMARK.md).
+
 For the current package-first API/test audit and fresh ConfUSIus workflows, see
 [READINESS.md](READINESS.md). The measurements below retain their original
 protocol and source hashes; the readiness check does not rewrite them.

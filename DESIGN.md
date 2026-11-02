@@ -269,26 +269,31 @@ silently reinterpreted.
 
 ## 2. Python and dependencies
 
-Use Python **3.14**. Python 3.12 was needed for some comparison-library packages,
-not for voxreg. The implementation and CUDA tests run on Python 3.14.8 with
-NumPy 2.5.4, xarray 2026.9.0 and PyTorch 2.14.1 on the current Linux machine.
+Accept Python **3.11–3.14**; retain 3.14 as the preferred development interpreter.
+Syntax and dependency resolution cover this range; full numerical/CUDA
+qualification is still on Python 3.14.8 with NumPy 2.5.4, xarray 2026.9.0 and
+PyTorch 2.14.1 on the current Linux machine. The earlier 3.14-only package floor
+was unnecessarily strict, not imposed by ConfUSIus's Python requirement.
 
 The engine directly uses:
 
 - NumPy for host-side geometry and validation.
 - xarray for the public data model and labeled results.
 - PyTorch for interpolation, differentiation and batched optimization.
+- SciPy >=1.16.3 for nondifferentiable CPU field smoothing; the floor matches
+  ConfUSIus, not a need for 1.18-only APIs.
 - ConfUSIus >=0.8.0 for the canonical VoxelData index and Rich progress reporter.
   This temporarily replaces the duplicated geometry implementation.
 
-Pytest, Ruff and the independent SciPy interpolation reference are development
-dependencies. Matplotlib, nibabel and SciPy are in the optional `examples` extra.
-The optional reference exporter runs with an existing ConfUSIus interpreter;
-ConfUSIus is now installed into voxreg and brings its full transitive dependency
-stack, including ITK/napari. FireANTs remains development-only. Python is currently
-restricted to >=3.14,<3.15 by this integration. The released ConfUSIus package is
-installed normally; no sibling checkout is required. Historical benchmarks predate
-this dependency change.
+Pytest/Ruff are development dependencies; SciPy also supplies the independent
+interpolation reference. Matplotlib, nibabel and SciPy are in the optional
+`examples` extra. The optional reference exporter runs with an existing ConfUSIus
+interpreter; ConfUSIus is now installed into voxreg and brings its full transitive
+dependency stack, including ITK/napari. FireANTs remains development-only. The
+released ConfUSIus package supports Python >=3.11,<3.15 and requires SciPy >=1.16.3;
+its SciPy floor still prevents sharing an environment with ANTsPy's scipy<1.16.
+No sibling checkout or dependency override is required. Historical benchmarks
+predate these compatibility declarations.
 
 ## 3. VoxelData contract
 

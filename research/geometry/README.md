@@ -1,5 +1,8 @@
 # Independent physical grids and initial 3D rigid qualification
 
+> Historical qualification record; commands below describe that checkpoint.
+> See [archive scope](../README.md) and the [current benchmark](../../BENCHMARK.md).
+
 This extends the slice engine at `ed9cb21`; it is **numerical qualification, not
 an ITK/FireANTs 3D performance comparison**. Exact settings, source hashes and
 measurements are in [results.json](results.json). This records the `cc0b4de`

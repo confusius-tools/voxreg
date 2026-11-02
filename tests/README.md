@@ -52,9 +52,15 @@ Keep cached real examples and heavyweight comparisons separate from unit tests.
 `test_syn.py` checks default/fixed-budget nonlinear recovery, forward/inverse
 CPU/CUDA points, exchange symmetry (not anatomical truth), original-intensity
 SciPy interpolation, integer/float64 output, callbacks, chunk/reference/failure
-isolation and invalid inputs. `test_syn_comparison.py` verifies zero-update
-physical ownership and complete seed directions through native ITK/FireANTs APIs.
-The actual accuracy/speed runs live in [research/syn](../research/syn/README.md).
+isolation and invalid inputs. `test_syn_cpu_smoothing.py` retains the production
+range, boundary, ownership, autograd and bypass controls; experimental filter
+variants and their script-specific tests were removed. The independent
+common-support stopping-policy reference remains in `calibration_reference.py`.
+
+Use [the one benchmark pipeline](../BENCHMARK.md) for accuracy/speed runs.
+Do not add tests for benchmark/example/exploratory scripts: use bounded direct
+checks. Existing real-example geometry/interpolation oracles remain; tests of
+removed exploration modules and obsolete benchmark CLIs do not.
 
 Transform export is off by default. Recovery/precision or seed-reuse tests must
 explicitly request `return_transforms=True`; do not replace their assertions with

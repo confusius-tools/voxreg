@@ -1,13 +1,11 @@
-"""Compare stopping policies with fixed-budget controls; quality only, not timings."""
+"""Common-support stopping-policy reference, retained without an exploratory CLI."""
 
-import argparse
 import importlib.util
-import json
 from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
-import torch
-from confusius import create_voxeldata
+import xarray as xr
 
 from voxreg import position_to_world, register
 
@@ -22,12 +20,15 @@ POLICIES = {
 }
 
 
-def compare(data, *, device, batch_size):
+def compare(
+    data: xr.DataArray, *, device: Literal["cpu", "cuda"], batch_size: int
+) -> dict[str, Any]:
     """Score all policies on joint support and report physical mapping changes."""
     spec = importlib.util.spec_from_file_location(
         "motion_example",
-        Path(__file__).resolve().parents[2] / "examples/notebook_motion_correction.py",
+        Path(__file__).parents[1] / "examples/notebook_motion_correction.py",
     )
+    assert spec is not None and spec.loader is not None
     example = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(example)
     affine = position_to_world(data)
@@ -37,17 +38,20 @@ def compare(data, *, device, batch_size):
     points = affine @ np.stack((np.zeros_like(j), j, i, np.ones_like(j))).reshape(4, -1)
     spacing = np.linalg.norm(affine[:3, [1, 2]], axis=0).min()
     common = np.ones(raw.shape, dtype=bool)
-    results, sampled = {}, {}
+    results: dict[str, dict[str, Any]] = {}
+    sampled = {}
     for name, (iterations, window, minimum) in POLICIES.items():
         result = register(
             data,
-            return_transforms=True, device=device,
+            return_transforms=True,
+            device=device,
             batch_size=batch_size,
             max_iterations=iterations,
             convergence_window_size=window,
             convergence_minimum_value=minimum,
             progress=False,
         )
+        assert result.transforms is not None
         matrices = result.transforms.values
         np.testing.assert_array_equal(matrices[0], np.eye(4))
         sampled[name], valid = example.sample_matrices(db, matrices, affine)
@@ -95,37 +99,3 @@ def compare(data, *, device, batch_size):
         "common_fraction_median": float(np.median(common.mean(axis=(1, 2)))),
         "policies": report,
     }
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "input", type=Path, help="NPZ: values, voxel_to_world, time/k/j/i."
-    )
-    parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda")
-    parser.add_argument("--batch-size", type=int, default=120)
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-    if args.batch_size < 1:
-        parser.error("batch size must be positive")
-    if args.output.resolve() == args.input.resolve():
-        parser.error("output must not overwrite the input archive")
-    torch.set_num_threads(8)
-    with np.load(args.input, allow_pickle=False) as archive:
-        if len(archive["time"]) < 2:
-            parser.error("at least two frames are required")
-        data = create_voxeldata(
-            archive["values"],
-            dims=("time", "k", "j", "i"),
-            voxel_to_world=archive["voxel_to_world"],
-            **{dim: archive[dim] for dim in ["time", "k", "j", "i"]},
-        )
-    report = compare(data, device=args.device, batch_size=args.batch_size)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2) + "\n")
-    for name, record in report["policies"].items():
-        print(name, np.median(record["iterations"]), record["vs_control"]["fixed400"])
-
-
-if __name__ == "__main__":
-    main()
