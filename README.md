@@ -629,9 +629,9 @@ workloads across voxreg/FireANTs CPU/CUDA, plus separately labeled native ANTs
 workflows. Native motion retains both **dense/default and explicit random 5%**.
 
 ```bash
+# Put your native ANTs 2.6.5 bin directory on PATH first.
+export PATH="$PWD/artifacts/ants-install-2.6.5/ants-2.6.5/bin:$PATH"
 uv run --extra examples python examples/benchmark.py \
-    --runs 5 \
-    --ants-bin artifacts/ants-install-2.6.5/ants-2.6.5/bin \
     --output artifacts/benchmark-01
 ```
 
@@ -646,9 +646,12 @@ There are no warm-up scores or separately refitted truth probes. Sources, hashes
 settings and failures are preserved; native CLI and resident-array timings are
 kept in distinct tables.
 
-The full serial matrix takes many hours. Use `--list`, `--plan-only` or quoted
-`--configs` patterns to inspect/select configurations. See [BENCHMARK.md](BENCHMARK.md)
-for exact boundaries, numerical differences and memory limitations.
+The full serial matrix takes many hours. Use `--list` or quoted `--configs`
+patterns to inspect/select configurations. `--batch-size N` applies one explicit
+resident batch limit to both voxreg and FireANTs; omitting it preserves their
+existing policies. `--threads` controls CPU threads, and non-five `--runs` variants
+are explicitly labeled diagnostics. Workload sizes and iteration presets stay
+fixed. See [BENCHMARK.md](BENCHMARK.md) for boundaries and memory limitations.
 
 Inputs are resident NumPy arrays. The 100-frame 3D input alone occupies 384 MB;
 internal batching does not bound full input/output storage. **Dask-backed inputs

@@ -21,6 +21,7 @@ def _run(moving, fixed, amplitudes, config, accuracy):
             accuracy,
             reference,
             amplitudes,
+            batch_size=config.get("batch_size"),
         )
     else:
         result = register(
@@ -32,6 +33,7 @@ def _run(moving, fixed, amplitudes, config, accuracy):
             max_iterations=config["iterations"],
             convergence_window_size=config["iterations"] + 1,
             return_transforms=accuracy,
+            batch_size=config.get("batch_size"),
             progress=False,
         )
         output = result.registered.values

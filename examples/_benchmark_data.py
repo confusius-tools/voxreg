@@ -142,7 +142,16 @@ def _dataset(shape, frames, model, recording):
 
 
 def _run_fireants(
-    moving, fixed, model, iterations, device, export, reference, amplitudes
+    moving,
+    fixed,
+    model,
+    iterations,
+    device,
+    export,
+    reference,
+    amplitudes,
+    *,
+    batch_size=None,
 ):
     import SimpleITK as sitk
     from _benchmark_metrics import _point_rms
@@ -160,7 +169,7 @@ def _run_fireants(
     scale = max(float(raw.max()), float(fixed.values.max()))
     fitting = raw / scale
     linear = model != "syn"
-    batch = 32 if planar or linear else 4
+    batch = batch_size if batch_size is not None else (32 if planar or linear else 4)
 
     def image(values):
         values = values[0] if planar else values

@@ -4,14 +4,16 @@
 runner is needed. Linux is required for process-tree memory accounting.
 
 ```bash
+# After installing native ANTs 2.6.5, expose its bin directory:
+export PATH="$PWD/artifacts/ants-install-2.6.5/ants-2.6.5/bin:$PATH"
+
 uv run --extra examples python examples/benchmark.py \
-  --runs 5 \
-  --ants-bin artifacts/ants-install-2.6.5/ants-2.6.5/bin \
   --output artifacts/benchmark-01
 ```
 
 The output directory **must not exist**. Five timed registrations per configuration
-is the default. The full suite is intentionally serial and can take many hours:
+is the default. Other `--runs` values are explicitly labeled **diagnostic** in the
+terminal and JSON; they are not the standard five-run scorecard. The full suite is intentionally serial and can take many hours:
 the historical dense 3D+t ANTs call alone took about 36 minutes. There is no
 resume, hidden retry, work reduction or runtime autotuning. Ctrl-C terminates the
 active worker and its native children and records an interrupted run.
@@ -32,7 +34,7 @@ Native ANTs **dense is the default motion workflow**; random 5% is an additional
 explicitly named configuration, never relabeled as the default.
 
 Native voxel order is elevation × axial × lateral; spacing is
-`[0.2, 0.1, 0.1]` mm. Default inputs are:
+`[0.2, 0.1, 0.1]` mm. The fixed inputs are:
 
 - **2D+t:** 100 × 1 × 150 × 128.
 - **3D pair:** 80 × 150 × 80.
@@ -111,8 +113,13 @@ Voxreg's production precision is unchanged: float32 fitting images and float64
 geometry, state, NCC and final interpolation, except the previously qualified CPU
 volumetric SyN smoother. FireANTs retains its native float32 computations and
 optimizer settings: Adam 0.01 for linear models, 0.1 and radius-2 CC for SyN. Its
-adapter batches 32 linear/planar fits or four volumetric SyN fits. Voxreg retains
-its production automatic batching. These are not precision-matched algorithms.
+adapter defaults to 32 linear/planar fits or four volumetric SyN fits. Voxreg
+retains its production automatic batching. `--batch-size N` overrides both resident
+adapters with the same explicit batch limit for controlled comparisons; it does
+not change native ANTs workflows. Spatial pairs still contain only one image and
+tail batches can be smaller. Without the override, existing backend policies are
+unchanged. A batch that does not fit fails explicitly: no smaller-batch retry.
+These are not precision-matched algorithms.
 
 ## Select or inspect without running
 
@@ -120,20 +127,23 @@ its production automatic batching. These are not precision-matched algorithms.
 # IDs only; no registrations and no output directory needed.
 uv run --extra examples python examples/benchmark.py --list
 
-# Freeze and inspect the full five-run plan without invoking any registration.
-uv run --extra examples python examples/benchmark.py --plan-only \
-  --runs 5 --output artifacts/benchmark-plan-01
-
-# Example focused selection; quote the glob so the shell does not expand it.
+# Match voxreg and FireANTs CUDA batch limits; quote the glob.
 uv run --extra examples python examples/benchmark.py \
-  --configs 'resident-3d-rigid-*' --runs 5 \
-  --output artifacts/benchmark-rigid-01
+  --configs 'resident-3d+t-rigid-*cuda' --batch-size 8 \
+  --output artifacts/benchmark-rigid-b8-01
 ```
 
-`--frames`, `--iterations` and `--threads` support declared development variants;
-`--iterations` changes resident workloads only, never native presets. ANTs binaries
-come from `--ants-bin`, `ANTSPATH` or `PATH`. Native output paths must not contain
-spaces or shell/bracket metacharacters.
+The public controls are only `--output`, `--configs`, `--runs`, `--threads`,
+`--batch-size` and `--list`. Workloads stay at 100 recording frames and the
+established iteration presets; these are not CLI tuning knobs. `--threads`
+defaults to eight. `--runs` defaults to five, plus the separate memory/accuracy
+calls, even for diagnostics. Internal `--worker`/`--mode` arguments are hidden.
+
+Native ANTs binaries come from `PATH` or a bin directory specified by `ANTSPATH`.
+Native output paths must not contain spaces or shell/bracket metacharacters.
+The former `--frames`, `--iterations`, `--ants-bin` and `--plan-only` flags were
+removed in protocol `voxreg-benchmark-v2`. Use `--list` for non-executing inspection;
+previous running jobs continue using their frozen v1 source without modification.
 
 ## Evidence and historical material
 

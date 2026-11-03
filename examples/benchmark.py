@@ -1,6 +1,6 @@
 """One serial benchmark: wall time, peak memory and full-workload truth RMS.
 
-See BENCHMARK.md. Use --plan-only to inspect the configuration matrix safely.
+See BENCHMARK.md. Use --list to inspect configuration IDs without running them.
 """
 
 import argparse
@@ -33,6 +33,8 @@ from rich.console import Console
 from rich.table import Table
 
 _ACTIVE = None
+FRAMES = 100
+ITERATIONS = 100
 PACKAGES = (
     "torch",
     "numpy",
@@ -336,12 +338,14 @@ def _phase(script, config_path, mode, environment):
     return record
 
 
-def _table(console, records, suite):
+def _table(console, records, suite, runs):
     table = Table(
         title="Resident-array registrations"
         if suite == "resident"
         else "Native ANTs workflows — CLI / I/O included"
     )
+    if runs != 5:
+        table.title += f" — DIAGNOSTIC ({runs} timed calls)"
     for title in (
         "Configuration",
         "Seconds: median [min–max]",
@@ -389,12 +393,10 @@ def _main():
         default=5,
         help="Independent registrations per config, including the first call",
     )
-    parser.add_argument("--frames", type=int, default=100)
     parser.add_argument(
-        "--iterations",
+        "--batch-size",
         type=int,
-        default=100,
-        help="Resident-model update budget; native presets are unchanged",
+        help="Shared voxreg/FireANTs resident batch limit; omit for existing backend policies",
     )
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument(
@@ -403,9 +405,7 @@ def _main():
         default=["*"],
         help="Configuration ID glob patterns; quote wildcards",
     )
-    parser.add_argument("--ants-bin", type=Path)
     parser.add_argument("--list", action="store_true")
-    parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--worker", type=Path, help=argparse.SUPPRESS)
     parser.add_argument(
         "--mode", choices=("timing", "memory", "accuracy"), help=argparse.SUPPRESS
@@ -415,8 +415,12 @@ def _main():
         if not args.mode:
             parser.error("Worker mode required")
         return _worker(args.worker, args.mode)
-    if min(args.runs, args.iterations, args.threads) < 1 or args.frames < 2:
-        parser.error("runs, iterations and threads must be positive; frames >=2")
+    if (
+        args.runs < 1
+        or args.threads < 1
+        or (args.batch_size is not None and args.batch_size < 1)
+    ):
+        parser.error("runs, threads and batch-size must be positive")
     cases = [
         c
         for c in _configs()
@@ -437,13 +441,15 @@ def _main():
         parser.error(
             "Native ANTs output paths cannot contain whitespace or shell/bracket metacharacters"
         )
-    if args.ants_bin is not None and not args.ants_bin.is_dir():
-        parser.error("--ants-bin must name an existing directory")
     environment = dict(os.environ)
-    binary_directory = args.ants_bin or (
-        Path(environment["ANTSPATH"]) if environment.get("ANTSPATH") else None
+    binary_directory = (
+        Path(environment["ANTSPATH"])
+        if native and environment.get("ANTSPATH")
+        else None
     )
     if binary_directory is not None:
+        if not binary_directory.is_dir():
+            parser.error("ANTSPATH must name an existing directory")
         environment["PATH"] = (
             str(binary_directory.resolve()) + os.pathsep + environment.get("PATH", "")
         )
@@ -464,12 +470,12 @@ def _main():
         name: shutil.which(name, path=environment.get("PATH")) for name in required
     }
     missing = [name for name, path in tools.items() if path is None]
-    if missing and not args.plan_only:
+    if missing:
         parser.error(
-            f"Missing native ANTs tools: {', '.join(missing)}; supply --ants-bin"
+            f"Missing native ANTs tools: {', '.join(missing)}; set PATH or ANTSPATH"
         )
     ants_version = None
-    if native and not args.plan_only:
+    if native:
         version = subprocess.run(
             [tools["antsRegistration"], "--version"],
             env=environment,
@@ -480,7 +486,7 @@ def _main():
         ants_version = version.stdout + version.stderr
         if version.returncode or re.search(r"\b2\.6\.5\b", ants_version) is None:
             parser.error(
-                "Native truth reconstruction requires qualified ANTs 2.6.5; supply --ants-bin"
+                "Native truth reconstruction requires qualified ANTs 2.6.5; set PATH or ANTSPATH"
             )
     output.mkdir(parents=True, exist_ok=False)
     source = output / "source"
@@ -510,12 +516,14 @@ def _main():
         check=False,
     )
     report = {
-        "protocol": "voxreg-benchmark-v1",
-        "status": "planned" if args.plan_only else "running",
+        "protocol": "voxreg-benchmark-v2",
+        "kind": "benchmark" if args.runs == 5 else "diagnostic",
+        "status": "running",
         "runs": args.runs,
-        "frames": args.frames,
+        "frames": FRAMES,
         "threads": args.threads,
-        "resident_iterations": args.iterations,
+        "resident_iterations": ITERATIONS,
+        "resident_batch_size": args.batch_size,
         "command": sys.argv,
         "git_commit": revision.stdout.strip(),
         "git_status": dirty.stdout,
@@ -560,18 +568,17 @@ def _main():
             config = {
                 **case,
                 "runs": args.runs,
-                "frames": args.frames,
-                "iterations": args.iterations,
+                "frames": FRAMES,
+                "iterations": ITERATIONS,
                 "threads": args.threads,
+                "batch_size": args.batch_size if case["suite"] == "resident" else None,
                 "tools": tools,
             }
             config_path = directory / "config.json"
             _write(config_path, config)
-            row = {**case, "status": "planned" if args.plan_only else "running"}
+            row = {**case, "status": "running"}
             report["cases"].append(row)
             _write(output / "results.json", report)
-            if args.plan_only:
-                continue
             for mode in ("timing", "memory", "accuracy"):
                 console.log(f"{case['id']} / {mode}; see {directory / (mode + '.log')}")
                 with console.status(f"{case['id']} / {mode}"):
@@ -615,23 +622,20 @@ def _main():
                 else:
                     row["status"] = row["accuracy"]["status"]
             _write(output / "results.json", report)
-            _table(console, [row], case["suite"])
+            _table(console, [row], case["suite"], args.runs)
     except KeyboardInterrupt:
         report["status"] = "interrupted"
         _write(output / "results.json", report)
         return 130
     report["status"] = (
-        "planned"
-        if args.plan_only
-        else "failed"
+        "failed"
         if any(c["status"] in ("error", "quality_failed") for c in report["cases"])
         else "completed"
     )
     report["power_end"] = data._power()
     _write(output / "results.json", report)
-    if not args.plan_only:
-        for suite in ("resident", "native"):
-            _table(console, report["cases"], suite)
+    for suite in ("resident", "native"):
+        _table(console, report["cases"], suite, args.runs)
     console.print(
         f"{len(cases)} configurations; results: {output / 'results.json'}", markup=False
     )
