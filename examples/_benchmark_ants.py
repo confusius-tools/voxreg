@@ -56,11 +56,12 @@ def _save_image(path, values, shape, recording):
 
 def _prepare(case, directory, frames):
     shape = synthetic.SHAPES[case["workload"]]
-    recording = case["workflow"] == "motion"
+    recording = case["workload"].endswith("+t")
+    nonlinear = case["workflow"] == "syn"
     moving, fixed, _ = synthetic._dataset(
-        shape, frames, "rigid" if recording else "syn", recording
+        shape, frames, "rigid" if case["workflow"] == "motion" else "syn", recording
     )
-    if not recording:
+    if case["workflow"] == "registration":
         # Known pull: affine ∘ rigid ∘ nonlinear; invert in reverse order to paint anatomy.
         linear = synthetic._matrix("affine", 1, shape) @ synthetic._matrix(
             "rigid", 1, shape
@@ -82,11 +83,14 @@ def _prepare(case, directory, frames):
         )
     metadata = {
         "moving": _save_image(
-            directory / "moving.nii", moving.values, shape, recording
+            directory / "moving.nii",
+            moving.values[None] if nonlinear and not recording else moving.values,
+            shape,
+            recording or nonlinear,
         ),
         "moving_array_sha256": hashlib.sha256(memoryview(moving.values)).hexdigest(),
     }
-    if not recording:
+    if not recording or nonlinear:
         metadata["fixed"] = _save_image(
             directory / "fixed.nii", fixed.values, shape, False
         )
@@ -99,9 +103,50 @@ def _prepare(case, directory, frames):
     return metadata
 
 
-def _commands(case, directory, run, tools, frames, threads, seed, motion_sampling):
+def _commands(
+    case, directory, run, tools, frames, threads, seed, motion_sampling, *, export=False
+):
     prefix = run / "ants_"
     moving = directory / "moving.nii"
+    if case["workflow"] == "syn":
+        count = frames if case["workload"].endswith("+t") else 1
+        dimension = "2" if case["workload"] == "2d+t" else "3"
+        return [
+            (
+                "syn-motion",
+                [
+                    tools["antsMotionCorr"],
+                    "-d",
+                    dimension,
+                    "-m",
+                    f"CC[{directory / 'fixed.nii'},{moving},1,2]",
+                    "-t",
+                    "SyN[0.1,3,0]",
+                    "-i",
+                    "100",
+                    "-f",
+                    "1",
+                    "-s",
+                    "0vox",
+                    "-u",
+                    "1",
+                    "-n",
+                    str(count),
+                    "--use-histogram-matching",
+                    "0",
+                    "--random-seed",
+                    str(seed),
+                    "-p",
+                    "Linear",
+                    "-v",
+                    "1",
+                    "-w",
+                    str(int(export)),
+                    "-o",
+                    f"[{prefix},{run / 'corrected.nii.gz'},{run / 'corrected-mean.nii.gz'}]",
+                ],
+            )
+        ]
     if case["workflow"] == "registration":
         return [
             (
@@ -178,11 +223,16 @@ def _commands(case, directory, run, tools, frames, threads, seed, motion_samplin
     ]
 
 
-def _output_qc(case, directory, run, frames):
+def _output_qc(case, directory, run, frames, *, export=False):
+    nonlinear = case["workflow"] == "syn"
+    if nonlinear and not case["workload"].endswith("+t"):
+        frames = 1
     registration = case["workflow"] == "registration"
     corrected = run / "ants_Warped.nii.gz" if registration else run / "corrected.nii.gz"
     reference = (
-        directory / "fixed.nii" if registration else run / "reference-mean.nii.gz"
+        directory / "fixed.nii"
+        if registration or nonlinear
+        else run / "reference-mean.nii.gz"
     )
     required = [corrected, reference]
     if registration:
@@ -197,6 +247,17 @@ def _output_qc(case, directory, run, frames):
         ]
     else:
         required += [run / "corrected-mean.nii.gz", run / "ants_MOCOparams.csv"]
+    if nonlinear:
+        import re
+
+        text = (run / "syn-motion.log").read_text()
+        completed = [
+            int(i) for i in re.findall(r"done resampling timepoint\s*:\s*(\d+)", text)
+        ]
+        if completed != list(range(frames)):
+            raise AssertionError("Incomplete native SyN frame log")
+        if export:
+            required += [run / "ants_Warp.nii.gz", run / "ants_InverseWarp.nii.gz"]
     missing = [str(p) for p in required if not p.is_file() or p.stat().st_size == 0]
     if missing:
         raise RuntimeError(f"ANTs did not produce required outputs: {missing}")
@@ -215,7 +276,7 @@ def _output_qc(case, directory, run, frames):
         image.affine[:3, :dimension], target.affine[:3, :dimension], rtol=0, atol=1e-5
     ) or not np.allclose(image.affine[:3, 3], target.affine[:3, 3], rtol=0, atol=1e-5):
         raise AssertionError("ANTs output is not on its reference physical lattice")
-    if not registration and not np.isclose(
+    if case["workload"].endswith("+t") and not np.isclose(
         image.header.get_zooms()[-1], 0.1, rtol=0, atol=1e-6
     ):
         raise AssertionError("ANTs output time spacing changed")

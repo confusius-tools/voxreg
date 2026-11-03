@@ -27,7 +27,7 @@ import _benchmark_ants as ants
 import _benchmark_data as data
 import numpy as np
 import torch
-from _benchmark_metrics import _native_motion_rms, _native_pair_rms
+from _benchmark_metrics import _native_motion_rms, _native_pair_rms, _native_syn_rms
 from _benchmark_resident import _check, _run
 from rich.console import Console
 from rich.table import Table
@@ -100,6 +100,16 @@ def _configs():
             "sampling": "wrapper-defaults",
         }
     )
+    cases += [
+        {
+            "id": f"native-syn-{workload}",
+            "suite": "native",
+            "workflow": "syn",
+            "workload": workload,
+            "sampling": "dense",
+        }
+        for workload in data.SHAPES
+    ]
     return cases
 
 
@@ -147,10 +157,25 @@ def _worker(config_path, mode):
         else:
             record["inputs"] = ants._prepare(config, directory, config["frames"])
             record["input_sha256"] = record["inputs"]["moving_array_sha256"]
-            amplitudes = 0.8 + 0.2 * np.sin(
-                2 * np.pi * np.arange(config["frames"]) / 16
-            )
-            amplitudes[0] = 0
+            recording = config["workload"].endswith("+t")
+            count = config["frames"] if recording else 1
+            amplitudes = 0.8 + 0.2 * np.sin(2 * np.pi * np.arange(count) / 16)
+            amplitudes[0] = 0 if recording else 1
+            if config["workflow"] == "syn":
+                record["native_settings"] = {
+                    "threads": config["threads"],
+                    "reference": "supplied fixed image (frame 0 for recordings)",
+                    "metric": "dense CC radius 2",
+                    "transform": "SyN[0.1,3,0]",
+                    "iteration_budget": [100],
+                    "shrink_factors": [1],
+                    "smoothing_sigmas_vox": [0],
+                    "stopping": "native SyN convergence remains enabled",
+                    "observed_updates": None,
+                    "observed_updates_reason": "antsMotionCorr does not emit per-iteration SyN diagnostics",
+                    "field_export": accuracy,
+                    "fitted_frames": count,
+                }
         if cuda:
             torch.cuda.synchronize()
             record["cuda_device"] = {
@@ -193,6 +218,7 @@ def _worker(config_path, mode):
                     config["threads"],
                     1,
                     config["sampling"],
+                    export=accuracy,
                 )
                 _write(run / "commands.json", commands)
                 seconds = 0.0
@@ -208,20 +234,18 @@ def _worker(config_path, mode):
                         raise RuntimeError(
                             f"Native {stage} exited {process.returncode}; see {run}"
                         )
-                ants._output_qc(config, directory, run, config["frames"])
-                errors = (
-                    (
-                        _native_motion_rms(
-                            run, data.SHAPES[config["workload"]], amplitudes
-                        )
-                        if config["workflow"] == "motion"
-                        else _native_pair_rms(
-                            directory, run, data.SHAPES[config["workload"]]
-                        )
-                    )
-                    if accuracy
-                    else None
+                ants._output_qc(
+                    config, directory, run, config["frames"], export=accuracy
                 )
+                errors = None
+                if accuracy:
+                    shape = data.SHAPES[config["workload"]]
+                    if config["workflow"] == "syn":
+                        errors = _native_syn_rms(directory, run, shape, amplitudes)
+                    elif config["workflow"] == "motion":
+                        errors = _native_motion_rms(run, shape, amplitudes)
+                    else:
+                        errors = _native_pair_rms(directory, run, shape)
             if mode == "timing":
                 times.append(seconds)
                 record["wall_seconds"] = times

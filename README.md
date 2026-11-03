@@ -624,9 +624,13 @@ been removed; historical evidence remains in [research records](research/README.
 
 ## Registration benchmark
 
-**One pipeline, 41 configurations:** rigid, affine and SyN on three synthetic
+**One pipeline, 44 configurations:** rigid, affine and SyN on three synthetic
 workloads across voxreg/FireANTs CPU/CUDA, plus separately labeled native ANTs
-workflows. Native motion retains both **dense/default and explicit random 5%**.
+workflows. Native rigid motion retains both **dense/default and explicit random
+5%**. Three `native-syn-*` controls add same-input nonlinear-only pairs/recordings;
+select just those to supplement the completed 41-case baseline without rerunning
+it. These use a single-resolution 100-iteration maximum with native stopping,
+not the staged wrapper's multiresolution schedule.
 
 ```bash
 # Put your native ANTs 2.6.5 bin directory on PATH first.

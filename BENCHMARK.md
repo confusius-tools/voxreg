@@ -20,13 +20,15 @@ active worker and its native children and records an interrupted run.
 
 ## Configurations
 
-The routine matrix contains **41 configurations**:
+The routine matrix contains **44 configurations** (the completed coruscant v1
+baseline remains a separate, unchanged 41-configuration run):
 
 | Suite | Workloads | Models / workflows | Backends | Configurations |
 |---|---|---|---|---:|
 | Resident arrays | 2D+t, 3D pair, 3D+t | rigid, affine, SyN | voxreg CPU/CUDA, FireANTs CPU/CUDA | 36 |
 | Native ANTs CLI | 2D+t, 3D+t | temporal mean → rigid; dense/default and explicit random 5% | CPU | 4 |
 | Native ANTs CLI | 3D pair | installed rigid → affine → SyN wrapper defaults | CPU | 1 |
+| Native ANTs CLI | 2D+t, 3D pair, 3D+t | direct SyN on the same nonlinear-only inputs as residents | CPU | 3 |
 
 Translation and the old single-resolution ITK adapter are not in this matrix.
 This does not remove any production registration model or numerical test oracle.
@@ -47,9 +49,13 @@ recording is stored in full: the 3D+t float32 input alone occupies 384 MB. Dask
 inputs and streamed outputs are not supported.
 
 Resident recordings preserve frame zero exactly and fit all remaining frames.
-Native motion correction instead fits all frames to its temporal mean. The staged
-native pair contains both known affine/rigid motion and known nonlinear motion;
-it is not the same fitting task as the resident nonlinear-only pair.
+The existing rigid native motion controls instead fit all frames to their temporal
+mean. The staged native pair contains both known affine/rigid motion and known
+nonlinear motion; it is not the same fitting task as the resident nonlinear-only
+pair. New `native-syn-*` controls use the identical nonlinear-only moving arrays
+and supplied fixed anatomy as residents. Recordings use frame-zero anatomy but
+native ANTs fits/scores all 100 frames, including frame zero; it does not preserve
+that frame exactly. The spatial pair is passed as a one-frame time series.
 
 ## Three reported metrics
 
@@ -75,7 +81,12 @@ all voxel centers. Native motion pulls are reconstructed from their Euler
 parameters and raw mean moment center, then composed as `Ti @ inverse(T0)` to
 compare in the common frame-zero reference. Native pair pulls compose the fixed-
 domain displacement followed by the affine. This composition was independently
-checked against the retained native resampled output.
+checked against the retained native resampled output. Direct native SyN motion
+uses exported fixed-to-moving LPS-mm displacement fields, without a relative
+frame-zero composition because its supplied fixed image is the truth reference.
+Field shape, spatial geometry, time spacing, vector intent and finite values are
+checked; the unused time displacement must be zero. Native 2D/3D field directions
+were independently checked by reproducing its corrected images with SimpleITK.
 
 Each config therefore performs **seven registrations**: five timing, one memory,
 one accuracy. Timing/memory use `return_transforms=False`; export/scoring overhead
@@ -99,15 +110,34 @@ setup is outside the first timer, without running a warm-up registration.
 
 Native time includes fresh CLI startup, image reads, preprocessing/optimization,
 resampling and output/transform writes/compression. Input generation, QC and
-reporting are excluded. Motion time sums the temporal-mean and rigid-motion CLI
-calls. The native and resident suites have **separate labeled tables**: different
+reporting are excluded. Rigid motion time sums the temporal-mean and rigid-motion
+CLI calls. Direct SyN is one `antsMotionCorr` call, without temporal averaging;
+`-w 0` skips dense field export for timing/memory, and `-w 1` exports both fields
+only for accuracy. A 100-frame 3D accuracy export contains about **6.14 GB of
+uncompressed forward/inverse fields** before compression, in addition to images;
+keep sufficient disk/RAM headroom. Scoring decodes the forward gzip once. The native and resident suites have **separate labeled tables**: different
 references, models, schedules, I/O and precision prevent a mixed speed ranking.
 
 Default resident controls are eight CPU threads, one resolution and 100 updates,
 with early stopping disabled for this fixed-budget experiment. Native motion
 retains its 100×50×20 multiresolution preset; native staged registration retains
 the installed wrapper's defaults. Exact commands are saved. Native ANTs 2.6.5
-is required for the qualified Euler reconstruction and staged workflow.
+is required for the qualified native reconstruction workflows.
+
+The new direct native SyN controls use dense radius-2 CC, `SyN[0.1,3,0]`, one
+resolution (`-f 1 -s 0vox`) and **100 maximum iterations**. They do not reuse the
+staged wrapper's 20-fine-step multiresolution preset. Native SyN convergence stays
+enabled: **actual iterations are not exposed by antsMotionCorr** and are recorded
+as unknown, never assumed to equal the budget. Smoothing/optimizer/guard policies
+are not identical to voxreg or FireANTs. These are declared native controls, not
+proof of equal work or time-to-equal-quality.
+
+`--threads N` (default eight) sets Torch intra-op threads and
+`ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=N` for every native child. The staged shell
+wrapper also receives `-n N`. **antsMotionCorr's `-n` is the number of images, not
+threads.** Torch inter-op and OpenMP/MKL/OpenBLAS pools are limited to one; the
+configs run serially. This is a thread limit, not a guarantee that all operators
+use all N threads.
 
 Voxreg's production precision is unchanged: float32 fitting images and float64
 geometry, state, NCC and final interpolation, except the previously qualified CPU
@@ -131,6 +161,12 @@ uv run --extra examples python examples/benchmark.py --list
 uv run --extra examples python examples/benchmark.py \
   --configs 'resident-3d+t-rigid-*cuda' --batch-size 8 \
   --output artifacts/benchmark-rigid-b8-01
+
+# Only the three added native SyN controls; do not repeat the completed baseline.
+# Native ANTs 2.6.5 must already be on PATH or in ANTSPATH.
+uv run --extra examples python examples/benchmark.py \
+  --configs 'native-syn-*' --threads 8 \
+  --output artifacts/benchmark-native-syn-01
 ```
 
 The public controls are only `--output`, `--configs`, `--runs`, `--threads`,

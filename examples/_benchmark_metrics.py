@@ -88,6 +88,59 @@ def _native_motion_rms(run, shape, amplitudes):
     return _matrix_rms(relative, amplitudes, shape)
 
 
+def _native_syn_rms(directory, run, shape, amplitudes):
+    """Score fixed-to-moving LPS-mm pulls exported by antsMotionCorr -w 1."""
+    import nibabel as nib
+
+    dimension = 2 if shape[0] == 1 else 3
+    fixed = nib.load(directory / "fixed.nii")
+    image = nib.load(run / "ants_Warp.nii.gz")
+    spatial = tuple(shape[:0:-1]) if dimension == 2 else tuple(shape[::-1])
+    expected = (
+        (*spatial, len(amplitudes), 1, 3)
+        if dimension == 2
+        else (*spatial, len(amplitudes), 4)
+    )
+    if (
+        image.shape != expected
+        or image.get_data_dtype() != np.dtype("float64")
+        or image.header.get_intent()[0] != "vector"
+        or not np.allclose(
+            image.affine[:3, :dimension],
+            fixed.affine[:3, :dimension],
+            rtol=0,
+            atol=1e-6,
+        )
+        or not np.allclose(image.affine[:3, 3], fixed.affine[:3, 3], rtol=0, atol=1e-6)
+        or (
+            len(amplitudes) > 1
+            and not np.isclose(
+                image.header.get_zooms()[dimension], 0.1, rtol=0, atol=1e-6
+            )
+        )
+    ):
+        raise ValueError("Invalid native SyN displacement shape/geometry/time/intent")
+    # Decode gzip once, rather than re-inflating preceding frames for every query.
+    values = np.asarray(image.dataobj)
+    points = _grid(shape)
+    errors = []
+    for index, amplitude in enumerate(amplitudes):
+        field = values[:, :, index, 0] if dimension == 2 else values[:, :, :, index]
+        if not np.isfinite(field).all() or np.any(field[..., dimension] != 0):
+            raise ValueError("Nonfinite displacement or nonzero time displacement")
+        # Vector-intent components remain LPS x/y[/z]; only the header is RAS.
+        displacement = (
+            field[..., :dimension]
+            .transpose(*range(dimension - 1, -1, -1), dimension)
+            .reshape(-1, dimension)
+            .T[::-1]
+        )
+        mapped = points.copy()
+        mapped[3 - dimension :] += displacement
+        errors.append(_point_rms(mapped, points, amplitude, "syn", shape))
+    return errors
+
+
 def _native_pair_rms(directory, run, shape):
     """ANTs image pull: affine after the fixed-domain displacement, in LPS mm."""
     import json
