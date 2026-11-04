@@ -455,17 +455,18 @@ and the [ITK reference calculation](research/convergence/README.md).
 
 ### Image dtype and final interpolation
 
-Input arrays are never modified. Working fitting images are float32; geometry,
-Adam state, NCC and world matrices remain float64. Integer/float64 preprocessing
+Input arrays are never modified. Working fitting images and global/local NCC
+statistics are float32; geometry, Adam state and world matrices remain float64. Integer/float64 preprocessing
 runs in float64 and uses NCC's intensity-offset/scale invariance to retain
 low-contrast detail before conversion to fitting tensors.
 
-Multithreaded CPU 3D SyN uses scaled float32 Gaussian convolutions for its two
-regularizers, restoring float64 fields afterward. Coordinates, field storage,
-composition, NCC statistics, inversion and Jacobians remain float64. Planar,
-single-threaded, differentiable and compiled paths retain their prior smoothing;
-there is no new precision option. See the [AC-qualified comparison with ITK and
-FireANTs](research/syn/AC-CPU-SMOOTHING.md).
+All runtime field smoothing uses PyTorch separable convolutions, including
+planar and single-threaded CPU registration. CPU SyN uses scaled float32 filtering
+for its two regularizers, restoring float64 fields afterward. CUDA, differentiable
+and compiled smoothing retain their float64 path. Coordinates, field storage,
+composition, inversion and Jacobians remain float64. Kernel radii, replicate
+padding and fixed boundaries are unchanged. SciPy remains an independent test
+reference, not a runtime smoothing backend.
 
 Final resampling uses the **original values**, once, independently of fitting:
 
@@ -481,9 +482,13 @@ Final resampling uses the **original values**, once, independently of fitting:
   for categorical labels, not automatically for integer-valued intensity images.
 - Boolean/complex/extended-precision floating intensity arrays are not supported.
 
-There is no public compute-precision or compiler switch. Float32 fitting and
-float32-only NCC failed the existing CPU/CUDA agreement gates; see
-[the dtype validation report](research/performance/DTYPE.md).
+There is no public compute-precision or compiler switch. Benchmark policy is to
+**minimize runtime subject to truth RMS < 0.25 voxels and fitting in memory**.
+Each backend is evaluated independently against known truth; CPU/CUDA and old/new
+map agreement are diagnostics, not benchmark gates. Current full-budget SyN
+controls still fail the truth target; see [validation limits](VALIDATION.md).
+[Earlier dtype trials](research/performance/DTYPE.md) used historical agreement
+gates that no longer determine benchmark acceptance.
 
 **Transform direction:** `moving_world = matrix @ fixed_world`, using homogeneous
 **z/y/x** vectors. These are physical pull mappings, not normalized Torch grids.
@@ -624,13 +629,10 @@ been removed; historical evidence remains in [research records](research/README.
 
 ## Registration benchmark
 
-**One pipeline, 44 configurations:** rigid, affine and SyN on three synthetic
-workloads across voxreg/FireANTs CPU/CUDA, plus separately labeled native ANTs
-workflows. Native rigid motion retains both **dense/default and explicit random
-5%**. Three `native-syn-*` controls add same-input nonlinear-only pairs/recordings;
-select just those to supplement the completed 41-case baseline without rerunning
-it. These use a single-resolution 100-iteration maximum with native stopping,
-not the staged wrapper's multiresolution schedule.
+**One entry point: `examples/benchmark.py`.** Optimize runtime subject to
+**truth RMS < 0.25 voxels and fitting in memory**. The 44 configurations cover
+rigid/affine/SyN on three synthetic workloads, voxreg/FireANTs CPU/CUDA and
+separately labeled native ANTs workflows.
 
 ```bash
 # Put your native ANTs 2.6.5 bin directory on PATH first.
@@ -646,9 +648,10 @@ elevation × axial × lateral order. No download or separate preparation is need
 The scorecard contains **wall-time median [min–max] over five registrations**
 (first call included), **peak RAM/VRAM from a separate run**, and **worst fitted-
 frame transformation RMS against independent truth** from the complete workload.
-There are no warm-up scores or separately refitted truth probes. Sources, hashes,
-settings and failures are preserved; native CLI and resident-array timings are
-kept in distinct tables.
+There are no warm-up scores, separately refitted truth probes or CPU/CUDA map
+agreement gates. Rich tables are saved as `benchmark.log` and offline `report.html`;
+`results.json` retains all samples, provenance and failures. Native CLI and
+resident-array timings stay in distinct tables.
 
 The full serial matrix takes many hours. Use `--list` or quoted `--configs`
 patterns to inspect/select configurations. `--batch-size N` applies one explicit
@@ -674,8 +677,8 @@ calibrate defaults or guarantee robust matching from small overlaps.
 The [public-API example benchmark](research/confusius-examples/BENCHMARK.md) compares
 fresh float64 same-subject and motion-correction inputs with ConfUSIus 0.8.0:
 actual call times, common-support scores and inspected overlays. It retains a
-fixed100 motion-control CPU/CUDA precision failure (0.001965 px versus the unchanged
-0.001-pixel limit); native-stopping motion correction passes that screen. Atlas
+historical fixed100 motion-control CPU/CUDA discrepancy of 0.001965 px; that
+old agreement screen is not a current benchmark acceptance gate. Atlas
 slice-to-volume and B-spline stages had no counterpart at that benchmark boundary
 and were not timed; the new slice-to-volume retry is documented separately.
 
@@ -697,8 +700,8 @@ and were not timed; the new slice-to-volume retry is documented separately.
   An iteration limit is **not** a
   convergence claim. With the calibrated defaults, one of 476 moving frames across
   four checked windows still reaches the 100-step limit; other data may need more.
-- Fitting interpolation is float32; physical geometry, optimizer state, NCC
-  statistics and world matrices are float64 for stability. Final interpolation
+- Fitting interpolation and NCC statistics are float32; physical geometry,
+  optimizer state and world matrices are float64. Final interpolation
   preserves original image precision as described above. Cross-device transforms
   are numerically, not bitwise, equal; output dtype is not a transform-accuracy guarantee.
 - The lazy index builds on xarray's experimental coordinate-transform index API.

@@ -35,6 +35,8 @@ from rich.table import Table
 _ACTIVE = None
 FRAMES = 100
 ITERATIONS = 100
+TRUTH_LIMIT = 0.25
+PHASES = ("timing", "memory", "accuracy")
 PACKAGES = (
     "torch",
     "numpy",
@@ -124,6 +126,7 @@ def _worker(config_path, mode):
     }
     path = directory / f"{mode}.json"
     _write(path, record)
+    print(f"{config['id']} / {mode}; config: {config_path}; result: {path}", flush=True)
     try:
         # Protect the supervisor if a deliberately large configuration exhausts RAM.
         score = Path("/proc/self/oom_score_adj")
@@ -274,7 +277,11 @@ def _worker(config_path, mode):
                 record.update(
                     rms_per_frame_voxels=errors,
                     worst_frame_rms_voxels=worst,
-                    accuracy_pass=worst < 0.25,
+                    accuracy_pass=worst < TRUTH_LIMIT,
+                )
+                print(
+                    f"Worst-frame truth RMS: {worst:.6f} vox; required < {TRUTH_LIMIT}",
+                    flush=True,
                 )
             # Native output files are retained only for the accuracy run; logs always stay.
             if config["suite"] == "native" and not accuracy:
@@ -295,6 +302,7 @@ def _worker(config_path, mode):
     finally:
         record["power_end"] = data._power()
         _write(path, record)
+        print(f"{mode}: {record['status']}", flush=True)
     return int(record["status"] == "error")
 
 
@@ -370,33 +378,36 @@ def _table(console, records, suite, runs):
     )
     if runs != 5:
         table.title += f" — DIAGNOSTIC ({runs} timed calls)"
+    table.add_column("Configuration", overflow="fold")
     for title in (
-        "Configuration",
+        "Batch",
         "Seconds: median [min–max]",
-        "RAM GiB (RSS)",
-        "Torch VRAM GiB",
-        "Worst RMS (voxels)",
-        "Status",
+        "Truth RMS (vox)",
+        "RAM GiB",
+        "VRAM GiB",
     ):
-        table.add_column(title)
+        table.add_column(title, justify="right")
+    table.add_column("Status")
     for row in records:
         if row["suite"] != suite:
             continue
         times = row.get("timing", {}).get("wall_seconds", [])
         memory = row.get("memory", {})
         error = row.get("accuracy", {}).get("worst_frame_rms_voxels")
+        batch = row.get("timing", {}).get("backend_settings", {}).get("batch_size")
         table.add_row(
             row["id"],
+            str(batch) if batch is not None else "—",
             f"{np.median(times):.3f} [{min(times):.3f}–{max(times):.3f}]"
             if times
             else "—",
+            f"{error:.6f}" if error is not None else "—",
             f"{memory['peak_ram_bytes'] / 2**30:.3f}"
             if "peak_ram_bytes" in memory
             else "—",
             f"{memory['peak_vram_bytes'] / 2**30:.3f}"
             if "peak_vram_bytes" in memory
             else "—",
-            f"{error:.6f}" if error is not None else "—",
             row["status"],
             style="green"
             if row["status"] == "passed"
@@ -512,7 +523,10 @@ def _main():
             parser.error(
                 "Native truth reconstruction requires qualified ANTs 2.6.5; set PATH or ANTSPATH"
             )
-    output.mkdir(parents=True, exist_ok=False)
+    try:
+        output.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        parser.error(f"Output already exists: {output}; choose a fresh directory")
     source = output / "source"
     shutil.copytree(
         ROOT / "src/voxreg",
@@ -573,7 +587,13 @@ def _main():
             if p.is_file()
         },
         "memory_definition": "separate worker: sampled peak process-group RSS including resident inputs/imports/preparation (20 ms; shared pages may count twice); CUDA peak Torch allocated, excluding driver/context and non-Torch allocations",
-        "accuracy_definition": "worst-frame full-grid physical pull RMS / minimum active spacing; separate full-workload call, same batching, <0.25",
+        "accuracy_definition": "worst-frame full-grid physical pull RMS / minimum active spacing; separate full-workload call, same batching",
+        "policy": {
+            "objective": "minimize median runtime among accuracy-passing configurations",
+            "truth_rms_limit_voxels": TRUTH_LIMIT,
+            "memory": "report peak RAM/VRAM; allocation or execution failure fails the case",
+            "cross_device_and_old_new_agreement": "diagnostic only; not acceptance gates",
+        },
         "cases": [],
     }
     if ants_version is not None:
@@ -582,11 +602,20 @@ def _main():
             name: hashlib.sha256(Path(path).read_bytes()).hexdigest()
             for name, path in tools.items()
         }
-    console = Console()
+    console = Console(record=True)
+    console.rule("Registration benchmark")
+    console.print(
+        f"Optimize runtime subject to truth RMS < {TRUTH_LIMIT} vox and fitting in memory.",
+        style="bold",
+    )
+    console.print(
+        f"{len(cases)} configurations · {args.runs} timed calls + memory + accuracy each"
+    )
+    console.print(f"Output: {output}", markup=False)
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     try:
-        for case in cases:
+        for number, case in enumerate(cases, 1):
             directory = output / case["id"]
             directory.mkdir()
             config = {
@@ -603,8 +632,11 @@ def _main():
             row = {**case, "status": "running"}
             report["cases"].append(row)
             _write(output / "results.json", report)
-            for mode in ("timing", "memory", "accuracy"):
-                console.log(f"{case['id']} / {mode}; see {directory / (mode + '.log')}")
+            for mode in PHASES:
+                console.log(
+                    f"[{number}/{len(cases)}] {case['id']} / {mode}; {directory / (mode + '.log')}",
+                    markup=False,
+                )
                 with console.status(f"{case['id']} / {mode}"):
                     row[mode] = _phase(
                         source / "examples/benchmark.py", config_path, mode, environment
@@ -621,10 +653,7 @@ def _main():
                     row["status"] = row[mode]["status"]
                     break
             else:
-                digests = {
-                    row[mode]["input_sha256"]
-                    for mode in ("timing", "memory", "accuracy")
-                }
+                digests = {row[mode]["input_sha256"] for mode in PHASES}
                 if len(digests) != 1:
                     row.update(status="error", error="Phase inputs differ")
                 elif len(row["timing"]["wall_seconds"]) != args.runs:
@@ -632,10 +661,7 @@ def _main():
                 elif (
                     case["suite"] == "resident"
                     and len(
-                        {
-                            row[mode]["backend_settings"]["batch_size"]
-                            for mode in ("timing", "memory", "accuracy")
-                        }
+                        {row[mode]["backend_settings"]["batch_size"] for mode in PHASES}
                     )
                     != 1
                 ):
@@ -649,21 +675,28 @@ def _main():
             _table(console, [row], case["suite"], args.runs)
     except KeyboardInterrupt:
         report["status"] = "interrupted"
+    except Exception:  # noqa: BLE001 -- CLI boundary: preserve partial results and the traceback.
+        report.update(status="error", error=traceback.format_exc())
+        console.print_exception()
+    else:
+        report["status"] = (
+            "failed"
+            if any(c["status"] in ("error", "quality_failed") for c in report["cases"])
+            else "completed"
+        )
+    finally:
+        report["power_end"] = data._power()
         _write(output / "results.json", report)
-        return 130
-    report["status"] = (
-        "failed"
-        if any(c["status"] in ("error", "quality_failed") for c in report["cases"])
-        else "completed"
+        for suite in ("resident", "native"):
+            _table(console, report["cases"], suite, args.runs)
+        console.print(f"{report['status']}: {output / 'results.json'}", markup=False)
+        console.save_text(str(output / "benchmark.log"), clear=False)
+        console.save_html(str(output / "report.html"), clear=False)
+    return (
+        130
+        if report["status"] == "interrupted"
+        else int(report["status"] != "completed")
     )
-    report["power_end"] = data._power()
-    _write(output / "results.json", report)
-    for suite in ("resident", "native"):
-        _table(console, report["cases"], suite, args.runs)
-    console.print(
-        f"{len(cases)} configurations; results: {output / 'results.json'}", markup=False
-    )
-    return int(report["status"] == "failed")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,46 @@
 # Registration validation
 
+## Current policy and numerical checkpoint
+
+**Optimize median runtime subject to truth RMS < 0.25 voxels and fitting in
+memory.** Report peak RAM/VRAM; CPU/CUDA and old/new map agreement are diagnostics,
+not benchmark acceptance gates. Execution, finite-value, geometry and transform
+validity checks remain. Focused mathematical regression tests are separate from
+benchmark ranking.
+
+The current production suite has **717 passing tests**, with 1,095 warnings in
+128.61 s; all five hooks pass. Fitting images/global/local NCC use float32; explicit double
+metric inputs retain double. Geometry, optimizer/field state and original-image
+final interpolation are unchanged. Runtime Gaussian smoothing is PyTorch-only,
+with scaled float32 CPU SyN regularizers. Regression coverage includes odd-sized
+CUDA rows, roundoff in constant neighborhoods, independent metric/filtering
+oracles, range/boundary/autograd checks and exact-coordinate interpolation.
+
+Separate **one-call**, export-inclusive 100-update diagnostics (eight threads,
+batch limit 32; not five-run medians) give:
+
+| Workload | CPU seconds | CUDA seconds | CPU truth RMS | CUDA truth RMS |
+| --- | ---: | ---: | ---: | ---: |
+| Planar series, reference + 32 fits | 9.493 | 1.940 | **0.264253, fails** | **0.265066, fails** |
+| Volume pair, one fit | 38.552 | 3.619 | **0.306317, fails** | **0.306314, fails** |
+
+Both workloads already failed truth accuracy before this precision change; no
+accuracy or formal throughput improvement is claimed. Batching defaults and the
+frozen remote run are untouched. Compact source/hash/log evidence for these
+preliminary checks is preserved in `artifacts/archive/preliminary-evidence.tar.gz`.
+See [BENCHMARK.md](BENCHMARK.md) for the single current measurement pipeline.
+
+Runner checks preserve all 44 configuration IDs and cover a real three-phase CPU
+rigid diagnostic, existing-output protection, and bounded control-flow checks for
+quality failure, execution error, unavailable backend, interruption and unexpected
+parent failure. Saved text/HTML reports are checked; no new benchmark tests were
+added and the full matrix was not rerun. Evidence: `artifacts/benchmark-policy-01/`.
+
+## Historical checkpoints
+
+The following checkpoints retain their original source and agreement gates;
+those gates do not determine current benchmark acceptance.
+
 Benchmark-cleanup checkpoint: **683 tests pass**, with 1,095 warnings in 78.67 s
 on CPU/CUDA. Removed tests exercised deleted benchmark/exploration scripts and
 experimental-only variants; production sampling, smoothing range/boundary/autograd

@@ -369,7 +369,7 @@ def test_3d_seed_batch_and_device_independence():
         error = np.einsum(
             "bij,jp->bip", other.transforms.values - together.transforms.values, points
         )[:, :3]
-        assert np.linalg.norm(error, axis=1).max() < 0.001 * ell
+        assert np.linalg.norm(error, axis=1).max() < 0.01 * ell
         np.testing.assert_array_equal(
             other.diagnostics.n_iterations, together.diagnostics.n_iterations
         )

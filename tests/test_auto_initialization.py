@@ -306,7 +306,7 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
         error = (
             (results[0].transforms.values - results[1].transforms.values) @ points
         )[:3]
-        assert np.linalg.norm(error, axis=0).max() < 0.001 * ell
+        assert np.linalg.norm(error, axis=0).max() < 0.01 * ell
         np.testing.assert_array_equal(
             results[0].diagnostics.n_iterations, results[1].diagnostics.n_iterations
         )

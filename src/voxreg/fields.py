@@ -184,22 +184,6 @@ def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch
         raise ValueError("sigma must be finite and nonnegative (voxel units).")
     if sigma == 0:
         return field
-    if (
-        field.device.type == "cpu"
-        and not torch.compiler.is_compiling()
-        and not (torch.is_grad_enabled() and field.requires_grad)
-    ):
-        from scipy.ndimage import gaussian_filter
-
-        values = gaussian_filter(
-            field.detach().numpy(),
-            sigma=sigma,
-            radius=int(3 * sigma + 0.5),
-            axes=tuple(range(2, field.ndim)),
-            mode="nearest",
-        )
-        # SciPy allocated a fresh output, so boundary masking need not copy it.
-        return torch.from_numpy(values).masked_fill_(grid.boundary, 0)
     radius = int(3 * sigma + 0.5)
     positions = torch.arange(
         -radius, radius + 1, dtype=field.dtype, device=field.device

@@ -13,6 +13,29 @@ from voxreg.sampling import _sample_displaced
 from voxreg.syn import local_ncc
 
 
+@pytest.mark.parametrize("shape", [(23, 31), (7, 9, 11)])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_local_ncc_rejects_roundoff_in_constant_neighborhoods(device, shape, dtype):
+    values = torch.full((2, *shape), 0.1, device=device, dtype=dtype, requires_grad=True)
+    loss, meaningful = local_ncc(values, values.detach(), torch.ones_like(values, dtype=torch.bool), 2)
+    assert not meaningful.any()
+    assert torch.equal(loss, torch.zeros_like(loss))
+    gradient = torch.autograd.grad(loss.sum(), values)[0]
+    assert torch.equal(gradient, torch.zeros_like(gradient))
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_local_ncc_follows_fitting_tensor_precision(device, dtype):
+    values = torch.arange(40, dtype=dtype, device=device).reshape(2, 4, 5) / 40
+    moving = values.sin().requires_grad_()
+    fixed = (values * 3).cos()
+    valid = torch.ones_like(moving, dtype=torch.bool)
+    loss, meaningful = local_ncc(moving, fixed, valid, radius=1)
+    assert loss.dtype == dtype and meaningful.all() and torch.isfinite(loss).all()
+    gradient = torch.autograd.grad(loss.sum(), moving)[0]
+    assert gradient.dtype == dtype and torch.isfinite(gradient).all()
+
+
 def _ell(data):
     return np.linalg.norm(
         position_to_world(data)[:3, 1 if data.sizes["k"] == 1 else 0 : 3], axis=0
@@ -98,7 +121,7 @@ def test_syn_cpu_cuda_point_gate(
     ]
     for name in ["transforms", "inverse_transforms"]:
         difference = getattr(results[0], name).values - getattr(results[1], name).values
-        assert np.linalg.norm(difference, axis=-1).max() / _ell(fixed) < 0.001
+        assert np.linalg.norm(difference, axis=-1).max() / _ell(fixed) < 0.01
 
 
 @pytest.mark.parametrize("planar", [True, False])

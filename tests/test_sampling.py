@@ -200,3 +200,41 @@ def test_gradients_and_masked_ncc(recording_factory):
     )
     assert_array_equal(meaningful, [False])
     assert_array_equal(empty_loss, [0])
+
+
+def test_float32_ncc_rejects_rounded_constant_means(device):
+    moved = torch.full((2, 23, 31), 0.1, device=device, requires_grad=True)
+    loss, meaningful = global_ncc(moved, moved.detach(), torch.ones_like(moved, dtype=torch.bool))
+    assert not meaningful.any()
+    assert torch.equal(loss, torch.zeros_like(loss))
+    gradient = torch.autograd.grad(loss.sum(), moved)[0]
+    assert torch.equal(gradient, torch.zeros_like(gradient))
+
+
+def test_float32_ncc_identical_odd_sized_frames(device):
+    source = torch.linspace(0, 1, 3 * 5 * 7, device=device).reshape(1, 3, 5, 7)
+    moved = source.sin().repeat(3, 1, 1, 1).requires_grad_()
+    fixed = (source[0] * 3).cos()
+    valid = torch.ones_like(moved, dtype=torch.bool)
+    loss, meaningful = global_ncc(moved, fixed, valid)
+    assert meaningful.all() and torch.equal(loss, loss[:1].expand_as(loss))
+    gradient = torch.autograd.grad(loss.sum(), moved)[0]
+    assert torch.equal(gradient, gradient[:1].expand_as(gradient))
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_ncc_follows_fitting_tensor_precision(device, dtype):
+    values = torch.arange(24, dtype=dtype, device=device).reshape(2, 3, 4) / 24
+    moved = values.sin().requires_grad_()
+    fixed = (values[0] * 3).cos()
+    valid = torch.ones_like(moved, dtype=torch.bool)
+    valid[:, 0, 0] = False
+    loss, meaningful = global_ncc(moved, fixed, valid)
+    assert loss.dtype == dtype and meaningful.all()
+    gradient = torch.autograd.grad(loss.sum(), moved)[0]
+    assert gradient.dtype == dtype and torch.isfinite(gradient).all()
+    expected = [
+        -np.corrcoef(x[mask], fixed.cpu().numpy()[mask])[0, 1] ** 2
+        for x, mask in zip(moved.detach().cpu().numpy(), valid.cpu().numpy(), strict=True)
+    ]
+    assert_allclose(loss.detach().cpu(), expected, atol=2e-6 if dtype == torch.float32 else 1e-12)

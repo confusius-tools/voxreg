@@ -401,7 +401,7 @@ def test_3d_batch_and_cpu_cuda_independence(linear_pair_factory, model):
             "tij,jp->tip", cuda.transforms.values - together.transforms.values, points
         )[:, :3]
         ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
-        assert np.linalg.norm(error, axis=1).max() < 0.001 * ell
+        assert np.linalg.norm(error, axis=1).max() < 0.01 * ell
         np.testing.assert_array_equal(
             cuda.diagnostics.n_iterations, together.diagnostics.n_iterations
         )

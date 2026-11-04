@@ -1,5 +1,21 @@
 # Performance investigation: threads, dense grids and CUDA
 
+## Current numerical-policy work
+
+The policy is **minimize median runtime subject to truth RMS < 0.25 voxels and
+fitting in memory**. Peak RAM/VRAM are resource constraints, not a composite score.
+CPU/CUDA and old/new map differences are diagnostic only.
+
+Fitting NCC is float32 and runtime smoothing is PyTorch-only; CPU planar/volume
+SyN regularizers use scaled float32. Geometry, state, final interpolation and
+batching defaults are unchanged. Full-budget SyN controls still fail truth RMS;
+one-call diagnostics are not formal throughput claims. See [validation](VALIDATION.md)
+and the [single benchmark command](BENCHMARK.md). Historical measurements below
+retain their original policy; preliminary raw probes are now compactly archived
+under `artifacts/archive/`.
+
+## Historical investigation
+
 At benchmark cleanup, the [consolidated five-run pipeline](BENCHMARK.md) was ready
 but had not been run. Measurements below remain historical qualification evidence,
 not its median/range scorecard.

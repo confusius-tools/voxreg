@@ -7,10 +7,12 @@ measurements were captured, not the current checkout.
 
 The exploratory Python runners/profilers and their script-specific tests have
 been removed. Their committed versions remain in Git history; uncommitted/latest
-runner snapshots and large raw evidence remain under ignored local `artifacts/`,
-including `benchmark-cleanup-source-01`, `synthetic-100-source-01`,
-`thread-scaling-ants-source-02` and `cpu-volume-improvement-01`. These local data
-are not published by a push. The native convergence C++ oracle is retained as
+runner snapshots and compact evidence are now in ignored local
+`artifacts/archive/preliminary-evidence.tar.gz`, with verified hashes and a cleanup
+manifest. Generated preliminary arrays/images/caches were discarded; completed
+benchmark reports and installed tools remain. Historical `artifacts/...` paths
+in these documents can be restored selectively from that archive. These local
+data are not published by a push. The native convergence C++ oracle is retained as
 independent numerical/calibration source, not a benchmark entry point.
 
 Use **[BENCHMARK.md](../BENCHMARK.md)** and `examples/benchmark.py` for all new runs.

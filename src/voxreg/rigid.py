@@ -531,8 +531,9 @@ def register(
     iteration on CPU and every ten iterations on CUDA, using one batch-wide scalar
     read (a CUDA stream synchronization). These checks do not alter per-frame
     decisions; frozen frames remain resident until the entire batch finishes.
-    Physical geometry, optimizer state and NCC statistics
-    use float64 to stabilize chunk-size comparisons; fitting images use float32.
+    Fitting images and NCC statistics use float32. Physical geometry and
+    optimizer state use float64. Benchmark accuracy is measured against known
+    truth independently for each device, not by cross-device map agreement.
     Original float64 and integer images are resampled in float64, other images in
     float32, then restored to their original dtype. Integer results use nearest-even
     rounding and range clipping. Metrics exclude invalid sample centers; outside
@@ -825,7 +826,7 @@ def register(
                     metric_callback(
                         np.arange(first, last, dtype=np.int64),
                         clocks.detach().cpu().numpy().copy(),
-                        objective.detach().cpu().numpy().copy(),
+                        objective.detach().double().cpu().numpy().copy(),
                     )
 
                 metric_options = {

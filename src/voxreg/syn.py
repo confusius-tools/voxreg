@@ -39,23 +39,25 @@ from voxreg.sampling import (
 )
 
 
-@lru_cache(maxsize=2)
-def _cpu_smoothing_weights(sigma):
-    """Two immutable CPU kernels for SyN's fixed update/total sigmas."""
+@lru_cache(maxsize=4)
+def _cpu_smoothing_weights(sigma, dimensions):
+    """Immutable planar/volumetric CPU kernels for SyN's two fixed sigmas."""
     radius = int(3 * sigma + 0.5)
     positions = torch.arange(-radius, radius + 1, dtype=torch.float32, device="cpu")
     kernel = torch.exp(-0.5 * (positions / sigma).square())
     kernel = kernel / kernel.sum()
     weights = []
-    for axis in range(3):
-        shape = [1, 1, 1]
+    for axis in range(dimensions):
+        shape = [1] * dimensions
         shape[axis] = len(kernel)
-        weights.append(kernel.reshape(1, 1, *shape).expand(3, 1, *shape).contiguous())
+        weights.append(
+            kernel.reshape(1, 1, *shape).expand(dimensions, 1, *shape).contiguous()
+        )
     return radius, tuple(weights)
 
 
 def smooth_field(field, grid, *, sigma):
-    """Filter CPU SyN volumes in scaled float32; keep physical field state double.
+    """Filter CPU SyN fields in scaled float32; keep physical field state double.
 
     Parameters
     ----------
@@ -71,31 +73,35 @@ def smooth_field(field, grid, *, sigma):
     torch.Tensor
         Float64 field with the same smoothing boundary and support conventions.
     """
-    # shortcut: keep planar/serial SciPy until their whole-call crossovers are qualified.
     if (
         torch.compiler.is_compiling()
         or field.device.type != "cpu"
-        or len(grid.shape) != 3
-        or torch.get_num_threads() == 1
         or (torch.is_grad_enabled() and field.requires_grad)
         or sigma not in (0.5, 1.5)
     ):
         return _smooth_field(field, grid, sigma=sigma)
     _check_field(field, grid)
-    radius, weights = _cpu_smoothing_weights(sigma)
-    scale = field.abs().flatten(1).amax(1).reshape(-1, 1, 1, 1, 1)
+    dimensions = len(grid.shape)
+    radius, weights = _cpu_smoothing_weights(sigma, dimensions)
+    scale = field.abs().flatten(1).amax(1).reshape(-1, 1, *([1] * dimensions))
     scale = scale.clamp_min(torch.finfo(field.dtype).tiny)
     result = (field / scale).float()
+    convolution = F.conv2d if dimensions == 2 else F.conv3d
     for axis, weight in enumerate(weights):
-        padding = [0] * 6
-        padding[2 * (2 - axis) : 2 * (3 - axis)] = [radius, radius]
-        result = F.conv3d(F.pad(result, padding, mode="replicate"), weight, groups=3)
+        padding = [0] * (2 * dimensions)
+        padding[2 * (dimensions - axis - 1) : 2 * (dimensions - axis)] = [
+            radius,
+            radius,
+        ]
+        result = convolution(
+            F.pad(result, padding, mode="replicate"), weight, groups=dimensions
+        )
     result = result.masked_fill(grid.boundary, 0)
     return result.clamp(-1, 1).double() * scale
 
 
 def _box_sum(values, radius):
-    """Separable sliding sums: float64 statistics without a cubic convolution."""
+    """Separable sliding sums in metric precision without a cubic convolution."""
     dimensions = values.ndim - 2
     for axis in range(dimensions):
         padding = [0] * (2 * dimensions)
@@ -103,8 +109,16 @@ def _box_sum(values, radius):
             radius + 1,
             radius,
         ]
-        cumulative = F.pad(values, padding).cumsum(dim=axis + 2)
         width = 2 * radius + 1
+        if values.dtype == torch.float32:
+            # Local accumulation avoids cancellation of long float32 prefix sums.
+            padding[2 * (dimensions - axis - 1)] = radius
+            kernel = [1] * dimensions
+            kernel[axis] = width
+            pool = F.avg_pool2d if dimensions == 2 else F.avg_pool3d
+            values = pool(F.pad(values, padding), kernel, stride=1, divisor_override=1)
+            continue
+        cumulative = F.pad(values, padding).cumsum(dim=axis + 2)
         values = cumulative.narrow(
             axis + 2, width, values.shape[axis + 2]
         ) - cumulative.narrow(axis + 2, 0, values.shape[axis + 2])
@@ -132,8 +146,9 @@ def local_ncc(moving, fixed, valid, radius):
     meaningful : torch.Tensor
         Whether each frame has sufficient support and nonconstant neighborhoods.
     """
-    x, y = moving.double(), fixed.double()
-    w = valid.double()
+    dtype = torch.float64 if moving.dtype == torch.float64 else torch.float32
+    x, y = moving.to(dtype), fixed.to(dtype)
+    w = valid.to(dtype)
     stats = _box_sum(
         torch.stack((w, w * x, w * y, w * x * x, w * y * y, w * x * y), dim=1), radius
     )
@@ -141,7 +156,13 @@ def local_ncc(moving, fixed, valid, radius):
     count = n.clamp_min(1)
     vx = (sxx - sx * sx / count).clamp_min(0)
     vy = (syy - sy * sy / count).clamp_min(0)
-    usable = valid & (n > 1) & (vx > 1e-12) & (vy > 1e-12)
+    tolerance_x = tolerance_y = 1e-12
+    if dtype == torch.float32:
+        # Raw-moment cancellation must not make constant neighborhoods meaningful.
+        epsilon = 16 * torch.finfo(dtype).eps
+        tolerance_x = epsilon * (sxx + sx * sx / count).abs()
+        tolerance_y = epsilon * (syy + sy * sy / count).abs()
+    usable = valid & (n > 1) & (vx > tolerance_x) & (vy > tolerance_y)
     cc = ((sxy - sx * sy / count).square() / (vx * vy).clamp_min(1e-24)).clamp(max=1)
     axes = tuple(range(1, x.ndim))
     counts = usable.sum(dim=axes)
@@ -550,7 +571,7 @@ def register_syn(
                 metric_callback(
                     np.arange(first, last, dtype=np.int64),
                     steps.cpu().numpy().copy(),
-                    loss.cpu().numpy().copy(),
+                    loss.double().cpu().numpy().copy(),
                 )
 
             start = perf_counter()

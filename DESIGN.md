@@ -81,8 +81,8 @@ fixed grid and the inverse on the original moving grid. Linear matrices and
 metadata are unchanged. Native planes have two internal components, embedded in
 world coordinates for export; mixed-dimensional deformation is explicitly rejected.
 The single-resolution optimizer uses radius-2 neighborhoods and voxel sigmas
-1.5 (updates) and 0.5 (total field). Float64 geometry/state/statistics and true
-float64 final interpolation are retained. Displaced float32 image fitting uses
+1.5 (updates) and 0.5 (total field). Fitting statistics are float32;
+geometry/state and original float64-image final interpolation remain float64. Displaced float32 image fitting uses
 fixed-order multilinear interpolation and roundoff-only voxel-knot snapping to
 avoid inconsistent CPU/CUDA one-sided gradients; linear sampling is unchanged.
 
@@ -280,13 +280,12 @@ The engine directly uses:
 - NumPy for host-side geometry and validation.
 - xarray for the public data model and labeled results.
 - PyTorch for interpolation, differentiation and batched optimization.
-- SciPy >=1.16.3 for nondifferentiable CPU field smoothing; the floor matches
-  ConfUSIus, not a need for 1.18-only APIs.
 - ConfUSIus >=0.8.0 for the canonical VoxelData index and Rich progress reporter.
   This temporarily replaces the duplicated geometry implementation.
 
-Pytest/Ruff are development dependencies; SciPy also supplies the independent
-interpolation reference. Matplotlib, nibabel and SciPy are in the optional
+Pytest/Ruff are development dependencies. SciPy >=1.16.3 remains a compatible
+dependency floor for ConfUSIus and supplies independent interpolation/filtering
+references; the engine does not call SciPy for runtime smoothing. Matplotlib, nibabel and SciPy are in the optional
 `examples` extra. The optional reference exporter runs with an existing ConfUSIus
 interpreter; ConfUSIus is now installed into voxreg and brings its full transitive
 dependency stack, including ITK/napari. FireANTs remains development-only. The
@@ -407,8 +406,13 @@ constant fixed images; diagnose insufficient valid variance or overlap rather
 than returning a misleading finite loss from a large denominator epsilon.
 
 Sum per-frame losses to obtain a scalar for differentiation. Never center across
-the batch or compute covariance across frames. Accumulate NCC statistics in
-float64: float32 loss quantization near unit NCC destabilized best-iterate selection. Use a small numerical denominator
+the batch or compute covariance across frames. Fitting NCC statistics use
+float32, matching the resident fitting images; explicit float64 metric inputs
+retain float64 for analytic checks. Float32 frame reductions are padded with
+invalid samples to align rows, avoiding row-address-dependent CUDA reductions.
+Benchmark acceptance uses independent truth RMS < 0.25 voxels and successful
+execution within available memory; median runtime is the optimization objective.
+CPU/CUDA and old/new mapped-point differences are diagnostics, not benchmark gates. Use a small numerical denominator
 guard only after checking that the metric is meaningful.
 
 No minimum coverage fraction is enforced. Both optimizer evaluation sites require
