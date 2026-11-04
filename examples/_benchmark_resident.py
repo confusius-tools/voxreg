@@ -46,7 +46,7 @@ def _run(moving, fixed, amplitudes, config, accuracy):
         }
         errors = None
         if accuracy:
-            transforms = result.transforms.values
+            transforms = result.forward_transforms.values
             if model != "syn":
                 errors = _linear_rms(
                     transforms.reshape(-1, 4, 4), amplitudes, model, shape

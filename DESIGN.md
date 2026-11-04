@@ -28,6 +28,11 @@ coordinate offset and stride. It is not necessarily the stored voxel-to-world
 affine; `voxreg.position_to_world(data)` supplies this map. Identity world motion
 can therefore resample unequal grids without estimating geometry as motion.
 
+Opt-in `forward_transforms` and `inverse_transforms` expose both directions for
+all models. `voxreg.resample` applies either complete pull to original intensities
+on CPU/CUDA without fitting. Dense fields must match the reference lattice;
+linear matrices can be applied on any supported reference lattice.
+
 ## Models
 
 | Model | Slice pair parameters | Volume pair parameters | Mixed slice/volume parameters |
@@ -92,12 +97,16 @@ mathematically possible, not a reliable registration. Coverage is not confidence
 | Fitting images and global/local NCC | Float32; explicit double metric inputs retain double for checks |
 | Geometry, optimizer state and fields | Float64 |
 | Smoothing | PyTorch; CPU SyN regularizers use scaled float32, restoring double fields; general/differentiable/compiled and CUDA paths retain double filtering |
-| Final interpolation | Original images, once; float64/integer input uses double interpolation, float32/float16 uses float32 |
+| Final interpolation | Original images, once; float64/integer inputs retain double; outputs retain moving dtype |
 
 Float32 NCC uses aligned global reductions and local pooling sums with
 roundoff-aware variance guards. dB scaling affects fitting only; original inputs
 are never modified. Integer results are rounded nearest-even and clipped;
 integer inputs outside `[-2**53, 2**53]` are rejected.
+
+Offline CPU linear resampling uses native double-image/double-coordinate sampling,
+without fitting-only coordinate round trips. Single volumes partition query points
+over shared image storage; fitting and CUDA sampling paths are unchanged.
 
 Output uses the fixed grid and moving intensity dtype/units/time labels. Spatial
 pairs acquire no synthetic time axis. Out-of-bounds output is filled with the
@@ -126,6 +135,7 @@ CUDA synchronization and do not change best-valid return semantics.
 | --- | --- |
 | [geometry.py](src/voxreg/geometry.py) | VoxelData validation and array-position geometry |
 | [transforms.py](src/voxreg/transforms.py) | Linear parameterization, scaling and seed constraints |
+| [resampling.py](src/voxreg/resampling.py) | Offline world-pull application on CPU/CUDA |
 | [sampling.py](src/voxreg/sampling.py) | Physical pull sampling, global NCC and matrix conversion |
 | [rigid.py](src/voxreg/rigid.py) | Public API, shared linear fitting and result assembly |
 | [fields.py](src/voxreg/fields.py) | Field interpolation, composition, smoothing, inversion and Jacobians |

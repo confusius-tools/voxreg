@@ -599,6 +599,7 @@ def _sample_displaced(images, normalized, interpolation):
         images.device.type == "cpu"
         and images.dtype == torch.float32
         and interpolation == "linear"
+        and min(images.shape[1:]) > 1
     )
     coordinates = []
     for axis, size in enumerate(images.shape[1:]):

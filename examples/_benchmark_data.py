@@ -1,4 +1,4 @@
-"""Shared synthetic inputs and resident adapters for benchmark.py; no CLI."""
+"""Shared benchmark inputs and resident registration adapters; no CLI."""
 
 import json
 from pathlib import Path

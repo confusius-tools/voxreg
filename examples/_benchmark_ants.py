@@ -1,4 +1,4 @@
-"""Native ANTs I/O and commands for benchmark.py; no independent runner."""
+"""Native ANTs registration I/O and commands; no independent runner."""
 
 import hashlib
 

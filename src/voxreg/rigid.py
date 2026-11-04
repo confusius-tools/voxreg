@@ -52,7 +52,7 @@ class RegistrationResult:
         Integer output is rounded to nearest-even and clipped to its type range.
     valid : xarray.DataArray
         Boolean VoxelData mask of valid moving-image sample centers.
-    transforms : xarray.DataArray, optional
+    forward_transforms : xarray.DataArray, optional
         None unless register(return_transforms=True). Linear models: homogeneous world z/y/x pull matrices. SyN: complete
         fixed-world-to-moving-world displacement in mm on the fixed grid, with
         a final world_component axis labeled z/y/x. Recordings retain time.
@@ -60,17 +60,28 @@ class RegistrationResult:
         Objective, update count and status, plus linear motion parameters or
         SyN regularity/inverse-consistency diagnostics.
     inverse_transforms : xarray.DataArray, optional
-        SyN only: complete moving-world-to-fixed-world displacement in mm on
-        the original moving grid. Sampled inverses are approximate. None for
-        linear models or return_transforms=False; exported linear matrices can
-        be inverted directly.
+        None unless register(return_transforms=True). Linear models: inverse
+        world z/y/x pull matrices. SyN: complete moving-world-to-fixed-world
+        displacement in mm on the original moving grid. Sampled field inverses
+        are approximate.
     """
 
     registered: xr.DataArray
     valid: xr.DataArray
-    transforms: xr.DataArray | None
+    forward_transforms: xr.DataArray | None
     diagnostics: xr.Dataset
     inverse_transforms: xr.DataArray | None = None
+
+    @property
+    def transforms(self) -> xr.DataArray | None:
+        """Access forward_transforms through the original attribute name.
+
+        Returns
+        -------
+        xarray.DataArray or None
+            The same forward pull, without copying or allocating transforms.
+        """
+        return self.forward_transforms
 
 
 def _fitting_images(raw, target_raw, intensity_scaling):
@@ -398,8 +409,8 @@ def register(
         Final original-image resampling only; fitting always uses linear sampling.
         Nearest is suitable for labels, not automatically for integer intensities.
     return_transforms : bool, default: False
-        Return linear pull matrices or both complete SyN displacement fields.
-        Otherwise transforms and inverse_transforms are None; fitting, resampling
+        Return forward/inverse linear matrices or complete SyN displacement fields.
+        Otherwise forward_transforms and inverse_transforms are None; fitting, resampling
         and diagnostics are unchanged. Dense fields are not exported or accumulated.
         Warning: on equal fixed/moving grids, the two float64, three-component
         SyN fields require 12x the uncompressed image storage of a float32 recording
@@ -464,7 +475,8 @@ def register(
         Registered intensities and validity on the fixed grid, diagnostics, and
         optional world pull transforms (None by default). Spatial-only input has no synthetic time
         label: linear transforms are (4, 4), SyN fields are (k, j, i, world_component).
-        SyN inverse_transforms use the original moving grid and the reverse pull.
+        inverse_transforms reverse the pull: inverse matrices for linear models,
+        or displacements on the original moving grid for SyN.
         Invalid frames retain their best
         valid transform, or the initial transform if no valid metric was observed.
         Motion diagnostics describe the full transform, not an increment.
@@ -1019,6 +1031,10 @@ def register(
         if return_transforms
         else None
     )
+    inverse_transforms = None
+    if transforms is not None:
+        inverse_transforms = transforms.copy(data=np.linalg.inv(matrices))
+        inverse_transforms.attrs["convention"] = "moving-world-to-fixed-world pull"
     template = _output_template(moving, fixed, same_grid)
     values, validity = np.concatenate(outputs), np.concatenate(masks)
     if planar:
@@ -1032,5 +1048,10 @@ def register(
             valid_data.isel(time=0, drop=True),
             transforms.isel(time=0, drop=True) if transforms is not None else None,
             diagnostics.isel(time=0, drop=True),
+            inverse_transforms.isel(time=0, drop=True)
+            if inverse_transforms is not None
+            else None,
         )
-    return RegistrationResult(registered, valid_data, transforms, diagnostics)
+    return RegistrationResult(
+        registered, valid_data, transforms, diagnostics, inverse_transforms
+    )

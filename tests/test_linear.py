@@ -490,6 +490,7 @@ def test_single_public_registration_entry_point():
         "RegistrationResult",
         "position_to_world",
         "register",
+        "resample",
     }
     assert not hasattr(voxreg, "register_rigid")
 

@@ -1,7 +1,4 @@
-"""One serial benchmark: wall time, peak memory and full-workload truth RMS.
-
-See BENCHMARK.md. Use --list to inspect configuration IDs without running them.
-"""
+"""Shared serial supervision/reporting and the existing registration workload."""
 
 import argparse
 import fnmatch
@@ -28,6 +25,7 @@ import _benchmark_data as data
 import numpy as np
 import torch
 from _benchmark_metrics import _native_motion_rms, _native_pair_rms, _native_syn_rms
+from _benchmark_resample_io import LIMIT as RESAMPLE_LIMIT
 from _benchmark_resident import _check, _run
 from rich.console import Console
 from rich.table import Table
@@ -47,6 +45,7 @@ PACKAGES = (
     "SimpleITK",
     "nibabel",
     "rich",
+    "antspyx",
 )
 
 
@@ -340,9 +339,13 @@ def _phase(script, config_path, mode, environment):
     global _ACTIVE
     directory = config_path.parent
     peak = 0
+    config = json.loads(config_path.read_text())
+    if config.get("worker_script"):
+        script = script.parent / config["worker_script"]
+    python = config.get("worker_python") or sys.executable
     with (directory / f"{mode}.log").open("w") as log:
         _ACTIVE = subprocess.Popen(
-            [sys.executable, str(script), "--worker", str(config_path), "--mode", mode],
+            [python, str(script), "--worker", str(config_path), "--mode", mode],
             env=environment,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -366,13 +369,21 @@ def _phase(script, config_path, mode, environment):
         record["status"] = "error"
     if mode == "memory":
         record["peak_ram_bytes"] = peak
+        if "baseline_ram_bytes" in record:
+            record["peak_ram_above_baseline_bytes"] = max(
+                0, peak - record["baseline_ram_bytes"]
+            )
     _write(path, record)
     return record
 
 
-def _table(console, records, suite, runs):
+def _table(console, records, suite, runs, resampling=False):
     table = Table(
-        title="Resident-array registrations"
+        title=(
+            "Resident-array resampling"
+            if resampling
+            else "Resident-array registrations"
+        )
         if suite == "resident"
         else "Native ANTs workflows — CLI / I/O included"
     )
@@ -382,7 +393,7 @@ def _table(console, records, suite, runs):
     for title in (
         "Batch",
         "Seconds: median [min–max]",
-        "Truth RMS (vox)",
+        "Relative RMS" if resampling else "Truth RMS (vox)",
         "RAM GiB",
         "VRAM GiB",
     ):
@@ -393,7 +404,9 @@ def _table(console, records, suite, runs):
             continue
         times = row.get("timing", {}).get("wall_seconds", [])
         memory = row.get("memory", {})
-        error = row.get("accuracy", {}).get("worst_frame_rms_voxels")
+        error = row.get("accuracy", {}).get(
+            "worst_frame_relative_rmse" if resampling else "worst_frame_rms_voxels"
+        )
         batch = row.get("timing", {}).get("backend_settings", {}).get("batch_size")
         table.add_row(
             row["id"],
@@ -401,7 +414,9 @@ def _table(console, records, suite, runs):
             f"{np.median(times):.3f} [{min(times):.3f}–{max(times):.3f}]"
             if times
             else "—",
-            f"{error:.6f}" if error is not None else "—",
+            (f"{error:.2e}" if resampling else f"{error:.6f}")
+            if error is not None
+            else "—",
             f"{memory['peak_ram_bytes'] / 2**30:.3f}"
             if "peak_ram_bytes" in memory
             else "—",
@@ -419,26 +434,36 @@ def _table(console, records, suite, runs):
         console.print(table)
 
 
-def _main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def _main(script, configs=_configs, worker=_worker, *, resampling=False, prepare=None):
+    script = Path(script)
+    operation = "resampling" if resampling else "registration"
+    parser = argparse.ArgumentParser(
+        description=f"Serial {operation} benchmark; see BENCHMARK.md."
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--runs",
         type=int,
         default=5,
-        help="Independent registrations per config, including the first call",
+        help="Independent calls per config, including the first call",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        help="Shared voxreg/FireANTs resident batch limit; omit for existing backend policies",
+        help="Shared voxreg/FireANTs batch limit; resampling defaults to one controlled policy for both",
     )
     parser.add_argument("--threads", type=int, default=8)
+    if resampling:
+        parser.add_argument(
+            "--antspy-python",
+            type=Path,
+            help="Isolated Python with antspyx installed; required for its resident cases",
+        )
     parser.add_argument(
         "--configs",
         nargs="+",
-        default=["*"],
-        help="Configuration ID glob patterns; quote wildcards",
+        default=["resident-*"] if resampling else ["*"],
+        help="Configuration ID globs; resampling defaults to resident APIs (native CLI is opt-in)",
     )
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--worker", type=Path, help=argparse.SUPPRESS)
@@ -449,7 +474,7 @@ def _main():
     if args.worker:
         if not args.mode:
             parser.error("Worker mode required")
-        return _worker(args.worker, args.mode)
+        return worker(args.worker, args.mode)
     if (
         args.runs < 1
         or args.threads < 1
@@ -458,7 +483,7 @@ def _main():
         parser.error("runs, threads and batch-size must be positive")
     cases = [
         c
-        for c in _configs()
+        for c in configs()
         if any(fnmatch.fnmatchcase(c["id"], pattern) for pattern in args.configs)
     ]
     if not cases:
@@ -497,7 +522,16 @@ def _main():
         ANTS_RANDOM_SEED="1",
     )
     required = (
-        ("antsMotionCorr", "antsRegistration", "antsRegistrationSyN.sh", "PrintHeader")
+        (
+            ("antsApplyTransforms", "antsRegistration")
+            if resampling
+            else (
+                "antsMotionCorr",
+                "antsRegistration",
+                "antsRegistrationSyN.sh",
+                "PrintHeader",
+            )
+        )
         if native
         else ()
     )
@@ -509,6 +543,31 @@ def _main():
         parser.error(
             f"Missing native ANTs tools: {', '.join(missing)}; set PATH or ANTSPATH"
         )
+    antspy_python = None
+    antspy_versions = None
+    if resampling and any(c.get("backend") == "antspyx" for c in cases):
+        if args.antspy_python is None:
+            parser.error(
+                "ANTsPy cases require --antspy-python; see BENCHMARK.md for the isolated environment"
+            )
+        antspy_python = args.antspy_python.expanduser().absolute()
+        try:
+            probe = subprocess.run(
+                [
+                    str(antspy_python),
+                    str(script.parent / "_benchmark_antspy.py"),
+                    "--versions",
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            antspy_versions = json.loads(probe.stdout)
+            if antspy_versions.get("antspyx") != "0.6.3":
+                parser.error("Qualified resident ANTsPy version is antspyx==0.6.3")
+        except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+            parser.error(f"ANTsPy interpreter preflight failed: {exc}")
     ants_version = None
     if native:
         version = subprocess.run(
@@ -521,7 +580,7 @@ def _main():
         ants_version = version.stdout + version.stderr
         if version.returncode or re.search(r"\b2\.6\.5\b", ants_version) is None:
             parser.error(
-                "Native truth reconstruction requires qualified ANTs 2.6.5; set PATH or ANTSPATH"
+                "Native benchmarks require qualified ANTs 2.6.5; set PATH or ANTSPATH"
             )
     try:
         output.mkdir(parents=True, exist_ok=False)
@@ -534,9 +593,9 @@ def _main():
         ignore=shutil.ignore_patterns("__pycache__"),
     )
     (source / "examples").mkdir()
-    scripts = [Path(__file__), *sorted(Path(__file__).parent.glob("_benchmark_*.py"))]
-    for script in scripts:
-        shutil.copy2(script, source / "examples" / script.name)
+    scripts = [script, *sorted(script.parent.glob("_benchmark_*.py"))]
+    for source_script in scripts:
+        shutil.copy2(source_script, source / "examples" / source_script.name)
     for name in ("pyproject.toml", "uv.lock", "BENCHMARK.md"):
         shutil.copy2(ROOT / name, source / name)
     revision = subprocess.run(
@@ -554,13 +613,15 @@ def _main():
         check=False,
     )
     report = {
-        "protocol": "voxreg-benchmark-v2",
+        "protocol": "voxreg-resample-benchmark-v2"
+        if resampling
+        else "voxreg-benchmark-v2",
         "kind": "benchmark" if args.runs == 5 else "diagnostic",
         "status": "running",
         "runs": args.runs,
         "frames": FRAMES,
         "threads": args.threads,
-        "resident_iterations": ITERATIONS,
+        "resident_iterations": None if resampling else ITERATIONS,
         "resident_batch_size": args.batch_size,
         "command": sys.argv,
         "git_commit": revision.stdout.strip(),
@@ -586,16 +647,39 @@ def _main():
             for p in sorted(source.rglob("*"))
             if p.is_file()
         },
-        "memory_definition": "separate worker: sampled peak process-group RSS including resident inputs/imports/preparation (20 ms; shared pages may count twice); CUDA peak Torch allocated, excluding driver/context and non-Torch allocations",
-        "accuracy_definition": "worst-frame full-grid physical pull RMS / minimum active spacing; separate full-workload call, same batching",
+        "memory_definition": (
+            "separate worker: sampled peak RSS including imports, loaded resident inputs and call allocations; dataset/map generation staged outside workers; baseline RSS and sampled excess also recorded (20 ms; short peaks may be missed); CUDA peak Torch allocated, not driver/context or reserved memory"
+            if resampling
+            else "separate worker: sampled peak process-group RSS including resident inputs/imports/preparation (20 ms; shared pages may count twice); CUDA peak Torch allocated, excluding driver/context and non-Torch allocations"
+        ),
+        "accuracy_definition": (
+            "worst-frame intensity RMSE / reference intensity RMS on common center support; independent float64 SciPy linear interpolation; separate full-workload call, same batching"
+            if resampling
+            else "worst-frame full-grid physical pull RMS / minimum active spacing; separate full-workload call, same batching"
+        ),
         "policy": {
             "objective": "minimize median runtime among accuracy-passing configurations",
-            "truth_rms_limit_voxels": TRUTH_LIMIT,
+            **(
+                {"relative_rmse_limit": RESAMPLE_LIMIT}
+                if resampling
+                else {"truth_rms_limit_voxels": TRUTH_LIMIT}
+            ),
             "memory": "report peak RAM/VRAM; allocation or execution failure fails the case",
             "cross_device_and_old_new_agreement": "diagnostic only; not acceptance gates",
         },
         "cases": [],
     }
+    if resampling:
+        report["batch_policy"] = (
+            "One effective voxreg/FireANTs batch per workload/model/device, resolved by the first timing worker using voxreg's conservative cap (or --batch-size) and fixed for all remaining phases/backends. ANTsPy processes one frame at a time."
+        )
+        report["input_preparation"] = (
+            "Images, fixed lattice, maps and time labels staged once per workload/model outside measured workers; each worker verifies the same serialized array/geometry hash. Conversion/application/mask/CPU return are timed; file loading is not."
+        )
+        report["antspy_environment"] = {
+            "python": str(antspy_python) if antspy_python else None,
+            "versions": antspy_versions,
+        }
     if ants_version is not None:
         report["ants_version"] = ants_version
         report["tool_sha256"] = {
@@ -603,9 +687,13 @@ def _main():
             for name, path in tools.items()
         }
     console = Console(record=True)
-    console.rule("Registration benchmark")
+    console.rule(f"{operation.capitalize()} benchmark")
     console.print(
-        f"Optimize runtime subject to truth RMS < {TRUTH_LIMIT} vox and fitting in memory.",
+        (
+            f"Optimize runtime subject to relative interpolation RMS < {RESAMPLE_LIMIT} and fitting in memory."
+            if resampling
+            else f"Optimize runtime subject to truth RMS < {TRUTH_LIMIT} vox and fitting in memory."
+        ),
         style="bold",
     )
     console.print(
@@ -614,6 +702,7 @@ def _main():
     console.print(f"Output: {output}", markup=False)
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
+    shared_batches = {}
     try:
         for number, case in enumerate(cases, 1):
             directory = output / case["id"]
@@ -622,16 +711,38 @@ def _main():
                 **case,
                 "runs": args.runs,
                 "frames": FRAMES,
-                "iterations": ITERATIONS,
+                "iterations": None if resampling else ITERATIONS,
                 "threads": args.threads,
                 "batch_size": args.batch_size if case["suite"] == "resident" else None,
                 "tools": tools,
             }
+            shared_key = None
+            if resampling and case.get("backend") in (
+                "cpu",
+                "cuda",
+                "fireants-cpu",
+                "fireants-cuda",
+            ):
+                shared_key = (
+                    case["workload"],
+                    case["model"],
+                    case["backend"].removeprefix("fireants-"),
+                )
+                config["batch_size"] = args.batch_size or shared_batches.get(shared_key)
+            if case.get("backend") == "antspyx":
+                config.update(
+                    worker_python=str(antspy_python),
+                    worker_script="_benchmark_antspy.py",
+                    worker_versions=antspy_versions,
+                )
             config_path = directory / "config.json"
             _write(config_path, config)
             row = {**case, "status": "running"}
             report["cases"].append(row)
             _write(output / "results.json", report)
+            if prepare is not None:
+                prepare(config_path)
+                config = json.loads(config_path.read_text())
             for mode in PHASES:
                 console.log(
                     f"[{number}/{len(cases)}] {case['id']} / {mode}; {directory / (mode + '.log')}",
@@ -639,19 +750,26 @@ def _main():
                 )
                 with console.status(f"{case['id']} / {mode}"):
                     row[mode] = _phase(
-                        source / "examples/benchmark.py", config_path, mode, environment
+                        source / "examples" / script.name,
+                        config_path,
+                        mode,
+                        environment,
                     )
                 _write(output / "results.json", report)
-                if (
-                    row[mode]["status"] != "error"
-                    and row[mode].get("versions") != report["versions"]
-                ):
+                if row[mode]["status"] != "error" and row[mode].get(
+                    "versions"
+                ) != config.get("worker_versions", report["versions"]):
                     row[mode].update(
                         status="error", error="Dependencies changed during the run"
                     )
                 if row[mode]["status"] in ("error", "unavailable"):
                     row["status"] = row[mode]["status"]
                     break
+                if mode == "timing" and shared_key is not None:
+                    batch = row[mode]["backend_settings"]["batch_size"]
+                    shared_batches[shared_key] = batch
+                    config["batch_size"] = batch
+                    _write(config_path, config)
             else:
                 digests = {row[mode]["input_sha256"] for mode in PHASES}
                 if len(digests) != 1:
@@ -672,7 +790,7 @@ def _main():
                 else:
                     row["status"] = row["accuracy"]["status"]
             _write(output / "results.json", report)
-            _table(console, [row], case["suite"], args.runs)
+            _table(console, [row], case["suite"], args.runs, resampling)
     except KeyboardInterrupt:
         report["status"] = "interrupted"
     except Exception:  # noqa: BLE001 -- CLI boundary: preserve partial results and the traceback.
@@ -688,7 +806,7 @@ def _main():
         report["power_end"] = data._power()
         _write(output / "results.json", report)
         for suite in ("resident", "native"):
-            _table(console, report["cases"], suite, args.runs)
+            _table(console, report["cases"], suite, args.runs, resampling)
         console.print(f"{report['status']}: {output / 'results.json'}", markup=False)
         console.save_text(str(output / "benchmark.log"), clear=False)
         console.save_html(str(output / "report.html"), clear=False)
@@ -697,7 +815,3 @@ def _main():
         if report["status"] == "interrupted"
         else int(report["status"] != "completed")
     )
-
-
-if __name__ == "__main__":
-    raise SystemExit(_main())

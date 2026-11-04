@@ -63,17 +63,18 @@ result = voxreg.register(
 | `batch_size` | Maximum frames fitted together; automatic by default. Full returned images still occupy CPU memory. |
 | `max_iterations` | Per-frame update limit; default `100`. Inspect diagnostics rather than assuming convergence. |
 | `device`, `progress` | `"cpu"` or `"cuda"`; progress defaults to `"auto"`, or use `False` to silence it. |
-| `return_transforms` | Opt into linear matrices or SyN forward/inverse displacement fields. Dense fields can be much larger than the images. |
+| `return_transforms` | Opt into forward and inverse maps: linear matrices or SyN displacement fields. Dense fields can be much larger than the images. |
 
 The result contains **`registered`** intensities and a boolean **`valid`** support
 mask on the fixed grid, plus **`diagnostics`** with per-frame status and objective.
 Inputs are not modified; output retains the moving dtype and time labels.
 Use `valid` to exclude out-of-bounds padding from analysis.
 
-With `return_transforms=True`, linear `transforms` are physical pulls:
-**`moving_world = matrix @ fixed_world`**, in **z/y/x, mm**. SyN returns complete
-displacements on the fixed grid and `inverse_transforms` on the moving grid.
-Both transform attributes are `None` by default.
+With `return_transforms=True`, `forward_transforms` are physical pulls:
+**`moving_world = matrix @ fixed_world`**, in **z/y/x, mm**. Linear models return
+matrices and their inverses; SyN returns complete forward displacements on the
+fixed grid and inverse displacements on the moving grid. Both attributes are
+`None` by default. `transforms` remains a compatibility alias for `forward_transforms`.
 
 Pass original linear intensities when using `center_moments`; logarithms and other
 nonlinear preprocessing change its centroid weights. Noncoplanar slice pairs
@@ -83,6 +84,22 @@ Dask-backed inputs and multiresolution fitting are not supported.
 For all options, including optimizer controls and callbacks, use
 `help(voxreg.register)` or read the [API docstring](src/voxreg/rigid.py).
 
+## Apply transforms offline
+
+`voxreg.resample` applies exported maps without fitting, on CPU or CUDA. For a
+spatial image pair:
+
+```python
+result = voxreg.register(moving, fixed, return_transforms=True)
+resampled, valid = voxreg.resample(moving, fixed, result.forward_transforms, device="cuda")
+reverse, reverse_valid = voxreg.resample(fixed, moving, result.inverse_transforms, device="cuda")
+```
+
+The reference must be spatial-only; for a recording use a spatial frame as the
+reference. Displacement fields must match that grid exactly. Original dtype and
+time labels are retained; use `interpolation="nearest"` for labels or masks.
+See `help(voxreg.resample)` for broadcasting, batching and support conventions.
+
 ## Development and benchmarks
 
 ```bash
@@ -90,10 +107,11 @@ uv run pytest
 uv run prek run --all-files
 
 # List configurations; see BENCHMARK.md before starting the full matrix.
-uv run --extra examples python examples/benchmark.py --list
+uv run --extra examples python examples/benchmark_register.py --list
+uv run --extra examples python examples/benchmark_resample.py --list
 ```
 
-- [Benchmark guide](BENCHMARK.md): one entry point, runtime, truth RMS and peak memory.
+- [Benchmark guide](BENCHMARK.md): registration/resampling runtime, accuracy and peak memory.
 - [Design](DESIGN.md): physical conventions and implementation details.
 - [Validation](VALIDATION.md): correctness checks and known accuracy limits.
 - [Motion-correction example](examples/notebook_motion_correction.py).

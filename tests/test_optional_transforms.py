@@ -2,8 +2,8 @@
 
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import xarray as xr
+from registration_options import RegistrationOptions
 
 from voxreg import register, syn
 
@@ -30,8 +30,18 @@ def test_optional_transforms(
     }
     target = None if recording else fixed
     exported = register(moving, target, return_transforms=True, **options)
-    assert exported.transforms is not None
-    assert (exported.inverse_transforms is not None) == (model == "syn")
+    assert exported.forward_transforms is not None
+    assert exported.transforms is exported.forward_transforms
+    assert exported.inverse_transforms is not None
+    if model != "syn":
+        np.testing.assert_allclose(
+            exported.inverse_transforms.values @ exported.forward_transforms.values,
+            np.broadcast_to(np.eye(4), exported.forward_transforms.shape),
+            atol=1e-12,
+        )
+        assert exported.inverse_transforms.attrs["convention"] == (
+            "moving-world-to-fixed-world pull"
+        )
 
     def unexpected(*args, **kwargs):
         raise AssertionError(
@@ -41,7 +51,7 @@ def test_optional_transforms(
     for name in ("_world_field", "_inverse_world_field", "_labeled_field"):
         monkeypatch.setattr(syn, name, unexpected)
     omitted = register(moving, target, **options)
-    assert omitted.transforms is None and omitted.inverse_transforms is None
+    assert omitted.forward_transforms is None and omitted.inverse_transforms is None
     xr.testing.assert_identical(omitted.registered, exported.registered)
     xr.testing.assert_identical(omitted.valid, exported.valid)
     # Timing alone changes when export is disabled.

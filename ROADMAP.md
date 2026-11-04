@@ -6,8 +6,9 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 ## Priorities
 
-1. **Review a fresh full benchmark.** Establish the current precision-policy
-   baseline using [one pipeline](BENCHMARK.md), without competing heavy jobs.
+1. **Review the coruscant benchmark when complete.** Establish the current
+   precision-policy baseline using [one pipeline](BENCHMARK.md), without competing
+   heavy jobs or changing the running job's frozen sources/settings.
 2. **Address SyN truth accuracy.** Current full-budget controls exceed 0.25 voxels
    RMS. Higher NCC or agreement with another library is not a substitute.
 3. **Optimize one measured bottleneck.** For accuracy-passing cases, compare
@@ -18,6 +19,25 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 ## Candidates, not enabled defaults
 
+- **Fixed and moving masks:** respect each mask's native geometry, warp moving
+  masks into the metric domain, and define mask-aware local statistics/pyramids.
+  Keep user ROIs distinct from geometric support and the output validity mask.
+- **Multi-resolution:** shrink factors, per-level iteration budgets and image
+  smoothing sigmas **in mm**, respecting anisotropy and singleton axes. Carry
+  physical transforms/fields between levels and resample original images once.
+  Define per-level optimizer/convergence state; do not compare losses across levels.
+- **Mutual information:** a differentiable, mask-aware estimator with explicit
+  bins/ranges/kernels and bounded memory. Add a small per-frame metric interface;
+  revisit NCC-specific conditioning, diagnostics and stopping calibration.
+- **FireANTs-inspired controls:** configurable local-CC windows/kernels, MSE/custom
+  losses, optimizer choice/hyperparameters, SyN gradient/warp smoothing and
+  regularization hooks. Follow ITK's unit distinction: image-pyramid smoothing
+  sigmas in mm, deformation regularization in voxel units. Keep existing SyN
+  sigmas/defaults; ITK's field parameters are variances, not interchangeable values.
+  Keep current optimizers for now. Velocity-based deformation/integration,
+  compute-dtype selection and rigid-plus-scale are further options, not
+  requirements for parity.
+  Reimplement mechanisms independently; do not transplant licensed vendor code.
 - **Multistart:** only with a selection rule that rejects tiny-overlap or
   anatomically wrong metric optima, especially for slice placement.
 - **Line search:** investigate measured overshoot and extra evaluation cost before
@@ -26,9 +46,10 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
   work. Reuse full returned matrices and the original images; do not resample an
   intermediate image or invent a separate transform chain.
 
-Masks, pyramids, streaming/Dask execution and mixed-dimensional deformation are
-not part of the current implementation. Add scope only for a demonstrated need,
-not as a prerequisite to benchmarking or fixing the existing accuracy failures.
+These are candidates, not implemented features or a commitment to expose every
+vendor option. Streaming/Dask execution and mixed-dimensional deformation also
+remain outside the implementation. Add scope for a demonstrated need, not as a
+prerequisite to benchmarking or fixing existing accuracy failures.
 
 Keep source/settings and minimal failure evidence before cleanup. Never retune a
 truth threshold or shorten work merely to manufacture a speedup. Historical
