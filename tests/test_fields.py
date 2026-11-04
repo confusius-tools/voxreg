@@ -398,14 +398,21 @@ def test_exact_sparse_lattice_keeps_general_field_math(
     affine[:3, :3] = np.diag([0.24, -0.21, 0.18])
     grid = make_field_grid(voxel(data.values.copy(), affine), device=device)
     assert grid.voxel_axes is not None
+    assert grid.voxel_scale is not None
     general = replace(grid, voxel_axes=None, voxel_scale=None)
     field = torch.tensor(values, device=device, requires_grad=True)
     expected_norm = np.linalg.norm(
         np.einsum("ij,bj...->bi...", grid.inverse_lattice.cpu(), values), axis=1
     )
+    norm = _pixel_norm(field, grid)
+    assert_allclose(norm.detach().cpu(), expected_norm, rtol=1e-14, atol=1e-14)
+    reference = torch.linalg.vector_norm(field * grid.voxel_scale, dim=1)
+    derivative = torch.autograd.grad(norm.sum(), field)[0]
+    expected_derivative = torch.autograd.grad(reference.sum(), field)[0]
     assert_allclose(
-        _pixel_norm(field, grid).detach().cpu(), expected_norm, rtol=1e-14, atol=1e-14
+        derivative.cpu(), expected_derivative.cpu(), rtol=1e-14, atol=1e-14
     )
+    assert torch.isfinite(derivative).all()
     fast = compose_fields(field, field * -0.7, grid)
     slow = compose_fields(field, field * -0.7, general)
     expected = compose_displacements_reference(

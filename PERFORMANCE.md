@@ -43,6 +43,36 @@ takes 127.118 versus 102.979 seconds plus separate warmups; it is not a default
 compiler requirement or a universal parity claim. Eager-only Newton and fused
 pointwise candidates did not earn production promotion from whole-call timings.
 
+## CPU SyN short-vector norm layout
+
+The axis-aligned physical-field norm now packs CPU vector components contiguously
+before the float64 reduction. CUDA and general-lattice arithmetic are unchanged;
+no precision, smoothing, update budget or guard was relaxed. The strided
+component-first reduction consumed 60% of the planar and 34% of the volumetric
+operator profiles in the bounded investigation.
+
+Five eight-update CPU calls with 32 fitted native planes improved from
+**3.189 [2.990–3.227] s** to **1.229 [1.225–1.296] s**. A separate 100-update,
+32-fitted-plane export check preserves registered images exactly and physical
+maps within **9.44e-16 minimum-spacing voxels**. Its one export-inclusive call
+fell from 30.846 to 13.332 s; those are diagnostics, not five-run benchmark
+medians. Full-budget volumetric performance has not been remeasured.
+
+The full-budget check also exposes an **existing CPU/CUDA maximum-point gate
+failure: 0.054765 voxels**, identical before and after this patch. Matching worst
+truth RMS (CPU 0.264182, CUDA 0.264185 voxels) does not establish equivalence;
+both still fail the unchanged 0.25-voxel truth screen. The layout change preserves
+the prior CPU result, not a claim of newly passing SyN accuracy or CPU/CUDA parity.
+
+A source-guided rigid control also tried packing the affine grid contiguously,
+as in native `affine_grid`. Five 32-volume/eight-update CPU calls worsened from
+7.244 [6.993–7.400] to 7.939 [7.665–8.127] s despite bitwise-equal results, so
+**that candidate was rejected**. Rigid production code remains unchanged.
+
+Evidence and retained failures: `artifacts/cpu-single-resolution-investigation-01/`
+and `artifacts/cpu-norm-qualification-01/`. Full production suite: **683 passed**.
+These local Core Ultra 9 measurements are not a replacement coruscant scorecard.
+
 ## Single-pair GPU follow-up
 
 [Measured diagnosis](research/performance/SINGLE-PAIR.md): a small real pair remains

@@ -227,7 +227,11 @@ def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch
 
 def _pixel_norm(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
     if grid.voxel_scale is not None:
-        return torch.linalg.vector_norm(field * grid.voxel_scale, dim=1)
+        values = field * grid.voxel_scale
+        if field.device.type == "cpu":
+            # CPU short-vector reductions need contiguous components.
+            return torch.linalg.vector_norm(values.movedim(1, -1).contiguous(), dim=-1)
+        return torch.linalg.vector_norm(values, dim=1)
     return torch.linalg.vector_norm(
         _map_displacement(grid.inverse_lattice[None], field), dim=-1
     )
