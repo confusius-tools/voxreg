@@ -35,7 +35,7 @@ Reusable datasets now live in package-wide `tests/conftest.py`, with fresh array
 per call. Shared pure oracles live in `tests/oracles.py`; the mixed-grid tests no
 longer import a fixture builder from another test module. The previous mocked
 identity optimizer in the output-contract check is replaced with a real step.
-See [test conventions](../../tests/README.md). No test-suite-wide rewrite was done.
+See [shared fixtures](../../tests/conftest.py). No test-suite-wide rewrite was done.
 
 Useful reference patterns were inspected in:
 - syntx `tests/test_affine_known_transform.py`: analytic physical truth/TRE rather

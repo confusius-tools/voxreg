@@ -159,7 +159,7 @@ No registration implementation, threshold or ConfUSIus file was changed.
 | Example | Evidence / status |
 | --- | --- |
 | 01: same subject across sessions | New 36-run rigid/affine comparison below. B-spline stage not attempted. |
-| 02: motion correction | Reuse the bounded 120-frame comparison in [VALIDATION.md](../../VALIDATION.md#real-recording-quality). The current engine's four default-rigid CPU/CUDA fixed/convergence controls remain bitwise equal to frozen AC outputs; this is not a fresh full-recording ConfUSIus run. |
+| 02: motion correction | Reuse the bounded 120-frame comparison in [historical validation](https://github.com/sdiebolt/voxreg/blob/b396107a903fae62201594e38a54ee51fe11e7e5/VALIDATION.md#real-recording-quality). The current engine's four default-rigid CPU/CUDA fixed/convergence controls remain bitwise equal to frozen AC outputs; this is not a fresh full-recording ConfUSIus run. |
 | 03: recording to Allen fUSI template | Blocked as written: single-slice recording versus a cropped 3D template is slice-to-volume registration, which voxreg rejects. No new downloads or atlas registrations were attempted. |
 
 ## Inputs and protocol

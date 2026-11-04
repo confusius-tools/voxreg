@@ -19,9 +19,9 @@ export ANTSPATH="$PWD/artifacts/ants-install-2.6.5/ants-2.6.5/bin"
 uv run --extra examples python examples/benchmark.py --output artifacts/benchmark-01
 ```
 
-Linux is required. Native configurations require **ANTs 2.6.5** on `PATH` or in
-`ANTSPATH`; FireANTs must be installed for its configurations. No dataset download
-or preparation command is needed. The output directory **must be new**.
+Requires Linux and, for native cases, [ANTs 2.6.5](https://github.com/ANTsX/ANTs/releases/tag/v2.6.5)
+on `PATH` or in `ANTSPATH`. FireANTs must be installed for its cases. No dataset
+preparation is needed. The output directory **must be new**.
 
 Public options are only `--output`, `--configs`, `--runs`, `--threads`,
 `--batch-size`, and `--list`. Defaults are five timed calls and eight CPU threads.
@@ -37,11 +37,10 @@ Native output paths cannot contain whitespace or shell/bracket metacharacters.
 | Truth error | **Worst fitted frame's RMS** mapped-point error, divided by minimum active voxel spacing | Must be **< 0.25 voxels** |
 | Memory | Peak process-group RAM and peak Torch-allocated CUDA VRAM | Must fit; allocation/execution failures fail the case |
 
-Truth RMS compares estimated physical fixed→moving pulls with the independently
-known generating transform, over every fixed-grid voxel center. It is neither the
-largest individual point error nor NCC/image similarity. Linear scoring uses the
-exact grid covariance; nonlinear scoring evaluates the full grid. Each device is
-scored against truth independently. There is no composite score.
+Truth RMS compares physical fixed→moving pulls against the independent generating
+transform over every fixed-grid voxel center—not the largest point error or image
+similarity. Linear scoring uses exact grid covariance; nonlinear scoring evaluates
+the full grid. Devices are scored independently; there is no composite score.
 
 Each configuration runs serially in **three fresh workers**: five timing calls,
 one memory call and one accuracy call. Memory polling and transform export/truth
@@ -86,12 +85,10 @@ remains enabled; actual SyN update counts are unknown. Its supplied fixed anatom
 is frame zero, but it fits/scores all 100 frames. Native pull direction, geometry
 and composition are validated before scoring.
 
-Voxreg fitting images/NCC are float32; geometry/state and original-image final
-interpolation retain their production precision. Runtime smoothing uses PyTorch;
-CPU SyN regularizers filter in scaled float32. FireANTs retains native float32,
-Adam 0.01 for linear fits and 0.1/radius-2 CC for SyN. These are not identical
-algorithms. Thread limits apply to Torch/ITK; other BLAS/OpenMP pools are limited
-to one. `antsMotionCorr -n` means images, **not threads**.
+Voxreg uses its [production precision](DESIGN.md#precision-output-and-execution).
+FireANTs retains native float32, Adam 0.01 for linear fits and 0.1/radius-2 CC for
+SyN; algorithms are not identical. Thread limits apply to Torch/ITK; other
+BLAS/OpenMP pools are limited to one. `antsMotionCorr -n` means images, **not threads**.
 
 ## Outputs and logs
 

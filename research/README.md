@@ -1,29 +1,37 @@
-# Historical registration investigations
+# Historical investigations
 
-These documents and compact result files preserve prior numerical, accuracy and
-performance evidence. They are **not additional benchmark pipelines**. Historical
-commands, script paths, environment details and test counts describe the time the
-measurements were captured, not the current checkout.
+These reports preserve **checkpoint-specific evidence**, not additional benchmark
+pipelines or current API guidance. Their commands, tolerances, test counts and
+claims apply to the recorded source/settings. Use [BENCHMARK.md](../BENCHMARK.md)
+for new measurements and [VALIDATION.md](../VALIDATION.md) for current limits.
 
-The exploratory Python runners/profilers and their script-specific tests have
-been removed. Their committed versions remain in Git history; uncommitted/latest
-runner snapshots and compact evidence are now in ignored local
-`artifacts/archive/preliminary-evidence.tar.gz`, with verified hashes and a cleanup
-manifest. Generated preliminary arrays/images/caches were discarded; completed
-benchmark reports and installed tools remain. Historical `artifacts/...` paths
-in these documents can be restored selectively from that archive. These local
-data are not published by a push. The native convergence C++ oracle is retained as
-independent numerical/calibration source, not a benchmark entry point.
+## Evidence index
 
-Use **[BENCHMARK.md](../BENCHMARK.md)** and `examples/benchmark.py` for all new runs.
-The production suite lives in `tests/`; its common-support stopping-policy
-reference was moved to `tests/calibration_reference.py` without its old CLI.
+- [Linear recovery](linear/README.md) and [slice/volume geometry](slice-geometry/README.md).
+- [Performance studies](performance/README.md), including [CPU volume layout](performance/CPU-VOLUME.md).
+- [Native ANTs workflows](registration/ANTS.md).
+- [SyN implementation/comparisons](syn/README.md) and [synthetic failures](syn/SYNTHETIC-PHANTOM.md).
+- [Convergence calibration](convergence/CALIBRATION.md).
+- [Real ConfUSIus examples](confusius-examples/README.md).
 
-Useful evidence:
+## Local artifacts
 
-- [CPU volume optimization and linear FireANTs batching](performance/CPU-VOLUME.md).
-- [Performance investigation index](performance/README.md).
-- [Completed native ANTs workflows](registration/ANTS.md).
-- [Known synthetic nonlinear accuracy/precision failures](syn/SYNTHETIC-PHANTOM.md).
-- [SyN production acceleration qualification](syn/AC-CPU-SMOOTHING.md).
-- [Validation timeline](../VALIDATION.md) and [historical performance](../PERFORMANCE.md).
+Preliminary source/hash/log evidence is in ignored
+`artifacts/archive/preliminary-evidence.tar.gz`, with a verified manifest.
+Generated bulk arrays/images/caches were discarded; completed benchmark reports
+and installed tools remain. Restore old `artifacts/...` text paths selectively
+from the archive. These local files are **not published by a push**.
+
+Removed runners remain in Git history or archived snapshots. The retained native
+convergence oracle is calibration source, not another benchmark entry point.
+Production checks reuse [shared fixtures](../tests/conftest.py) and
+[independent oracles](../tests/oracles.py).
+
+## Pre-cleanup guides
+
+The long milestone narratives remain available at the last pre-cleanup revision,
+rather than being duplicated in the maintained guides:
+
+- [Design and original milestones](https://github.com/sdiebolt/voxreg/blob/b396107a903fae62201594e38a54ee51fe11e7e5/DESIGN.md).
+- [Detailed validation timeline](https://github.com/sdiebolt/voxreg/blob/b396107a903fae62201594e38a54ee51fe11e7e5/VALIDATION.md).
+- [Performance investigation narrative](https://github.com/sdiebolt/voxreg/blob/b396107a903fae62201594e38a54ee51fe11e7e5/PERFORMANCE.md).
