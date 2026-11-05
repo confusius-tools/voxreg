@@ -1,9 +1,25 @@
 [project]
 name = "voxreg"
-version = "0.1.0"
+version = "0.0.1"
 description = "Batched physical-space image registration using xarray-based VoxelData."
 readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 requires-python = ">=3.11,<3.15"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Typing :: Typed",
+]
 dependencies = [
     "confusius>=0.8.0",
     "numpy>=2.3.4",
@@ -11,6 +27,10 @@ dependencies = [
     "torch>=2.14.1",
     "xarray>=2026.9.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/confusius-tools/voxreg"
+Issues = "https://github.com/confusius-tools/voxreg/issues"
 
 [project.optional-dependencies]
 examples = [

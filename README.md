@@ -1,3 +1,8 @@
+[![PyPI version](https://img.shields.io/pypi/v/voxreg?style=flat-square&color=d93a54&label=PyPI)](https://pypi.org/project/voxreg/)
+[![Python versions](https://img.shields.io/pypi/pyversions/voxreg?style=flat-square&color=0099e5&logo=python&logoColor=white)](https://pypi.org/project/voxreg/)
+[![License](https://img.shields.io/github/license/confusius-tools/voxreg?style=flat-square&color=3ad9a4)](https://github.com/confusius-tools/voxreg/blob/main/LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/mZd87tgmy2)
+
 # voxreg
 
 > [!NOTE]
@@ -12,10 +17,16 @@ Batched physical-space image registration with **PyTorch** and
 
 ## Installation
 
-Requires **Python 3.11–3.14**. From a source checkout:
+Requires **Python 3.11–3.14**.
 
 ```bash
-git clone https://github.com/sdiebolt/voxreg.git
+pip install voxreg
+```
+
+For development, from a source checkout:
+
+```bash
+git clone https://github.com/confusius-tools/voxreg.git
 cd voxreg
 uv sync
 ```
