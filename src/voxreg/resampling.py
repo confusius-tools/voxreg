@@ -18,22 +18,24 @@ from voxreg.sampling import _sample_displaced
 from voxreg.transforms import validate_matrices
 
 
-def _sample_linear_cpu(
+def _sample_linear(
     images: torch.Tensor, query: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Consume owned xyz index queries without fitting-only coordinate round trips."""
     sizes = np.array(images.shape[1:][::-1])
-    lower = torch.tensor(np.where(sizes == 1, -0.5, -1e-10), device=query.device)
-    # The adjacent double preserves half-open singleton faces with one comparison.
-    upper = torch.tensor(
-        np.where(sizes == 1, np.nextafter(0.5, -np.inf), sizes - 1 + 1e-10),
+    # One transfer; the adjacent double preserves half-open singleton faces.
+    lower, upper, scale, shift = torch.tensor(
+        np.stack(
+            (
+                np.where(sizes == 1, -0.5, -1e-10),
+                np.where(sizes == 1, np.nextafter(0.5, -np.inf), sizes - 1 + 1e-10),
+                np.where(sizes == 1, 0.0, 2 / np.maximum(sizes - 1, 1)),
+                np.where(sizes == 1, 0.0, -1.0),
+            )
+        ),
         device=query.device,
-    )
+    ).unbind()
     valid = ((query >= lower) & (query <= upper)).all(dim=-1)
-    scale = torch.tensor(
-        np.where(sizes == 1, 0.0, 2 / np.maximum(sizes - 1, 1)), device=query.device
-    )
-    shift = torch.tensor(np.where(sizes == 1, 0.0, -1.0), device=query.device)
     shape = query.shape[:-1]
     planar = images.shape[1] == shape[1] == 1
     # Normalize owned storage once, even when several frames share the query.
@@ -47,7 +49,7 @@ def _sample_linear_cpu(
     grid = grid.expand(len(images), *grid.shape[1:])
     tiles = (
         min(torch.get_num_threads(), grid.numel() // 3)
-        if not planar and len(images) == 1
+        if images.device.type == "cpu" and not planar and len(images) == 1
         else 1
     )
     if tiles > 1:
@@ -246,7 +248,7 @@ def resample(
             moving, reference, "syn" if field else "affine", device
         )
 
-    cpu_linear = device == "cpu" and interpolation == "linear"
+    native_linear = interpolation == "linear"
     source_affine, target_affine = (
         position_to_world(moving),
         position_to_world(reference),
@@ -261,12 +263,12 @@ def resample(
     )
     local = (
         indices @ torch.tensor(target_affine[:3, :3].T, device=device)
-        if field or not cpu_linear
+        if field or not native_linear
         else indices
     )
     inverse = np.linalg.inv(source_affine[:3, :3]).T
     inverse_lattice = torch.tensor(
-        inverse[:, ::-1].copy() if cpu_linear else inverse, device=device
+        inverse[:, ::-1].copy() if native_linear else inverse, device=device
     )
     dtype = np.float64 if integer or moving.dtype.itemsize > 4 else np.float32
     outputs, masks = [], []
@@ -292,21 +294,32 @@ def resample(
                 - source_affine[:3, 3]
             )
             linear = None
-            if cpu_linear:
+            if native_linear:
                 linear = inverse_lattice.T @ (
                     matrices[:, :3, :3]
                     @ torch.tensor(target_affine[:3, :3], device=device)
                 )
             if linear is not None and torch.isfinite(linear).all():
-                query = (
-                    torch.einsum("bij,...j->b...i", linear, indices)
-                    + (torch.tensor(offset, device=device) @ inverse_lattice)[
-                        :, None, None, None
-                    ]
-                )
+                mapped_offset = torch.tensor(offset, device=device) @ inverse_lattice
+                if device == "cuda":
+                    # Separable coordinates avoid a dense, skinny float64 GEMM.
+                    k = indices[:, 0, 0, 0][None, None, :, None, None]
+                    j = indices[0, :, 0, 1][None, None, None, :, None]
+                    i = indices[0, 0, :, 2][None, None, None, None, :]
+                    query = (
+                        linear[:, :, 0, None, None, None] * k
+                        + linear[:, :, 1, None, None, None] * j
+                        + linear[:, :, 2, None, None, None] * i
+                        + mapped_offset[:, :, None, None, None]
+                    ).movedim(1, -1)
+                else:
+                    query = (
+                        torch.einsum("bij,...j->b...i", linear, indices)
+                        + mapped_offset[:, None, None, None]
+                    )
             else:
                 # Extreme finite coefficients may overflow only when composed.
-                if cpu_linear:
+                if native_linear:
                     local = indices @ torch.tensor(
                         target_affine[:3, :3].T, device=device
                     )
@@ -318,12 +331,12 @@ def resample(
                 query = query.expand(last - first, *shape, 3)
         query_finite = (
             torch.isfinite(torch.stack(torch.aminmax(query))).all()
-            if cpu_linear
+            if native_linear
             else torch.isfinite(query).all()
         )
         if not query_finite:
             raise ValueError("Transform produced nonfinite sampling coordinates.")
-        if not cpu_linear:
+        if not native_linear:
             valid = torch.ones(query.shape[:-1], device=device, dtype=torch.bool)
             normalized = []
             for axis, size in enumerate(moving.shape[1:]):
@@ -338,8 +351,8 @@ def resample(
         original = torch.tensor(
             np.ascontiguousarray(moving.values[first:last], dtype=dtype), device=device
         )
-        if cpu_linear:
-            sampled, valid = _sample_linear_cpu(original, query)
+        if native_linear:
+            sampled, valid = _sample_linear(original, query)
         else:
             sampled = _sample_displaced(
                 original, torch.stack(normalized[::-1], dim=-1), interpolation

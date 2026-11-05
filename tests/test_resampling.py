@@ -250,7 +250,7 @@ def test_invalid_inputs(linear_pair_factory):
 
 
 @pytest.mark.parametrize("planar", [True, False])
-def test_cpu_linear_native_double_and_shared_point_tiles(monkeypatch, planar):
+def test_linear_native_double_and_cpu_shared_point_tiles(monkeypatch, planar, device):
     shape = (1 if planar else 3, 5, 7)
     moving = create_voxeldata(
         np.arange(np.prod(shape), dtype=np.float32).reshape(shape),
@@ -268,7 +268,7 @@ def test_cpu_linear_native_double_and_shared_point_tiles(monkeypatch, planar):
     torch.set_num_threads(4)
     monkeypatch.setattr(F, "grid_sample", sample)
     try:
-        actual, valid = resample(moving, moving, np.eye(4))
+        actual, valid = resample(moving, moving, np.eye(4), device=device)
     finally:
         torch.set_num_threads(threads)
     np.testing.assert_array_equal(actual.values, moving.values)
@@ -278,14 +278,16 @@ def test_cpu_linear_native_double_and_shared_point_tiles(monkeypatch, planar):
     assert source_dtype == grid_dtype == torch.float64
     if planar:
         assert sampled_shape == (1, 1, 5, 7)
-    else:
+    elif device == "cpu":
         # 105 points require padding across four shared-image tasks.
         assert sampled_shape == (4, 1, 3, 5, 7)
         assert stride == 0
+    else:
+        assert sampled_shape == (1, 1, 3, 5, 7)
 
 
 @pytest.mark.parametrize("field", [False, True])
-def test_cpu_shared_queries_preserve_inputs_and_batches(field):
+def test_shared_queries_preserve_inputs_and_batches(field, device):
     shape = (3, 5, 7)
     moving = create_voxeldata(
         np.random.default_rng(14).uniform(1, 10, shape).astype(np.float32),
@@ -309,8 +311,8 @@ def test_cpu_shared_queries_preserve_inputs_and_batches(field):
     before_map = (
         mapping.copy(deep=True) if isinstance(mapping, xr.DataArray) else mapping.copy()
     )
-    once, once_valid = resample(series, moving, mapping, batch_size=1)
-    batched, valid = resample(series, moving, mapping, batch_size=3)
+    once, once_valid = resample(series, moving, mapping, batch_size=1, device=device)
+    batched, valid = resample(series, moving, mapping, batch_size=3, device=device)
     xr.testing.assert_identical(once, batched)
     xr.testing.assert_identical(once_valid, valid)
     xr.testing.assert_identical(series, before_image)
@@ -321,7 +323,7 @@ def test_cpu_shared_queries_preserve_inputs_and_batches(field):
 
 
 @pytest.mark.parametrize("axis", [0, 1, 2])
-def test_cpu_linear_singleton_faces_remain_half_open(axis):
+def test_linear_singleton_faces_remain_half_open(axis, device):
     shape = [3, 5, 7]
     shape[axis] = 1
     moving = create_voxeldata(
@@ -336,24 +338,26 @@ def test_cpu_linear_singleton_faces_remain_half_open(axis):
     ]:
         mapping = np.eye(4)
         mapping[axis, 3] = offset
-        actual, valid = resample(moving, moving, mapping)
+        actual, valid = resample(moving, moving, mapping, device=device)
         assert valid.values.all() == supported
         expected = moving.values if supported else np.full(shape, moving.values.min())
         np.testing.assert_array_equal(actual.values, expected)
 
 
-def test_cpu_composition_overflow_uses_physical_mapping():
+def test_composition_overflow_uses_physical_mapping(device):
     moving = create_voxeldata(
         np.full((1, 1, 1), 7, dtype=np.float32),
         dims=("k", "j", "i"),
         voxel_to_world=np.diag([10.0, 10.0, 10.0, 1.0]),
     )
-    actual, valid = resample(moving, moving, np.diag([4e307, 4e307, 4e307, 1.0]))
+    actual, valid = resample(
+        moving, moving, np.diag([4e307, 4e307, 4e307, 1.0]), device=device
+    )
     np.testing.assert_array_equal(actual.values, moving.values)
     assert valid.values.all()
 
 
-def test_cpu_nonfinite_physical_queries_still_fail():
+def test_nonfinite_physical_queries_still_fail(device):
     moving = create_voxeldata(
         np.ones((2, 2, 2), dtype=np.float32),
         dims=("k", "j", "i"),
@@ -362,10 +366,10 @@ def test_cpu_nonfinite_physical_queries_still_fail():
     mapping = np.eye(4)
     mapping[0, 3] = np.finfo(np.float64).max
     with pytest.raises(ValueError, match="nonfinite sampling coordinates"):
-        resample(moving, moving, mapping)
+        resample(moving, moving, mapping, device=device)
 
 
-def test_cpu_finite_outside_queries_keep_minimum_fill():
+def test_finite_outside_queries_keep_minimum_fill(device):
     moving = create_voxeldata(
         np.arange(4, dtype=np.float32).reshape(1, 2, 2) + 7,
         dims=("k", "j", "i"),
@@ -373,19 +377,19 @@ def test_cpu_finite_outside_queries_keep_minimum_fill():
     )
     mapping = np.eye(4)
     mapping[2, 3] = 1e308
-    actual, valid = resample(moving, moving, mapping)
+    actual, valid = resample(moving, moving, mapping, device=device)
     assert not valid.values.any()
     np.testing.assert_array_equal(actual.values, np.full(moving.shape, 7))
 
 
-def test_cpu_linear_keeps_double_coordinate_cells():
+def test_linear_keeps_double_coordinate_cells(device):
     values = np.zeros((1, 2, 3), dtype=np.float32)
     values[..., 2] = 1e8
     moving = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
     reference = moving.isel(j=slice(0, 1), i=slice(1, 2))
     mapping = np.eye(4)
     mapping[2, 3] = 2.0**-30
-    actual, valid = resample(moving, reference, mapping)
+    actual, valid = resample(moving, reference, mapping, device=device)
     assert valid.values.all()
     # A float32 sampler rounds this query onto the knot and incorrectly returns zero.
     np.testing.assert_array_equal(

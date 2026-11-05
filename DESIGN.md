@@ -104,9 +104,10 @@ roundoff-aware variance guards. dB scaling affects fitting only; original inputs
 are never modified. Integer results are rounded nearest-even and clipped;
 integer inputs outside `[-2**53, 2**53]` are rejected.
 
-Offline CPU linear resampling uses native double-image/double-coordinate sampling,
-without fitting-only coordinate round trips. Single volumes partition query points
-over shared image storage; fitting and CUDA sampling paths are unchanged.
+Offline linear resampling uses native double-image/double-coordinate sampling on
+CPU/CUDA, without fitting-only coordinate round trips. Single CPU volumes partition
+query points over shared image storage; CUDA affine queries use separable coordinates
+instead of a dense skinny matrix product. Fitting sampling is unchanged.
 
 Output uses the fixed grid and moving intensity dtype/units/time labels. Spatial
 pairs acquire no synthetic time axis. Out-of-bounds output is filled with the
