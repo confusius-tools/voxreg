@@ -54,7 +54,9 @@ def test_metric_callback_preserves_results_and_reports_frame_clocks(
             assert metric.dtype == np.float64
             assert_array_equal(steps[frames != 0], expected_clock)
             assert np.isfinite(metric).all()
-            assert ((metric >= -1 - 1e-12) & (metric <= 0)).all()
+            # Float64 callback storage does not increase float32 fitting precision.
+            tolerance = 4 * np.finfo(np.float32).eps
+            assert ((metric >= -1 - tolerance) & (metric <= 0)).all()
             assert_array_equal(steps[frames == 0], 0)
 
 
