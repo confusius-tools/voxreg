@@ -384,10 +384,14 @@ def _worker(config_path, mode):
         elif config["backend"].startswith("fireants"):
             import fireants.interpolator  # noqa: F401 -- exclude import/dispatcher setup from timing.
         if cuda:
+            torch.backends.cuda.matmul.allow_tf32 = False
+            torch.backends.cudnn.allow_tf32 = False
             torch.cuda.synchronize()
             record["cuda_device"] = {
                 "name": torch.cuda.get_device_name(),
                 "total_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
+                "matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32,
+                "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
             }
             if mode == "memory":
                 torch.cuda.reset_peak_memory_stats()

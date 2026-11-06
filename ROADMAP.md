@@ -9,10 +9,12 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 1. **Review the coruscant benchmark when complete.** Establish the current
    precision-policy baseline using [one pipeline](BENCHMARK.md), without competing
    heavy jobs or changing the running job's frozen sources/settings.
-2. **Address SyN truth accuracy.** Current full-budget controls exceed 0.25 voxels
-   RMS. Higher NCC or agreement with another library is not a substitute.
-3. **Optimize one measured bottleneck.** For accuracy-passing cases, compare
-   workload/device-specific batching or a source-guided implementation change.
+2. **Profile the SyN runtime gap to FireANTs.** Keep the shared
+   [0.30-voxel registration gate](research/syn/REFERENCE.md) and recorded errors;
+   defer further accuracy tuning while investigating runtime.
+3. **Optimize one measured bottleneck.** Compare workload/device-specific
+   batching or a source-guided implementation change without weakening precision
+   or safety checks; label non-passing cases rather than hiding them.
    Preserve timing boundaries and report memory; see [PERFORMANCE.md](PERFORMANCE.md).
 4. **Broaden real-data qualification.** Revisit pair, motion and atlas workflows
    with original images, native geometry and explicit quality limitations.

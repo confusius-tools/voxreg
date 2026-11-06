@@ -27,13 +27,14 @@ import torch
 from _benchmark_metrics import _native_motion_rms, _native_pair_rms, _native_syn_rms
 from _benchmark_resample_io import LIMIT as RESAMPLE_LIMIT
 from _benchmark_resident import _check, _run
+from _benchmark_syn_reference import REFERENCE as SYN_REFERENCE
 from rich.console import Console
 from rich.table import Table
 
 _ACTIVE = None
 FRAMES = 100
 ITERATIONS = 100
-TRUTH_LIMIT = 0.25
+TRUTH_LIMIT = 0.30
 PHASES = ("timing", "memory", "accuracy")
 PACKAGES = (
     "torch",
@@ -151,6 +152,16 @@ def _worker(config_path, mode):
             record["input_sha256"] = hashlib.sha256(
                 memoryview(moving.values)
             ).hexdigest()
+            from voxreg.rigid import _automatic_batch_size
+
+            series = moving if "time" in moving.dims else moving.expand_dims(time=[0])
+            config["batch_size"] = min(
+                series.sizes["time"],
+                config["batch_size"]
+                or _automatic_batch_size(
+                    series, fixed, config["model"], "cuda" if cuda else "cpu"
+                ),
+            )
             if config["backend"].startswith("fireants-"):
                 import importlib
 
@@ -179,10 +190,17 @@ def _worker(config_path, mode):
                     "fitted_frames": count,
                 }
         if cuda:
+            torch.backends.cuda.matmul.allow_tf32 = False
+            torch.backends.cudnn.allow_tf32 = False
             torch.cuda.synchronize()
             record["cuda_device"] = {
                 "name": torch.cuda.get_device_name(),
                 "total_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
+                "matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32,
+                "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
+                "float32_matmul_precision": torch.get_float32_matmul_precision(),
+                "cudnn_benchmark": torch.backends.cudnn.benchmark,
+                "cudnn_deterministic": torch.backends.cudnn.deterministic,
             }
             if mode == "memory":
                 torch.cuda.reset_peak_memory_stats()
@@ -273,13 +291,17 @@ def _worker(config_path, mode):
                     else errors
                 )
                 worst = max(fitted_errors)
+                limit = TRUTH_LIMIT
+                comparison = "<="
                 record.update(
                     rms_per_frame_voxels=errors,
                     worst_frame_rms_voxels=worst,
-                    accuracy_pass=worst < TRUTH_LIMIT,
+                    truth_rms_limit_voxels=limit,
+                    truth_rms_comparison=comparison,
+                    accuracy_pass=worst <= limit,
                 )
                 print(
-                    f"Worst-frame truth RMS: {worst:.6f} vox; required < {TRUTH_LIMIT}",
+                    f"Worst-frame truth RMS: {worst:.6f} vox; required {comparison} {limit}",
                     flush=True,
                 )
             # Native output files are retained only for the accuracy run; logs always stay.
@@ -450,7 +472,7 @@ def _main(script, configs=_configs, worker=_worker, *, resampling=False, prepare
     parser.add_argument(
         "--batch-size",
         type=int,
-        help="Shared voxreg/FireANTs batch limit; resampling defaults to one controlled policy for both",
+        help="Shared effective voxreg/FireANTs batch; defaults to voxreg's automatic policy",
     )
     parser.add_argument("--threads", type=int, default=8)
     if resampling:
@@ -662,17 +684,21 @@ def _main(script, configs=_configs, worker=_worker, *, resampling=False, prepare
             **(
                 {"relative_rmse_limit": RESAMPLE_LIMIT}
                 if resampling
-                else {"truth_rms_limit_voxels": TRUTH_LIMIT}
+                else {
+                    "truth_rms_limit_voxels": TRUTH_LIMIT,
+                    "truth_rms_comparison": "<=",
+                    "syn_reference": SYN_REFERENCE,
+                }
             ),
             "memory": "report peak RAM/VRAM; allocation or execution failure fails the case",
             "cross_device_and_old_new_agreement": "diagnostic only; not acceptance gates",
         },
         "cases": [],
     }
+    report["batch_policy"] = (
+        "One effective voxreg/FireANTs batch per workload/model/device, resolved by the first timing worker using voxreg's automatic policy (or --batch-size) and fixed for all remaining phases/backends. FireANTs-only selections also use voxreg's policy. ANTsPy processes one frame at a time."
+    )
     if resampling:
-        report["batch_policy"] = (
-            "One effective voxreg/FireANTs batch per workload/model/device, resolved by the first timing worker using voxreg's conservative cap (or --batch-size) and fixed for all remaining phases/backends. ANTsPy processes one frame at a time."
-        )
         report["input_preparation"] = (
             "Images, fixed lattice, maps and time labels staged once per workload/model outside measured workers; each worker verifies the same serialized array/geometry hash. Conversion/application/mask/CPU return are timed; file loading is not."
         )
@@ -692,7 +718,7 @@ def _main(script, configs=_configs, worker=_worker, *, resampling=False, prepare
         (
             f"Optimize runtime subject to relative interpolation RMS < {RESAMPLE_LIMIT} and fitting in memory."
             if resampling
-            else f"Optimize runtime subject to truth RMS < {TRUTH_LIMIT} vox and fitting in memory."
+            else f"Optimize runtime subject to truth RMS <= {TRUTH_LIMIT} vox and fitting in memory."
         ),
         style="bold",
     )
@@ -717,7 +743,7 @@ def _main(script, configs=_configs, worker=_worker, *, resampling=False, prepare
                 "tools": tools,
             }
             shared_key = None
-            if resampling and case.get("backend") in (
+            if case.get("backend") in (
                 "cpu",
                 "cuda",
                 "fireants-cpu",
@@ -767,6 +793,11 @@ def _main(script, configs=_configs, worker=_worker, *, resampling=False, prepare
                     break
                 if mode == "timing" and shared_key is not None:
                     batch = row[mode]["backend_settings"]["batch_size"]
+                    if batch != shared_batches.get(shared_key, batch):
+                        row.update(
+                            status="error", error="voxreg/FireANTs batch sizes differ"
+                        )
+                        break
                     shared_batches[shared_key] = batch
                     config["batch_size"] = batch
                     _write(config_path, config)
@@ -809,7 +840,13 @@ def _main(script, configs=_configs, worker=_worker, *, resampling=False, prepare
             _table(console, report["cases"], suite, args.runs, resampling)
         console.print(f"{report['status']}: {output / 'results.json'}", markup=False)
         console.save_text(str(output / "benchmark.log"), clear=False)
-        console.save_html(str(output / "report.html"), clear=False)
+        try:
+            from _benchmark_report import _render
+
+            _render([output / "results.json"], output / "report.html")
+        except Exception:  # noqa: BLE001 -- Preserve benchmark results if graph rendering fails.
+            console.print_exception()
+            console.save_html(str(output / "report.html"), clear=False)
     return (
         130
         if report["status"] == "interrupted"

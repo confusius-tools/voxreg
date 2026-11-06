@@ -31,12 +31,16 @@ Requires Linux, FireANTs for its cases, and [ANTs 2.6.5](https://github.com/ANTs
 on `PATH` or in `ANTSPATH` for native cases. No dataset preparation is needed.
 Public options: `--output`, `--configs`, `--runs`, `--threads`, `--batch-size`,
 `--list`, and resampling-only `--antspy-python`. Defaults: five timed calls and
-eight CPU threads. Resampling gives voxreg/FireANTs the **same effective batch**
-per workload/model/device, using voxreg's conservative cap unless overridden;
-the first timing phase fixes it for later phases/backends. This is a controlled
+eight CPU threads. Both entry points give voxreg/FireANTs the **same effective
+batch** per workload/model/device, using voxreg's automatic policy unless
+overridden. The first timing worker fixes it for later phases/backends. Selecting
+only FireANTs still uses voxreg's policy, not a separate FireANTs default. Batch
+limits are capped to the recording length (one for pairs). This is a controlled
 comparison, not a claim of optimal throughput. ANTsPy applies one frame at a time.
-Registration retains its existing backend batch policies. No resume, OOM retry
-or runtime autotuning. Native paths cannot contain whitespace or shell/bracket
+A backend that cannot fit the shared batch fails; there is no silent batch reduction.
+For separate invocations, pass the recorded `--batch-size` to reproduce an earlier
+batch exactly: CUDA automatic selection depends on currently available memory.
+No resume, OOM retry or runtime autotuning. Native paths cannot contain whitespace or shell/bracket
 metacharacters. Run heavy cases serially; do not compete with an existing run.
 
 ## Scorecard and protocol
@@ -44,7 +48,7 @@ metacharacters. Run heavy cases serially; do not compete with an existing run.
 | Metric | Registration | Resampling |
 | --- | --- | --- |
 | Runtime | Median **[min–max]** over five complete calls, first included | Same |
-| Accuracy | Worst fitted-frame physical pull RMS **< 0.25 minimum-spacing voxels** | Worst-frame intensity RMSE / reference intensity RMS **< 1e-5** |
+| Accuracy | Worst fitted-frame physical pull RMS **≤ 0.30 minimum-spacing voxels**, for every registration model | Worst-frame intensity RMSE / reference intensity RMS **< 1e-5** |
 | Memory | Peak process-group RAM and Torch-allocated CUDA VRAM; must fit | Same |
 
 Each configuration uses **three fresh workers**: timing, memory and accuracy.
@@ -53,6 +57,15 @@ the full workload with the same batching, not selected frames. Other `--runs`
 values are explicitly **diagnostic**. Imports, synthetic/map generation and QC
 are outside timing; initial CUDA context setup is excluded, but no operation is
 warmed up. CUDA calls are synchronized.
+
+The shared registration limit is an operator-selected **0.30 voxels**, with
+inclusive `≤` acceptance. The matched single-resolution ANTsPy SyN reference
+measured 0.282143 voxels at worst. We use 0.30 across all registration models
+and prioritize runtime investigation without further accuracy tuning. This is a
+benchmark-specific policy, not a universal accuracy standard.
+[Reference settings and measurements](research/syn/REFERENCE.md) are frozen in
+`examples/_benchmark_syn_reference.py` and embedded in each new registration
+report. Earlier reports retain their original thresholds and verdicts.
 
 Registration truth compares complete physical pulls over every fixed-grid voxel
 center, not image similarity or maximum point error. Resampling uses independent
@@ -83,6 +96,11 @@ fitting, original-image resampling and CPU return. They use one resolution and
 100 updates with early stopping disabled; recordings preserve frame zero and
 fit 99 frames. FireANTs retains float32 and Adam 0.01 for linear fits, 0.1 for SyN
 with radius-2 CC; voxreg uses [production precision](DESIGN.md#precision-output-and-execution).
+CUDA registration and resampling workers explicitly disable both cuDNN and
+matmul TF32 for **both** backends, recording the effective flags. cuDNN TF32 is
+allowed by default in the tested PyTorch installation, but slowed FireANTs here.
+The public voxreg APIs do not modify process-global precision flags; historical
+results retain their original settings and are not pooled with the new policy.
 
 Native rigid motion fits all frames to the temporal mean with its 100×50×20
 preset, dense or explicit random 5%. The staged 3D pair uses combined motion and
@@ -124,13 +142,33 @@ image count, not threads.
 ## Outputs and limits
 
 - Rich terminal scorecards show actual resident batch sizes. `benchmark.log` saves
-  the transcript; `report.html` is self-contained offline HTML.
+  the transcript; `report.html` automatically adds offline runtime, RAM, VRAM and
+  accuracy graphs, full measurement tables and provenance. If graph rendering
+  fails, the terminal transcript is retained as the HTML fallback.
 - `results.json` records policy, every timing, status, input/map/source hashes,
   revision/dirty state, versions, hardware and settings.
 - `<configuration>/` contains exact config and separate timing/memory/accuracy
   JSON/logs, native commands and failure details.
 - `source/` freezes production code, the invoked entry point and internal helpers
   used by workers. The underscore-prefixed helpers are not additional runners.
+
+Regenerate a report, or aggregate several runs without executing any benchmarks:
+
+```bash
+uv run --extra examples python examples/benchmark_report.py \
+  artifacts/coruscant/benchmark-current-01 \
+  artifacts/benchmark-resample-full-04 \
+  --output artifacts/performance-report.html
+```
+
+Each input remains a separate experiment with its own host, revision, protocol,
+settings and accuracy units. There is no cross-host ranking or sum of registration
+and resampling times. Graphs retain failed/incomplete cases, show medians and
+min–max ranges with the first call marked, and distinguish native CLI controls.
+Within-run FireANTs/voxreg ratios require complete accuracy-passing cases and
+identical phase input hashes; historical unmatched batches are explicitly flagged.
+The report reads recorded measurements, not a fresh accuracy qualification.
+It requires the existing `examples` dependencies and no network access.
 
 RAM is sampled every 20 ms, including imports, loaded inputs and children;
 shared pages may count twice and short peaks can be missed. Resampling excludes

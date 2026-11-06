@@ -151,7 +151,7 @@ def _run_fireants(
     reference,
     amplitudes,
     *,
-    batch_size=None,
+    batch_size,
 ):
     import SimpleITK as sitk
     from _benchmark_metrics import _point_rms
@@ -169,7 +169,7 @@ def _run_fireants(
     scale = max(float(raw.max()), float(fixed.values.max()))
     fitting = raw / scale
     linear = model != "syn"
-    batch = batch_size if batch_size is not None else (32 if planar or linear else 4)
+    batch = batch_size
 
     def image(values):
         values = values[0] if planar else values
