@@ -5,6 +5,7 @@ physical updates compose with the accumulated maps. Inversion uses the ITK-style
 field solver. No vendor implementation or optimizer source is transplanted.
 """
 
+from dataclasses import replace
 from functools import lru_cache
 from time import perf_counter
 
@@ -57,12 +58,12 @@ def _cpu_smoothing_weights(sigma, dimensions):
 
 
 def smooth_field(field, grid, *, sigma):
-    """Filter CPU SyN fields in scaled float32; keep physical field state double.
+    """Filter CPU SyN fields in scaled float32, preserving their storage dtype.
 
     Parameters
     ----------
     field : torch.Tensor
-        Component-first float64 millimetre displacement field.
+        Component-first float32 or float64 millimetre displacement field.
     grid : FieldGrid
         Resident physical field lattice and fixed boundary mask.
     sigma : float
@@ -71,7 +72,7 @@ def smooth_field(field, grid, *, sigma):
     Returns
     -------
     torch.Tensor
-        Float64 field with the same smoothing boundary and support conventions.
+        Same-dtype field with the same smoothing boundary and support conventions.
     """
     if (
         torch.compiler.is_compiling()
@@ -97,7 +98,7 @@ def smooth_field(field, grid, *, sigma):
             F.pad(result, padding, mode="replicate"), weight, groups=dimensions
         )
     result = result.masked_fill(grid.boundary, 0)
-    return result.clamp(-1, 1).double() * scale
+    return result.clamp(-1, 1).to(field.dtype) * scale
 
 
 def _box_sum(values, radius):
@@ -172,8 +173,8 @@ def local_ncc(moving, fixed, valid, radius):
 
 def _midpoint_loss(images, fixed_images, moving_sampler, fixed_sampler, uf, um, radius):
     """One differentiable objective; optimizer clocks and callbacks remain outside."""
-    moved, mv = _sample_prepared(images, um, moving_sampler)
-    stationary, fv = _sample_prepared(fixed_images, uf, fixed_sampler)
+    moved, mv = _sample_prepared(images, um, moving_sampler, fitting=True)
+    stationary, fv = _sample_prepared(fixed_images, uf, fixed_sampler, fitting=True)
     valid = mv & fv
     loss, meaningful = local_ncc(moved, stationary, valid, radius)
     return loss, meaningful, valid
@@ -239,10 +240,26 @@ def _fit(
     metric_callback,
     metric_interval,
 ):
+    physical_grid = grid
+    # Only origin-free working field arithmetic is reduced; export geometry stays double.
+    grid = replace(
+        grid,
+        inverse_lattice=grid.inverse_lattice.float(),
+        indices=grid.indices.float(),
+        half=grid.half.float(),
+        voxel_scale=None if grid.voxel_scale is None else grid.voxel_scale.float(),
+    )
+    if (
+        not torch.isfinite(grid.inverse_lattice).all()
+        or torch.linalg.det(grid.inverse_lattice.double()) == 0
+    ):
+        raise ValueError(
+            "SyN working lattice must remain finite and nonsingular in float32."
+        )
     b = len(images)
     shape = (b, len(grid.shape), *grid.shape)
     uf = torch.zeros(
-        shape, dtype=torch.float64, device=images.device, requires_grad=True
+        shape, dtype=torch.float32, device=images.device, requires_grad=True
     )
     um = torch.zeros_like(uf, requires_grad=True)
     bf, bm = uf.detach().clone(), um.detach().clone()
@@ -251,7 +268,7 @@ def _fit(
     axes = tuple(range(1, images.ndim))
     constant = images.amax(dim=axes) == images.amin(dim=axes)
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
-    fixed_parameters = uf.new_zeros((b, len(fixed_plane.parameter_scale)))
+    fixed_parameters = parameters.new_zeros((b, len(fixed_plane.parameter_scale)))
     fixed_images = target.expand(b, *target.shape)
     moving_sampler = _prepare_displaced_sampling(images, parameters, plane)
     fixed_sampler = _prepare_displaced_sampling(
@@ -322,6 +339,9 @@ def _fit(
     if metric_callback is not None and iteration < max_iterations:
         metric_callback(steps, torch.where(good, loss.detach(), torch.nan))
     with torch.no_grad():
+        # Final inversion, validation and exported displacements retain double arithmetic.
+        grid = physical_grid
+        bf, bm = bf.double(), bm.double()
         fi, _ = _final_inverse(bf, grid)
         mi, _ = _final_inverse(bm, grid)
         forward = compose_fields(bm, fi, grid)

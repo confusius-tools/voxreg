@@ -367,7 +367,8 @@ def register(
         resolution, with local NCC radius 2, update sigma 1.5 and total sigma 0.5
         voxels. It supports two k=1 planes or two volumes, not mixed-dimensional
         deformation. Its complete forward/inverse outputs are dense displacements,
-        not matrices. Physical geometry and field state remain float64.
+        not matrices. Working fields use float32; physical geometry, final
+        inversion and exported displacements retain float64.
     initial_transform : array-like or xarray.DataArray, optional
         Model-compatible fixed-world-to-moving-world pull matrix in world z/y/x,
         with translations in mm. Shape (4, 4) broadcasts to all frames;
@@ -543,8 +544,9 @@ def register(
     iteration on CPU and every ten iterations on CUDA, using one batch-wide scalar
     read (a CUDA stream synchronization). These checks do not alter per-frame
     decisions; frozen frames remain resident until the entire batch finishes.
-    Fitting images and NCC statistics use float32. Physical geometry and
-    optimizer state use float64. Benchmark accuracy is measured against known
+    Fitting images, NCC statistics and SyN working fields use float32 with native
+    grid_sample fitting interpolation. Physical geometry and linear pose parameters
+    use float64, as do final SyN inversion and exported displacements. Benchmark accuracy is measured against known
     truth independently for each device, not by cross-device map agreement.
     Original float64 and integer images are resampled in float64, other images in
     float32, then restored to their original dtype. Integer results use nearest-even

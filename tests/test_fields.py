@@ -342,10 +342,13 @@ def test_tiny_geometry_maps_match_numpy(
 
 
 @pytest.mark.parametrize("planar", [False, True])
+@pytest.mark.parametrize("fitting", [False, True])
 def test_prepared_seed_queries_preserve_samples_and_gradients(
-    nonlinear_pair_factory, displacement_factory, device, planar
+    nonlinear_pair_factory, displacement_factory, device, planar, fitting
 ):
     from voxreg.sampling import (
+        SpatialGrid,
+        _map_displacement,
         _prepare_displaced_sampling,
         _sample_prepared,
         make_grid,
@@ -370,11 +373,24 @@ def test_prepared_seed_queries_preserve_samples_and_gradients(
     prepared = _prepare_displaced_sampling(images, parameters, geometry)
     original = [tensor.clone() for tensor in prepared[:2]]
     for scale in (-1, 0.3, 1.5):
-        field = torch.tensor(values * scale, device=device, requires_grad=True)
-        cached, valid = _sample_prepared(images, field, prepared)
-        direct, direct_valid = sample_rigid(
-            images, parameters, geometry, displacement=field
+        field = torch.tensor(
+            values * scale,
+            dtype=torch.float32 if fitting else torch.float64,
+            device=device,
+            requires_grad=True,
         )
+        cached, valid = _sample_prepared(images, field, prepared, fitting=fitting)
+        direct, direct_valid = sample_rigid(
+            images, parameters, geometry, displacement=field.double()
+        )
+        if fitting:
+            assert images.dtype == torch.float32
+            query = prepared[0] + _map_displacement(prepared[1], field)
+            if isinstance(geometry, SpatialGrid):
+                query = (query[..., 1:] if geometry.planar else query).flip(-1)
+            direct = torch.nn.functional.grid_sample(
+                images[:, None], query.float(), padding_mode="border", align_corners=True
+            )[:, 0]
         assert_array_equal(cached.detach().cpu(), direct.detach().cpu())
         assert_array_equal(valid.cpu(), direct_valid.cpu())
         cg = torch.autograd.grad(cached.sum(), field)[0]
@@ -452,6 +468,39 @@ def test_tiny_geometry_map_gradients(displacement_factory):
     matrix = torch.tensor(np.linalg.inv(lattice)[None], requires_grad=True)
     field = torch.tensor(values[..., :2, :3], requires_grad=True)
     assert torch.autograd.gradcheck(_map_displacement, (matrix, field))
+
+
+@pytest.mark.parametrize("planar", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("permuted", [False, True])
+def test_direct_jacobian_matches_packed_values_and_gradients(
+    displacement_factory, device, planar, dtype, permuted
+):
+    from dataclasses import replace
+
+    data, _, _, values = displacement_factory(planar)
+    grid = make_field_grid(voxel(data.values, np.diag([0.24, -0.21, 0.18, 1])), device=device)
+    voxel_axes = grid.voxel_axes
+    assert voxel_axes is not None
+    grid = replace(
+        grid,
+        indices=grid.indices.to(dtype),
+        inverse_lattice=grid.inverse_lattice.to(dtype),
+    )
+    if permuted:
+        grid = replace(
+            grid,
+            inverse_lattice=-grid.inverse_lattice.roll(1, 0),
+            voxel_axes=voxel_axes[-1:] + voxel_axes[:-1],
+        )
+    field = torch.tensor(values, dtype=dtype, device=device, requires_grad=True)
+    direct = jacobian_determinant(field, grid)
+    packed = jacobian_determinant(field, replace(grid, voxel_axes=None))
+    assert_array_equal(direct.detach().cpu(), packed.detach().cpu())
+    dg = torch.autograd.grad(direct.sum(), field)[0]
+    pg = torch.autograd.grad(packed.sum(), field)[0]
+    tolerance = 1e-6 if dtype == torch.float32 else 1e-14
+    assert_allclose(dg.cpu(), pg.cpu(), rtol=tolerance, atol=tolerance)
 
 
 def test_field_options_and_geometry_validation(displacement_factory):

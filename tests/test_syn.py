@@ -323,6 +323,85 @@ def test_displaced_interpolation_identity_and_gradients(
 
 
 @pytest.mark.parametrize("planar", [True, False])
+def test_syn_float32_working_fields_keep_double_geometry_and_original_data(
+    nonlinear_pair_factory, monkeypatch, device, planar
+):
+    from voxreg import syn
+
+    fixed, moving, *_ = nonlinear_pair_factory(planar)
+    fixed = fixed.copy(data=2**30 + fixed.values.astype(np.float64) * 0.001)
+    moving = moving.copy(data=2**30 + moving.values.astype(np.float64) * 0.001)
+    untouched = moving.copy(deep=True)
+    candidate, inverse = syn._candidate_fields, syn._final_inverse
+    flags = (torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32)
+    calls = []
+
+    def candidate_checked(uf, um, gf, gm, grid, *args):
+        assert all(t.dtype == torch.float32 for t in (uf, um, gf, gm))
+        assert grid.indices.dtype == grid.inverse_lattice.dtype == torch.float32
+        assert grid.basis.dtype == grid.lattice.dtype == torch.float64
+        calls.append("candidate")
+        result = candidate(uf, um, gf, gm, grid, *args)
+        assert result[0].dtype == result[1].dtype == torch.float32
+        return result
+
+    def inverse_checked(field, grid):
+        assert field.dtype == grid.indices.dtype == torch.float64
+        calls.append("inverse")
+        return inverse(field, grid)
+
+    monkeypatch.setattr(syn, "_candidate_fields", candidate_checked)
+    monkeypatch.setattr(syn, "_final_inverse", inverse_checked)
+    result = register(
+        moving, fixed, transform="syn", intensity_scaling="none",
+        device=device, max_iterations=2, return_transforms=True,
+    )
+    assert calls.count("candidate") == calls.count("inverse") == 2
+    assert flags == (
+        torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
+    )
+    assert result.transforms is not None and result.inverse_transforms is not None
+    assert result.transforms.dtype == result.inverse_transforms.dtype == np.float64
+    assert result.registered.dtype == np.float64
+    assert float(result.registered.max() - result.registered.min()) > 0
+    xr.testing.assert_identical(moving, untouched)
+
+
+@pytest.mark.parametrize("planar", [True, False])
+def test_syn_float32_fitting_is_independent_of_large_world_origin(
+    nonlinear_pair_factory, device, planar
+):
+    from oracles import voxel
+
+    fixed, moving, *_ = nonlinear_pair_factory(planar)
+    affine = position_to_world(fixed).copy()
+    affine[:3, 3] += [1e9, -2e9, 3e9]
+    options: RegistrationOptions = dict(
+        transform="syn", intensity_scaling="none", device=device,
+        max_iterations=4, return_transforms=True,
+    )
+    original = register(moving, fixed, **options)
+    shifted = register(voxel(moving.values, affine), voxel(fixed.values, affine), **options)
+    assert original.transforms is not None and shifted.transforms is not None
+    assert np.any(original.transforms.values != 0)
+    assert_allclose(shifted.transforms, original.transforms, rtol=0, atol=1e-9)
+    assert_array_equal(shifted.registered, original.registered)
+    assert_array_equal(shifted.valid, original.valid)
+
+
+def test_syn_rejects_unrepresentable_float32_working_lattice(nonlinear_pair_factory):
+    from oracles import voxel
+
+    fixed, moving, *_ = nonlinear_pair_factory(False)
+    affine = np.diag([1e-40, 1e-40, 1e-40, 1.0])
+    with pytest.raises(ValueError, match="working lattice.*float32"):
+        register(
+            voxel(moving.values, affine), voxel(fixed.values, affine),
+            transform="syn", max_iterations=1,
+        )
+
+
+@pytest.mark.parametrize("planar", [True, False])
 def test_syn_exchange_symmetry_is_not_one_way(nonlinear_pair_factory, device, planar):
     fixed, moving, _, _ = nonlinear_pair_factory(planar)
     options: RegistrationOptions = {

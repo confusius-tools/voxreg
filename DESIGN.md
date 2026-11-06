@@ -63,7 +63,12 @@ during field fitting and included in the returned displacements.
 
 SyN is single-resolution. Sampled halfway and final residual Jacobians must be
 finite and positive; inversion is approximate. These checks do not prove global
-invertibility or anatomical correctness. See [validation limits](VALIDATION.md).
+invertibility or anatomical correctness. The guard rejects sampled collapse
+(det = 0), orientation reversal (det < 0), and nonfinite derivatives; it is a
+voxreg safety policy, not a required FireANTs optimizer step. It was introduced
+with native SyN (`2a65a6d`) from the local orientation-preserving requirement
+for diffeomorphisms, not copied from a vendor acceptance rule.
+See [validation limits](VALIDATION.md).
 
 ## Initialization and failure handling
 
@@ -95,12 +100,16 @@ mathematically possible, not a reliable registration. Coverage is not confidence
 | Computation | Precision/policy |
 | --- | --- |
 | Fitting images and global/local NCC | Float32; explicit double metric inputs retain double for checks |
-| Geometry, optimizer state and fields | Float64 |
-| Smoothing | PyTorch; CPU SyN regularizers use scaled float32, restoring double fields; general/differentiable/compiled and CUDA paths retain double filtering |
+| Physical geometry and linear pose parameters | Float64 |
+| SyN fitting | Float32 working fields, origin-free field arithmetic and native PyTorch `grid_sample`; support checks retain float64 physical queries |
+| SyN finalization | Float64 inversion, composition, validation and world displacement export; casting does not recover fitting precision |
+| Smoothing | PyTorch in field dtype; CPU SyN regularizers use scaled float32, restoring the field dtype |
 | Final interpolation | Original images, once; float64/integer inputs retain double; outputs retain moving dtype |
 
 Float32 NCC uses aligned global reductions and local pooling sums with
-roundoff-aware variance guards. dB scaling affects fitting only; original inputs
+roundoff-aware variance guards. SyN rejects lattices that become nonfinite or
+singular in float32 working arithmetic rather than silently corrupting fields.
+dB scaling affects fitting only; original inputs
 are never modified. Integer results are rounded nearest-even and clipped;
 integer inputs outside `[-2**53, 2**53]` are rejected.
 

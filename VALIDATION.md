@@ -6,6 +6,12 @@ At the float32/PyTorch policy checkpoint (`40b4c01`), the production suite passe
 **717 tests** on CPU/CUDA and all five hooks passed. This is a recorded result,
 not proof that every dataset, platform or benchmark configuration is qualified.
 
+The native-float32 SyN implementation subsequently passed **820 tests** on this
+CPU/CUDA host and all five hooks. New checks cover working-field/native-sampler
+dtypes and gradients, unchanged original float64 data, double finalization/export,
+large-world-origin invariance, unrepresentable working lattices, and direct/packed
+Jacobian value and gradient parity. This is not an anatomical qualification.
+
 ```bash
 uv run pytest
 uv run prek run --all-files
@@ -33,12 +39,16 @@ and is not a benchmark acceptance gate.
 ## Benchmark accuracy
 
 [BENCHMARK.md](BENCHMARK.md) defines the single measurement pipeline: minimize
-median runtime subject to **worst fitted-frame truth RMS < 0.25 minimum-spacing
-voxels** and fitting in memory. Library unit tests and benchmark accuracy are
+median runtime subject to **worst fitted-frame truth RMS ≤ 0.30 minimum-spacing
+voxels for all registration models**, and fitting in memory. This operator-selected
+policy follows the [matched single-resolution ANTsPy reference](research/syn/REFERENCE.md),
+not ANTsPy's multi-resolution defaults. Runtime profiling is the current priority;
+we retain error measurements without further accuracy tuning. Library unit tests and benchmark accuracy are
 separate checks; passing the former does not imply passing every full workload.
 
-The current precision policy has these **one-call, 100-update diagnostic** results
-(eight threads, batch limit 32), not five-run performance measurements:
+The earlier float32-NCC policy had these **one-call, 100-update diagnostic** results
+(eight threads, batch limit 32), not five-run performance measurements. The table
+preserves their original **< 0.25** accuracy verdicts; no historical run is relabelled:
 
 | Workload | CPU truth RMS (vox) | CUDA truth RMS (vox) | Accuracy |
 | --- | ---: | ---: | --- |
@@ -46,9 +56,11 @@ The current precision policy has these **one-call, 100-update diagnostic** resul
 | Volume pair, one fit | 0.306317 | 0.306314 | **Fail** |
 
 These workloads already failed the truth target before the precision change.
-No accuracy improvement or universal speedup is claimed. A full five-run matrix
-for the current policy has not been reviewed here; older completed reports retain
-their original source/settings.
+No accuracy improvement or universal speedup is claimed. The current matched
+five-call CUDA subset is recorded in [PERFORMANCE.md](PERFORMANCE.md#current-matched-syn-cuda-subset):
+100-frame planes pass (voxreg 0.268294, FireANTs 0.299721), while volume pairs
+still fail (0.306457 and 0.358709). No full matrix, 100-volume run or anatomical
+qualification is implied; older completed reports retain their original source/settings.
 
 The benchmark runner has a real three-phase CPU smoke check and bounded checks
 for unchanged configuration IDs, existing-output protection, accuracy/execution

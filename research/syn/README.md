@@ -101,7 +101,7 @@ invertibility**. Inverse residuals are exposed, not asserted to vanish.
 
 ## Field and numerical contracts
 
-`src/voxreg/fields.py` uses float64 millimetre geometry/state and tensor layout
+`src/voxreg/fields.py` defaults to float64 millimetre geometry/state and tensor layout
 `(batch, components, *active_spatial_shape)`. Volumes use world z/y/x; planes use
 the existing orthonormal two-component basis, embedded into world components on
 export. No fabricated depth, replicated planes or hidden role reversal is used.
@@ -112,20 +112,22 @@ zero contribution outside. Smoothing is a separable sampled Gaussian in voxel
 units with zero active boundaries; sigma zero bypasses smoothing/boundary handling
 in the primitive. The optimizer still holds its update boundary fixed. These
 filters are not claimed identical to ITK's discrete Gaussian/small-variance blend.
-Multithreaded CPU 3D SyN performs its two fixed Gaussian convolutions in
-magnitude-scaled float32, restoring float64 fields. Coordinates, composition,
-statistics, inversion and Jacobians remain double. The standalone field primitive
-and planar/serial/differentiable/compiled/CUDA smoothing retain their prior behavior;
-see [AC-CPU-SMOOTHING.md](AC-CPU-SMOOTHING.md).
+SyN fitting uses float32 working fields and origin-free lattice arithmetic.
+The physical master geometry and linear seed parameters stay float64. CPU SyN
+performs its two fixed Gaussian convolutions in magnitude-scaled float32,
+restoring the input field dtype; the standalone smoothing primitive uses field
+precision. [AC-CPU-SMOOTHING.md](AC-CPU-SMOOTHING.md) records the earlier policy.
 
 Inversion uses clipped/damped ITK-style residual updates and independent per-frame
 reductions without per-iteration host polling. Endpoint construction uses 80
 iterations per best halfway inverse. Full-lattice Jacobians retain shear,
-obliquity and reversed coordinates. Float64 statistics/state coexist with float32
-fitting images/interpolation. Displaced image fitting uses fixed-order multilinear
-weights and detached snapping only within 1e-10 pixels of integer voxel knots to
-choose consistent one-sided gradients across CPU/CUDA. Float64 final interpolation
-is unsnapped with double weights. The legacy linear sampler remains unchanged.
+obliquity and reversed coordinates. Best halfway fields are promoted to float64
+before final inversion, composition and validation; exported world fields remain
+double. This does not recover float32 fitting precision. Displaced image fitting
+uses native PyTorch `grid_sample` with float32 images and normalized grids, while
+support is decided before that quantization. Final original-image interpolation
+retains its existing dtype/geometry policy. Exact axis-permuted/reversed Jacobians
+avoid packed derivative tensors; general/sheared lattices retain the full path.
 
 ## Proof, preserved failures and limits
 

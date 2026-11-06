@@ -535,8 +535,10 @@ def _prepare_displaced_sampling(images, parameters, geometry):
     return base, mapping, geometry
 
 
-def _sample_prepared(images, displacement, prepared, interpolation="linear"):
-    """Sample with a resident seed grid/matrix; only the deformation varies."""
+def _sample_prepared(
+    images, displacement, prepared, interpolation="linear", *, fitting=False
+):
+    """Sample cached physical queries; fitting alone uses image-precision grids."""
     base, mapping, geometry = prepared
     mapped = base + _map_displacement(mapping, displacement)
     if isinstance(geometry, SpatialGrid):
@@ -551,6 +553,14 @@ def _sample_prepared(images, displacement, prepared, interpolation="linear"):
         tolerance = geometry.support_tolerance
         valid = ((mapped >= -1 - tolerance) & (mapped <= 1 + tolerance)).all(dim=-1)
         query = mapped
+    if fitting:
+        return F.grid_sample(
+            images[:, None],
+            query.to(images.dtype),
+            mode={"linear": "bilinear", "nearest": "nearest"}[interpolation],
+            padding_mode="border",
+            align_corners=True,
+        )[:, 0], valid
     return _sample_displaced(images, query, interpolation), valid
 
 
@@ -562,8 +572,9 @@ def _map_displacement(matrix, field, axes=None):
         and not torch.compiler.is_compiling()
     ):
         batch = max(matrix.shape[0], field.shape[0])
-        values = field.reshape(*field.shape[:2], -1).expand(batch, -1, -1)
-        mapped = torch.bmm(matrix.expand(batch, -1, -1), values)
+        dtype = torch.promote_types(matrix.dtype, field.dtype)
+        values = field.to(dtype).reshape(*field.shape[:2], -1).expand(batch, -1, -1)
+        mapped = torch.bmm(matrix.to(dtype).expand(batch, -1, -1), values)
         # Downstream samplers and norms need the original contiguous component-last layout.
         return (
             mapped.reshape(batch, matrix.shape[1], *field.shape[2:])
@@ -590,7 +601,7 @@ def _sample_displaced(images, normalized, interpolation):
     """Fixed-order linear interpolation with double geometry and image-dtype math.
 
     Unlike float32 normalized grid_sample, voxel coordinates are not quantized
-    before selecting interpolation cells. At float32-fitting voxel knots, remove
+    before selecting interpolation cells. At float32-image voxel knots, remove
     only double roundoff and choose a consistent one-sided gradient on both devices.
     Final float64 interpolation retains unsnapped float64 coordinates and weights.
     """

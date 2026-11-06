@@ -91,7 +91,9 @@ def _check_field(field: torch.Tensor, grid: FieldGrid) -> None:
     if field.shape[1:] != (len(grid.shape), *grid.shape):
         raise ValueError("Field shape must be (batch, components, *grid.shape).")
     if field.dtype != grid.indices.dtype or field.device != grid.indices.device:
-        raise ValueError("Fields must match the grid device and float64 dtype.")
+        raise ValueError(
+            f"Fields must match the grid device and {grid.indices.dtype} dtype."
+        )
 
 
 def _sample_field(
@@ -340,9 +342,25 @@ def jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
         Determinant at each field voxel, shaped (batch, *grid.shape).
     """
     _check_field(field, grid)
-    derivative = torch.stack(
-        torch.gradient(field, dim=tuple(range(2, field.ndim))), dim=2
-    )
+    derivatives = torch.gradient(field, dim=tuple(range(2, field.ndim)))
+    voxel_axes = grid.voxel_axes
+    if voxel_axes is not None:
+        # Exact axis permutations/reversals need no packed physical-derivative tensor.
+        def entry(component, physical_axis):
+            voxel_axis = voxel_axes.index(physical_axis)
+            return (
+                grid.inverse_lattice[voxel_axis, physical_axis]
+                * derivatives[voxel_axis][:, component]
+            )
+
+        a, b = entry(0, 0) + 1, entry(0, 1)
+        d, e = entry(1, 0), entry(1, 1) + 1
+        if len(grid.shape) == 2:
+            return a * e - b * d
+        c, f = entry(0, 2), entry(1, 2)
+        g, h, i = entry(2, 0), entry(2, 1), entry(2, 2) + 1
+        return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+    derivative = torch.stack(derivatives, dim=2)
     physical = (
         _map_displacement(
             grid.inverse_lattice.T[None],
