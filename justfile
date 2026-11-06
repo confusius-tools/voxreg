@@ -35,6 +35,24 @@ test-verbose:
 pre-commit:
     uv run prek run --all-files
 
+# Create or reuse the isolated Python 3.13 environment with qualified ANTsPy.
+[unix]
+antspy-venv:
+    test -x .venv-antspy/bin/python || uv venv --python 3.13 .venv-antspy
+    uv pip install --python .venv-antspy/bin/python 'antspyx==0.6.3'
+
+# Benchmark resampling into a fresh output directory; extra arguments go to Python.
+[unix]
+[positional-arguments]
+benchmark-resample output *args: antspy-venv
+    uv run --extra examples python examples/benchmark_resample.py --antspy-python "{{justfile_directory()}}/.venv-antspy/bin/python" --output "$@"
+
+# Benchmark registration into a fresh output directory; extra arguments go to Python.
+[unix]
+[positional-arguments]
+benchmark-register output *args: antspy-venv
+    uv run --extra examples python examples/benchmark_register.py --antspy-python "{{justfile_directory()}}/.venv-antspy/bin/python" --output "$@"
+
 # Aliases
 alias d := docs
 alias cd := clean-docs

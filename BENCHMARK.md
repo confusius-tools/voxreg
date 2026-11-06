@@ -8,6 +8,20 @@ executables or `ANTSPATH` are used. ANTsPy calls the ANTs library in process.
 Use the project environment for supervision, voxreg and FireANTs. ANTsPy 0.6.3
 needs its own Python 3.13 environment; do not downgrade project dependencies.
 
+On Linux, the Just recipes create or reuse that environment automatically:
+
+```bash
+just antspy-venv  # Optional: each benchmark also runs this dependency.
+just benchmark-resample artifacts/benchmark-resample-01
+just benchmark-register artifacts/benchmark-register-01
+```
+
+Run the benchmarks sequentially and use a fresh output directory for each run.
+Additional options can follow the output directory, for example
+`just benchmark-register artifacts/register-diagnostic --runs 1 --configs '*-antspyx'`.
+The defaults are five timed calls and eight threads. The equivalent manual setup
+and commands are:
+
 ```bash
 uv sync --extra examples
 uv venv --python 3.13 .venv-antspy
