@@ -53,6 +53,12 @@ benchmark-resample output *args: antspy-venv
 benchmark-register output *args: antspy-venv
     uv run --extra examples python examples/benchmark_register.py --antspy-python "{{justfile_directory()}}/.venv-antspy/bin/python" --output "$@"
 
+# Render one or more benchmark run directories or results.json files as HTML.
+[unix]
+[positional-arguments]
+benchmark-report output +results:
+    uv run --extra examples python examples/benchmark_report.py --output "$@"
+
 # Aliases
 alias d := docs
 alias cd := clean-docs

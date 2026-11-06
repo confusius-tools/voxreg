@@ -150,6 +150,13 @@ inputs and matched voxreg/FireANTs batches.
 To render current results together without pooling hosts, revisions or operations:
 
 ```bash
+just benchmark-report artifacts/performance-report.html \
+  artifacts/benchmark-register-01 artifacts/benchmark-resample-01
+```
+
+Or run the reporter directly:
+
+```bash
 uv run --extra examples python examples/benchmark_report.py \
   artifacts/benchmark-register-01 artifacts/benchmark-resample-01 \
   --output artifacts/performance-report.html
