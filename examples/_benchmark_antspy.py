@@ -200,7 +200,7 @@ def _worker(config_path, mode):
     return 0
 
 
-if __name__ == "__main__":
+def _main(worker=_worker):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--versions", action="store_true")
     parser.add_argument("--worker", type=Path)
@@ -209,6 +209,11 @@ if __name__ == "__main__":
     if args.versions:
         print(json.dumps(_versions()))
     elif args.worker and args.mode:
-        raise SystemExit(_worker(args.worker, args.mode))
+        return worker(args.worker, args.mode)
     else:
         parser.error("--worker and --mode are required")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

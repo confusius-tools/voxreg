@@ -1,9 +1,7 @@
 """Known physical pulls, backend adapters and the resampling phase worker."""
 
 import hashlib
-import itertools
 import json
-import subprocess
 import traceback
 from pathlib import Path
 from time import perf_counter
@@ -18,23 +16,6 @@ from _benchmark_runner import RESAMPLE_LIMIT, _group_rss, _versions, _write
 from torch.nn import functional
 
 from voxreg import position_to_world, resample
-
-
-def _configs():
-    return [
-        {
-            "id": f"{'native' if backend == 'ants' else 'resident'}-{workload}-{model}-{backend}",
-            "suite": "native" if backend == "ants" else "resident",
-            "workload": workload,
-            "model": model,
-            "backend": backend,
-        }
-        for workload, model, backend in itertools.product(
-            data.SHAPES,
-            ("rigid", "affine", "syn"),
-            ("cpu", "cuda", "fireants-cpu", "fireants-cuda", "antspyx", "ants"),
-        )
-    ]
 
 
 def _prepare(config):
@@ -101,6 +82,7 @@ def _prepare_inputs(config_path):
             "time": moving.time.values if "time" in moving.dims else np.array([0]),
         }
         metadata = {
+            "operation": "resampling",
             "recording": "time" in moving.dims,
             "model": config["model"],
             "workload": config["workload"],
@@ -255,95 +237,6 @@ def _resident(moving, fixed, transforms, config):
     )
 
 
-def _native_inputs(moving, fixed, transforms, config, directory):
-    import SimpleITK as sitk
-
-    planar = moving.sizes["k"] == 1
-    axes = [2, 1] if planar else [2, 1, 0]
-    shape = np.array(fixed.shape)
-    reference = sitk.GetImageFromArray(fixed.values[0] if planar else fixed.values)
-    reference.SetSpacing(data.SPACING[axes].tolist())
-    reference.SetOrigin((-(shape - 1) * data.SPACING / 2)[axes].tolist())
-    sitk.WriteImage(reference, str(directory / "reference.nii"))
-    raw = moving.values if "time" in moving.dims else moving.values[None]
-    maps = transforms.values if "time" in transforms.dims else transforms.values[None]
-    files = []
-    for index, values in enumerate(raw):
-        image = sitk.GetImageFromArray(values[0] if planar else values)
-        image.CopyInformation(reference)
-        path = directory / f"moving-{index:03}.nii"
-        sitk.WriteImage(image, str(path))
-        if config["model"] == "syn":
-            field = maps[index, 0] if planar else maps[index]
-            warp = sitk.GetImageFromArray(
-                np.ascontiguousarray(field[..., axes]), isVector=True
-            )
-            warp.CopyInformation(reference)
-            transform_path = directory / f"pull-{index:03}.nii"
-            sitk.WriteImage(warp, str(transform_path))
-        else:
-            matrix = maps[index]
-            transform = sitk.AffineTransform(len(axes))
-            transform.SetMatrix(matrix[np.ix_(axes, axes)].ravel().tolist())
-            transform.SetTranslation(matrix[axes, 3].tolist())
-            transform_path = directory / f"pull-{index:03}.mat"
-            sitk.WriteTransform(transform, str(transform_path))
-        files.append((path, transform_path, float(values.min())))
-    return files
-
-
-def _native(files, config, directory, run):
-    import SimpleITK as sitk
-
-    run.mkdir()
-    commands = [
-        [
-            config["tools"]["antsApplyTransforms"],
-            "-d",
-            "2" if config["workload"] == "2d+t" else "3",
-            "-i",
-            str(image),
-            "-r",
-            str(directory / "reference.nii"),
-            "-t",
-            str(transform),
-            "-o",
-            str(run / f"output-{index:03}.nii"),
-            "-n",
-            "Linear",
-            "-f",
-            str(fill),
-            "--float",
-            "0",
-            "-u",
-            "float",
-        ]
-        for index, (image, transform, fill) in enumerate(files)
-    ]
-    _write(run / "commands.json", commands)
-    seconds = 0.0
-    with (run / "antsApplyTransforms.log").open("w") as log:
-        for command in commands:
-            start = perf_counter()
-            process = subprocess.run(
-                command, stdout=log, stderr=subprocess.STDOUT, check=False
-            )
-            seconds += perf_counter() - start
-            if process.returncode:
-                raise RuntimeError(
-                    f"antsApplyTransforms exited {process.returncode}; see {run}"
-                )
-    output = np.stack(
-        [
-            sitk.GetArrayFromImage(sitk.ReadImage(str(run / f"output-{i:03}.nii")))
-            for i in range(len(files))
-        ]
-    )
-    if config["workload"] == "2d+t":
-        output = output[:, None]
-    return output if config["workload"].endswith("+t") else output[0], seconds
-
-
 def _worker(config_path, mode):
     config = json.loads(config_path.read_text())
     directory = config_path.parent
@@ -371,17 +264,7 @@ def _worker(config_path, mode):
         moving, fixed, transforms = _voxel_inputs(arrays, metadata)
         record["input_sha256"] = metadata["input_sha256"]
         record["resident_input_bytes"] = sum(a.nbytes for a in arrays.values())
-        files = None
-        if config["suite"] == "native":
-            files = _native_inputs(moving, fixed, transforms, config, directory)
-            record["native_settings"] = {
-                "interpolation": "Linear",
-                "compute_dtype": "float64",
-                "output_dtype": "float32",
-                "calls_per_resampling": len(files),
-                "boundary": "ITK interpolator voxel-extent support; accuracy uses common center support",
-            }
-        elif config["backend"].startswith("fireants"):
+        if config["backend"].startswith("fireants"):
             import fireants.interpolator  # noqa: F401 -- exclude import/dispatcher setup from timing.
         if cuda:
             torch.backends.cuda.matmul.allow_tf32 = False
@@ -402,24 +285,19 @@ def _worker(config_path, mode):
         record["wall_seconds"] = []
         calls = config["runs"] if mode == "timing" else 1
         for index in range(calls):
-            run = directory / f"{mode}-{index + 1}"
-            if config["suite"] == "resident":
-                if cuda:
-                    torch.cuda.synchronize()
-                start = perf_counter()
-                output, validity, details = _resident(moving, fixed, transforms, config)
-                if cuda:
-                    torch.cuda.synchronize()
-                seconds = perf_counter() - start
-                if (
-                    record.get("backend_settings", details)["batch_size"]
-                    != details["batch_size"]
-                ):
-                    raise RuntimeError("Automatic batch size changed between calls")
-                record["backend_settings"] = details
-            else:
-                output, seconds = _native(files, config, directory, run)
-                validity = None
+            if cuda:
+                torch.cuda.synchronize()
+            start = perf_counter()
+            output, validity, details = _resident(moving, fixed, transforms, config)
+            if cuda:
+                torch.cuda.synchronize()
+            seconds = perf_counter() - start
+            if (
+                record.get("backend_settings", details)["batch_size"]
+                != details["batch_size"]
+            ):
+                raise RuntimeError("Automatic batch size changed between calls")
+            record["backend_settings"] = details
             if (
                 output.shape != moving.shape
                 or output.dtype != moving.dtype
@@ -437,11 +315,7 @@ def _worker(config_path, mode):
                 _write(path, record)
             if mode == "accuracy":
                 errors = _array_errors(output, arrays, metadata, validity)
-                record["support_check"] = (
-                    "exact physical center mask"
-                    if validity is not None
-                    else "CLI exposes no mask; intensity scoring uses common center support"
-                )
+                record["support_check"] = "exact physical center mask"
                 expected = len(arrays["time"]) if metadata["recording"] else 1
                 if len(errors) != expected or not np.isfinite(errors).all():
                     raise AssertionError("Missing/nonfinite interpolation errors")
@@ -455,9 +329,6 @@ def _worker(config_path, mode):
                     flush=True,
                 )
             del output, validity
-            if files is not None and mode != "accuracy":
-                for output_path in run.glob("*.nii"):
-                    output_path.unlink()
         if mode == "memory" and cuda:
             record["peak_vram_bytes"] = torch.cuda.max_memory_allocated()
         record["status"] = (

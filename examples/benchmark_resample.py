@@ -3,7 +3,8 @@
 See BENCHMARK.md. Uses the registration benchmark's supervision and reports.
 """
 
-from _benchmark_resample import _configs, _prepare_inputs, _worker
+from _benchmark_data import _configs
+from _benchmark_resample import _prepare_inputs, _worker
 from _benchmark_runner import _main
 
 if __name__ == "__main__":

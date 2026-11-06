@@ -13,20 +13,17 @@ from itertools import groupby
 from pathlib import Path
 
 _PROTOCOLS = {
-    "voxreg-benchmark-v2": "Registration",
-    "voxreg-resample-benchmark-v2": "Resampling",
+    "voxreg-benchmark-v3": "Registration",
+    "voxreg-resample-benchmark-v3": "Resampling",
 }
 _COLORS = {
     "voxreg": "#16867a",
     "FireANTs": "#476eb1",
     "ANTsPy": "#bd761c",
-    "Native ANTs": "#9259a0",
 }
 
 
 def _engine(case):
-    if case["suite"] == "native":
-        return "Native ANTs"
     backend = case["backend"]
     return (
         "FireANTs"
@@ -123,8 +120,6 @@ def _comparison(case, cases, runs):
 
 
 def _row_group(case, resampling):
-    if case["suite"] == "native":
-        return f"Native {case['workflow'].replace('_', ' ').title()} · CPU"
     model = case["model"]
     name = (
         "Displacement"
@@ -236,10 +231,8 @@ def _section(path, report, index):
     cases = sorted(
         report["cases"],
         key=lambda c: (
-            c["suite"] == "native",
             c.get("backend", "").endswith("cuda"),
             {"rigid": 0, "affine": 1, "syn": 2}.get(c.get("model"), 3),
-            c.get("workflow", ""),
             c["workload"],
             tuple(_COLORS).index(_engine(c)),
             c["id"],
@@ -270,10 +263,6 @@ def _section(path, report, index):
         parts.append(
             '<p class="warning">Partial run: timings can exist without completed memory or accuracy qualification.</p>'
         )
-    if not report.get("batch_policy"):
-        parts.append(
-            '<p class="warning">Historical backend-specific batch policies: do not interpret unmatched batches as controlled comparisons.</p>'
-        )
     parts.append(
         f"<p>{escape(report.get('memory_definition', 'Memory boundary not recorded.'))}</p>"
     )
@@ -285,31 +274,15 @@ def _section(path, report, index):
         "relative_rmse_limit" if resampling else "truth_rms_limit_voxels"
     ]
     _number(limit)
-    syn_limit = report["policy"].get("syn_truth_limit_voxels")
-    if not resampling and report["policy"].get("truth_rms_comparison") == "<=":
+    if not resampling:
+        if report["policy"]["truth_rms_comparison"] != "<=":
+            raise ValueError("Registration requires the shared inclusive truth gate")
         limit = {c["id"]: (limit, "≤") for c in cases}
-    elif not resampling and syn_limit is not None:
-        _number(syn_limit)
-        limit = {
-            c["id"]: (syn_limit, "≤")
-            if c.get("model", c.get("workflow")) == "syn"
-            else (limit, "<")
-            for c in cases
-        }
-    for group in (
-        "CPU resident APIs",
-        "CUDA resident APIs",
-        "Native CLI workflows (includes CLI / I/O)",
-    ):
+    for group in ("CPU resident APIs", "CUDA resident APIs"):
         subset = [
             c
             for c in cases
-            if (
-                c["suite"] == "native"
-                if group.startswith("Native")
-                else c["suite"] == "resident"
-                and c["backend"].endswith("cuda") == group.startswith("CUDA")
-            )
+            if c["backend"].endswith("cuda") == group.startswith("CUDA")
         ]
         if not subset:
             continue
@@ -326,7 +299,7 @@ def _section(path, report, index):
             )
         parts.append("</div>")
     parts.append(
-        '<h3>Recorded measurements</h3><p>Ratios are FireANTs time / voxreg time within this run only; greater than 1 means voxreg was faster. They require both complete accuracy-passing cases and identical phase input hashes. Unmatched historical batches are explicitly flagged, not claimed as controlled wins. Hover over runtime for every timed call.</p><div class="table"><table><thead><tr><th>Configuration</th><th>Outcome</th><th>Batch</th><th>Seconds: median [min–max]</th><th>First call (s)</th><th>RAM GiB</th><th>VRAM GiB</th><th>Worst-frame error</th><th>FireANTs / voxreg</th></tr></thead><tbody>'
+        '<h3>Recorded measurements</h3><p>Ratios are FireANTs time / voxreg time within this run only; greater than 1 means voxreg was faster. They require both complete accuracy-passing cases and identical phase input hashes. Unmatched batches are explicitly flagged, not claimed as controlled wins. Hover over runtime for every timed call.</p><div class="table"><table><thead><tr><th>Configuration</th><th>Outcome</th><th>Batch</th><th>Seconds: median [min–max]</th><th>First call (s)</th><th>RAM GiB</th><th>VRAM GiB</th><th>Worst-frame error</th><th>FireANTs / voxreg</th></tr></thead><tbody>'
     )
     previous_group = None
     for case in cases:
@@ -373,7 +346,7 @@ def _render(paths, output):
         report = json.loads(path.read_text())
         if report.get("protocol") not in _PROTOCOLS:
             raise ValueError(
-                f"Unsupported protocol in {path}: {report.get('protocol')!r}; keep historical protocols separate"
+                f"Unsupported protocol in {path}: {report.get('protocol')!r}; use this reporter only for current benchmark protocols"
             )
         if (
             not isinstance(report.get("cases"), list)

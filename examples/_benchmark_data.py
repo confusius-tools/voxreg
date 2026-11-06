@@ -1,15 +1,32 @@
 """Shared benchmark inputs and resident registration adapters; no CLI."""
 
+import itertools
 import json
 from pathlib import Path
 
 import numpy as np
-import torch
-from confusius import create_voxeldata
 from scipy.spatial.transform import Rotation
 
 SHAPES = {"2d+t": (1, 150, 128), "3d": (80, 150, 80), "3d+t": (80, 150, 80)}
 SPACING = np.array([0.2, 0.1, 0.1])
+
+
+def _configs():
+    cases = [
+        {
+            "id": f"resident-{workload}-{model}-{backend}",
+            "suite": "resident",
+            "workload": workload,
+            "model": model,
+            "backend": backend,
+        }
+        for workload, model, backend in itertools.product(
+            SHAPES,
+            ("rigid", "affine", "syn"),
+            ("cpu", "cuda", "fireants-cpu", "fireants-cuda", "antspyx"),
+        )
+    ]
+    return cases
 
 
 def _write_json(path, value):
@@ -106,6 +123,8 @@ def _phantom(points, shape):
 
 
 def _dataset(shape, frames, model, recording):
+    from confusius import create_voxeldata
+
     points = _grid(shape)
     affine = np.diag([*SPACING, 1.0])
     affine[:3, 3] = -(np.array(shape) - 1) * SPACING / 2
@@ -154,6 +173,7 @@ def _run_fireants(
     batch_size,
 ):
     import SimpleITK as sitk
+    import torch
     from _benchmark_metrics import _point_rms
     from fireants.interpolator import FFO_AVAILABLE, USE_FFO
     from fireants.io.image import BatchedImages, Image

@@ -1,10 +1,65 @@
 """Complete resident-array registration calls and full-workload truth checks."""
 
-import numpy as np
-from _benchmark_data import SHAPES, _grid, _run_fireants
-from _benchmark_metrics import _linear_rms, _point_rms
+import json
 
-from voxreg import register
+import numpy as np
+from _benchmark_data import SHAPES, _dataset, _grid, _run_fireants, _write_json
+from _benchmark_metrics import _linear_rms, _point_rms
+from _benchmark_resample_io import _digest
+
+from voxreg import position_to_world, register
+
+
+def _prepare_inputs(config_path):
+    """Stage the same original arrays and physical geometry for every backend."""
+    config = json.loads(config_path.read_text())
+    directory = (
+        config_path.parent.parent / "inputs" / f"{config['workload']}-{config['model']}"
+    )
+    if not (directory / "inputs.json").exists():
+        moving, fixed, amplitudes = _dataset(
+            SHAPES[config["workload"]],
+            config["frames"],
+            config["model"],
+            config["workload"].endswith("+t"),
+        )
+        recording = "time" in moving.dims
+        arrays = {
+            "moving": moving.values,
+            "fixed": fixed.values,
+            "amplitudes": amplitudes,
+            "time": moving.time.values if recording else np.array([0]),
+        }
+        metadata = {
+            "operation": "registration",
+            "model": config["model"],
+            "workload": config["workload"],
+            "recording": recording,
+            "affine": position_to_world(fixed).tolist(),
+        }
+        metadata["input_sha256"] = _digest(arrays, metadata)
+        directory.mkdir(parents=True)
+        for name, values in arrays.items():
+            np.save(directory / f"{name}.npy", values, allow_pickle=False)
+        _write_json(directory / "inputs.json", metadata)
+    config["inputs"] = str(directory)
+    _write_json(config_path, config)
+
+
+def _voxel_inputs(arrays, metadata):
+    from confusius import create_voxeldata
+
+    dimensions = ("k", "j", "i")
+    moving = create_voxeldata(
+        arrays["moving"],
+        dims=(("time",) if metadata["recording"] else ()) + dimensions,
+        voxel_to_world=np.array(metadata["affine"]),
+        **({"time": arrays["time"]} if metadata["recording"] else {}),
+    )
+    fixed = create_voxeldata(
+        arrays["fixed"], dims=dimensions, voxel_to_world=np.array(metadata["affine"])
+    )
+    return moving, fixed, arrays["amplitudes"]
 
 
 def _run(moving, fixed, amplitudes, config, accuracy):

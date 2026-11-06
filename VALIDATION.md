@@ -1,98 +1,52 @@
 # Validation and known limits
 
-## Recorded checkpoint
-
-At the float32/PyTorch policy checkpoint (`40b4c01`), the production suite passed
-**717 tests** on CPU/CUDA and all five hooks passed. This is a recorded result,
-not proof that every dataset, platform or benchmark configuration is qualified.
-
-The native-float32 SyN implementation subsequently passed **820 tests** on this
-CPU/CUDA host and all five hooks. New checks cover working-field/native-sampler
-dtypes and gradients, unchanged original float64 data, double finalization/export,
-large-world-origin invariance, unrepresentable working lattices, and direct/packed
-Jacobian value and gradient parity. This is not an anatomical qualification.
+## Checks
 
 ```bash
 uv run pytest
 uv run prek run --all-files
 ```
 
-CUDA tests skip when unavailable; CPU-only success does not qualify CUDA. See
-[shared fixtures](tests/conftest.py) and [oracles](tests/oracles.py).
+CUDA tests skip when unavailable; CPU-only success does not qualify CUDA.
+The production suite covers physical geometry, unequal/oblique/cropped/strided
+lattices and large origins; SciPy/native-library interpolation oracles; original
+dtype and integer safeguards; per-frame state, convergence and failure isolation;
+field composition, inverses and Jacobians; and optional transform export.
 
-## What is checked
+SyN checks cover float32 working fields and native fitting gradients, unchanged
+original float64 data, double finalization/export, large-origin invariance,
+unrepresentable working lattices, and direct/packed Jacobian parity.
 
-| Area | Independent evidence |
-| --- | --- |
-| Physical geometry | Known world transforms, native ITK/SimpleITK point checks, unequal/oblique/cropped/strided grids and large origins |
-| Sampling and output | SciPy interpolation, finite singleton support, original dtype/intensities, integer rounding, metadata, input immutability and exact reference preservation |
-| Metrics and derivatives | Explicit NCC calculations, float64 gradient checks, float32 constant-neighborhood/row-alignment regressions |
-| Per-frame state | Batch/failure isolation, best-valid fallback, frozen stopped rows, seed validation and callback ownership |
-| Nonlinear fields | Independent composition/interpolation, inverse residuals, Jacobians, smoothing range/boundaries/autograd and analytic nonlinear recovery |
-| Convergence | Stored C++ ITK reference values and an independent stopping-policy calculation |
-| Optional outputs | Default-off/opt-in parity and checks that dense export does not run when disabled |
+Benchmark adapters have separate bounded local checks for staged-input hashes,
+ANTsPy Python-only dispatch, single-resolution settings, complete forward-pull
+composition, reference-frame preservation, phase isolation and report generation.
+These checks are not full-workload performance or anatomical qualification.
 
-Focused CPU/CUDA numerical checks remain useful regressions. End-to-end map
-agreement with another device, older voxreg or another library is **not truth**
-and is not a benchmark acceptance gate.
+## Acceptance
 
-## Benchmark accuracy
+[BENCHMARK.md](BENCHMARK.md) defines the current measurement and scoring boundaries:
 
-[BENCHMARK.md](BENCHMARK.md) defines the single measurement pipeline: minimize
-median runtime subject to **worst fitted-frame truth RMS ≤ 0.30 minimum-spacing
-voxels for all registration models**, and fitting in memory. This operator-selected
-policy follows the [matched single-resolution ANTsPy reference](research/syn/REFERENCE.md),
-not ANTsPy's multi-resolution defaults. Runtime profiling is the current priority;
-we retain error measurements without further accuracy tuning. Library unit tests and benchmark accuracy are
-separate checks; passing the former does not imply passing every full workload.
+- Registration: worst fitted-frame full-grid physical pull RMS **≤ 0.30
+  minimum-spacing voxels**, measured against analytic truth, for every model.
+- Resampling: worst-frame relative intensity RMSE **< 1e-5**, against independent
+  float64 SciPy interpolation with physical support checks.
+- Timing: five complete calls, first included; memory and accuracy use separate
+  workers, identical prepared inputs and the same effective backend batching.
 
-The earlier float32-NCC policy had these **one-call, 100-update diagnostic** results
-(eight threads, batch limit 32), not five-run performance measurements. The table
-preserves their original **< 0.25** accuracy verdicts; no historical run is relabelled:
+Passing unit tests, higher NCC, agreement with another backend or CPU/CUDA
+agreement does not establish correct correspondence. ANTsPy is a comparison
+backend, not the ground-truth deformation.
 
-| Workload | CPU truth RMS (vox) | CUDA truth RMS (vox) | Accuracy |
-| --- | ---: | ---: | --- |
-| Planar series, reference + 32 fits | 0.264253 | 0.265066 | **Fail** |
-| Volume pair, one fit | 0.306317 | 0.306314 | **Fail** |
+## Limits
 
-These workloads already failed the truth target before the precision change.
-No accuracy improvement or universal speedup is claimed. The current matched
-five-call CUDA subset is recorded in [PERFORMANCE.md](PERFORMANCE.md#current-matched-syn-cuda-subset):
-100-frame planes pass (voxreg 0.268294, FireANTs 0.299721), while volume pairs
-still fail (0.306457 and 0.358709). No full matrix, 100-volume run or anatomical
-qualification is implied; older completed reports retain their original source/settings.
-
-The benchmark runner has a real three-phase CPU smoke check and bounded checks
-for unchanged configuration IDs, existing-output protection, accuracy/execution
-failure, unavailable backends, interruption, unexpected parent errors and saved
-text/HTML reports. These are direct runner checks, not another test framework.
-
-## Remaining limits
-
-- **Anatomical accuracy:** inspected real examples and higher NCC do not establish
-  correct correspondence. Historical same-subject/atlas failures remain evidence,
-  not successes retroactively inferred from the new policy.
-- **Capture and stopping:** initialization, overlap and the fitting budget matter.
-  Default stopping was calibrated on bounded rigid-slice windows, not all affine,
-  SyN, 3D or partial-overlap problems. `max_iterations` is not convergence.
-- **Invertibility:** positive sampled Jacobians do not prove global invertibility;
-  sampled SyN inverses have nonzero residuals.
-- **Memory:** batching does not bound full CPU inputs/outputs or dense exports.
-  Large-volume and full-recording limits require workload-specific measurement.
-- **Compatibility:** Python 3.11–3.14 syntax/resolution were checked, but full
-  numerical/CUDA qualification was on Python 3.14/Linux. Older wheel checks do
-  not qualify the latest source on every supported environment.
-
-## Evidence
-
-- [Linear geometry/recovery](research/linear/README.md),
-  [slice/volume sampling](research/slice-geometry/NATIVE-FIXED.md) and
-  [SyN checks](research/syn/README.md).
-- [Stopping calibration](research/convergence/CALIBRATION.md) and
-  [real-example investigations](research/confusius-examples/README.md).
-- Local current-policy runner checks: `artifacts/benchmark-policy-01/`.
-- Compact preliminary source/hash/log evidence:
-  `artifacts/archive/preliminary-evidence.tar.gz`; generated bulk arrays were
-  discarded. Completed reports and installed tools were retained.
-- The detailed historical validation timeline is linked in the
-  [historical guide index](research/README.md#pre-cleanup-guides).
+- Positive sampled Jacobians do not prove global invertibility; numerical inverse
+  residuals are nonzero and exposed.
+- Float32 fitting has finite precision; double export cannot recover information
+  already lost during optimization.
+- Initialization, overlap and iteration budgets affect capture. ANTsPy convergence
+  is enabled, unlike the forced resident update budget; iteration counts are not
+  fabricated when its API does not expose them.
+- Batching does not bound full CPU inputs/outputs or optional dense exports.
+- Synthetic qualification does not establish anatomical accuracy.
+- Platform, CUDA, large-volume and full-recording behavior require their own
+  measurement. Do not infer them from another machine or a small diagnostic.

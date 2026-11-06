@@ -12,7 +12,12 @@ LIMIT = 1e-5
 
 def _digest(arrays, metadata):
     digest = hashlib.sha256()
-    for name in ("moving", "fixed", "transforms", "time"):
+    for name in (
+        "moving",
+        "fixed",
+        "transforms" if "transforms" in arrays else "amplitudes",
+        "time",
+    ):
         digest.update(str((arrays[name].shape, arrays[name].dtype.str)).encode())
         digest.update(memoryview(arrays[name]))
     digest.update(
@@ -28,17 +33,24 @@ def _load(directory, config):
     metadata = json.loads((directory / "inputs.json").read_text())
     arrays = {
         name: np.load(directory / f"{name}.npy", allow_pickle=False)
-        for name in ("moving", "fixed", "transforms", "time")
+        for name in (
+            "moving",
+            "fixed",
+            "amplitudes" if metadata["operation"] == "registration" else "transforms",
+            "time",
+        )
     }
     if _digest(arrays, metadata) != metadata["input_sha256"]:
         raise AssertionError("Prepared image/map/geometry hashes differ")
     count = arrays["moving"].shape[0] if metadata["recording"] else 1
     expected = config["frames"] if config["workload"].endswith("+t") else 1
     if (
-        metadata["model"] != config["model"]
+        (metadata["operation"] != config["operation"])
+        or metadata["model"] != config["model"]
         or metadata["workload"] != config["workload"]
         or count != expected
         or len(arrays["time"]) != expected
+        or ("amplitudes" in arrays and len(arrays["amplitudes"]) != expected)
     ):
         raise AssertionError("Prepared inputs differ from the requested full workload")
     return arrays, metadata
