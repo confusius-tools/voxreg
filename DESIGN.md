@@ -56,9 +56,12 @@ nine identifiable parameters with a unit orthogonal normal completion. Singleton
 source support has finite half-voxel extent, not zero thickness.
 
 **SyN** optimizes two compositive midpoint-to-image fields using masked squared
-local NCC (radius 2), normalized updates and Gaussian regularization (update sigma
-1.5, total sigma 0.5 voxels). Complete pulls compose one halfway map with the
-numerical inverse of the other. An orientation-preserving affine seed is fixed
+local NCC (default radius 2), normalized updates and Gaussian regularization
+(default update sigma 1.5, total sigma 0.5 voxels). The public `syn_cc_radius`,
+`syn_update_sigma` and `syn_total_sigma` options control these values. CC windows
+are rectangular; field sigmas are standard deviations in voxel units, with zero
+disabling the corresponding smoothing. Complete pulls compose one halfway map
+with the numerical inverse of the other. An orientation-preserving affine seed is fixed
 during field fitting and included in the returned displacements.
 
 SyN is single-resolution. Sampled halfway and final residual Jacobians must be

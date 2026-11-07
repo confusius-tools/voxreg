@@ -362,6 +362,9 @@ def register(
     batch_size: int | None = None,
     max_iterations: int = 100,
     learning_rate: float = 0.1,
+    syn_cc_radius: int = 2,
+    syn_update_sigma: float = 1.5,
+    syn_total_sigma: float = 0.5,
     convergence_window_size: int = 50,
     convergence_minimum_value: float = 1e-6,
     device: Literal["cpu", "cuda"] = "cpu",
@@ -393,8 +396,8 @@ def register(
         not ITK's Euler optimizer parameterization. Affine refines the full linear
         map, including scale and shear, rather than freezing an affine prefix.
         SyN uses two smoothed compositive midpoint-to-image fields on one native
-        resolution, with local NCC radius 2, update sigma 1.5 and total sigma 0.5
-        voxels. It supports two k=1 planes or two volumes, not mixed-dimensional
+        resolution, with configurable local NCC and Gaussian field smoothing.
+        It supports two k=1 planes or two volumes, not mixed-dimensional
         deformation. Its complete forward/inverse outputs are dense displacements,
         not matrices. Working fields use float32; physical geometry, final
         inversion and exported displacements retain float64.
@@ -465,6 +468,21 @@ def register(
         Step size in physically scaled parameters. Affine coefficients use
         minimum spacing divided by the fixed-domain RMS input-axis lever arm.
         For SyN this bounds each halfway update's maximum voxel-coordinate norm.
+    syn_cc_radius : int, default: 2
+        Positive local NCC neighborhood radius in active voxel axes, using a
+        uniformly weighted rectangular window of width 2 * syn_cc_radius + 1.
+        A radius of one is allowed but can give unstable local statistics.
+        Applies only to SyN; other models require the default value.
+    syn_update_sigma : float, default: 1.5
+        Finite, nonnegative Gaussian standard deviation in voxel units for
+        smoothing each SyN gradient before update normalization and composition.
+        Zero disables this smoothing. Applies only to SyN; other models require
+        the default value. This is a standard deviation, not an ANTs variance.
+    syn_total_sigma : float, default: 0.5
+        Finite, nonnegative Gaussian standard deviation in voxel units for
+        smoothing each accumulated SyN halfway field after composition.
+        Zero disables this smoothing. Applies only to SyN; other models require
+        the default value. Image-pyramid smoothing is a separate operation.
     convergence_window_size : int, default: 50
         ITK-style metric-history window, at least two values. A window larger
         than max_iterations disables convergence checks for a fixed-budget run.
@@ -655,6 +673,25 @@ def register(
         or learning_rate <= 0
     ):
         raise ValueError("learning_rate must be finite and positive.")
+    if type(syn_cc_radius) is not int or syn_cc_radius < 1:
+        raise ValueError("syn_cc_radius must be a positive integer.")
+    for name, value in (
+        ("syn_update_sigma", syn_update_sigma),
+        ("syn_total_sigma", syn_total_sigma),
+    ):
+        if (
+            not isinstance(value, (int, float, np.integer, np.floating))
+            or isinstance(value, bool)
+            or not np.isfinite(value)
+            or value < 0
+        ):
+            raise ValueError(f"{name} must be finite and nonnegative (voxel units).")
+    if transform != "syn" and (
+        syn_cc_radius != 2 or syn_update_sigma != 1.5 or syn_total_sigma != 0.5
+    ):
+        raise ValueError(
+            'syn_cc_radius, syn_update_sigma and syn_total_sigma require transform="syn" when nondefault.'
+        )
     if device not in ("cpu", "cuda") or (
         device == "cuda" and not torch.cuda.is_available()
     ):
@@ -834,9 +871,9 @@ def register(
             metric_callback=metric_callback,
             metric_interval=metric_interval,
             interpolation=interpolation,
-            update_sigma=1.5,
-            total_sigma=0.5,
-            radius=2,
+            update_sigma=float(syn_update_sigma),
+            total_sigma=float(syn_total_sigma),
+            radius=syn_cc_radius,
         )
     outputs, masks, parameters = [], [], []
     clocks, statuses, objectives, overlaps = [], [], [], []

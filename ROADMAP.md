@@ -31,9 +31,10 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 - **Mutual information:** a differentiable, mask-aware estimator with explicit
   bins/ranges/kernels and bounded memory. Add a small per-frame metric interface;
   revisit NCC-specific conditioning, diagnostics and stopping calibration.
-- **FireANTs-inspired controls:** configurable local-CC windows/kernels, MSE/custom
-  losses, optimizer choice/hyperparameters, SyN gradient/warp smoothing and
-  regularization hooks. Follow ITK's unit distinction: image-pyramid smoothing
+- **Further metric/optimizer controls:** Gaussian-weighted local-CC kernels,
+  MSE/custom losses, optimizer choice/hyperparameters and regularization hooks.
+  SyN's rectangular CC radius and update/total smoothing strengths are public
+  options already. Follow ITK's unit distinction: image-pyramid smoothing
   sigmas in mm, deformation regularization in voxel units. Keep existing SyN
   sigmas/defaults; ITK's field parameters are variances, not interchangeable values.
   Keep current optimizers for now. Velocity-based deformation/integration,

@@ -73,6 +73,8 @@ result = voxreg.register(
 | `intensity_scaling` | `"db"` (default) for nonnegative power, or `"none"` for already-prepared/signed data. Affects fitting only. |
 | `batch_size` | Maximum frames fitted together; automatic by default. Full returned images still occupy CPU memory. |
 | `max_iterations` | Per-frame update limit; default `100`. Inspect diagnostics rather than assuming convergence. |
+| `syn_cc_radius` | SyN local NCC radius in voxels; default `2` gives a rectangular window of width `5`. |
+| `syn_update_sigma`, `syn_total_sigma` | SyN Gaussian smoothing standard deviations in voxels, before update composition and on the accumulated field respectively; defaults `1.5` and `0.5`. Zero disables the corresponding smoothing. |
 | `device`, `progress` | `"cpu"` or `"cuda"`; progress defaults to `"auto"`, or use `False` to silence it. |
 | `return_transforms` | Opt into forward and inverse maps: linear matrices or SyN displacement fields. Dense fields can be much larger than the images. |
 
@@ -80,6 +82,10 @@ The result contains **`registered`** intensities and a boolean **`valid`** suppo
 mask on the fixed grid, plus **`diagnostics`** with per-frame status and objective.
 Inputs are not modified; output retains the moving dtype and time labels.
 Use `valid` to exclude out-of-bounds padding from analysis.
+
+The `syn_` options apply only to `transform="syn"`; nondefault values with linear
+models raise an error. Smoothing values are standard deviations, not ANTs field
+variances. Local CC uses a uniformly weighted rectangular window.
 
 With `return_transforms=True`, `forward_transforms` are physical pulls:
 **`moving_world = matrix @ fixed_world`**, in **z/y/x, mm**. Linear models return
