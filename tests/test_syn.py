@@ -13,6 +13,91 @@ from voxreg.sampling import _sample_displaced
 from voxreg.syn import compute_local_ncc
 
 
+@pytest.mark.parametrize("planar", [True, False])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"syn_cc_radius": 2, "syn_update_sigma": 1.5, "syn_total_sigma": 0.5},
+        {"syn_cc_radius": 1},
+        {"syn_update_sigma": 0.0},
+        {"syn_total_sigma": 0.0},
+        {"syn_update_sigma": np.float64(0.8), "syn_total_sigma": np.int64(1)},
+    ],
+)
+def test_public_syn_controls(nonlinear_pair_factory, device, planar, options):
+    fixed, moving, _, _ = nonlinear_pair_factory(planar)
+    common: RegistrationOptions = {
+        "transform": "syn",
+        "intensity_scaling": "none",
+        "return_transforms": True,
+        "max_iterations": 3,
+        "device": device,
+        "progress": False,
+    }
+    baseline = register(moving, fixed, **common)
+    result = register(moving, fixed, **common, **options)
+    for public, diagnostic, default in (
+        ("syn_cc_radius", "cc_radius", 2),
+        ("syn_update_sigma", "update_sigma_voxels", 1.5),
+        ("syn_total_sigma", "total_sigma_voxels", 0.5),
+    ):
+        assert result.diagnostics.attrs[diagnostic] == options.get(public, default)
+    assert result.diagnostics.n_iterations.item() == 3
+    assert np.isfinite(result.diagnostics.objective).all()
+    assert result.diagnostics.min_jacobian.item() > 0
+    assert result.forward_transforms is not None
+    assert baseline.forward_transforms is not None
+    if options == {
+        "syn_cc_radius": 2,
+        "syn_update_sigma": 1.5,
+        "syn_total_sigma": 0.5,
+    }:
+        xr.testing.assert_identical(result.registered, baseline.registered)
+        xr.testing.assert_identical(result.valid, baseline.valid)
+        xr.testing.assert_identical(
+            result.forward_transforms, baseline.forward_transforms
+        )
+        xr.testing.assert_identical(
+            result.inverse_transforms, baseline.inverse_transforms
+        )
+    else:
+        assert not np.array_equal(
+            result.forward_transforms.values, baseline.forward_transforms.values
+        )
+
+
+@pytest.mark.parametrize(
+    "name, values",
+    [
+        ("syn_cc_radius", [0, -1, 1.5, True, None, "2", np.nan, np.inf]),
+        ("syn_update_sigma", [-1, True, None, "1.5", np.nan, np.inf, -np.inf]),
+        ("syn_total_sigma", [-1, True, None, "0.5", np.nan, np.inf, -np.inf]),
+    ],
+)
+def test_public_syn_controls_validate(linear_pair_factory, name, values):
+    fixed, moving, _ = linear_pair_factory(True, "rigid")
+    for value in values:
+        with pytest.raises(ValueError, match=name):
+            register(moving, fixed, transform="syn", **{name: value})
+
+
+@pytest.mark.parametrize("transform", ["translation", "rigid", "affine"])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"syn_cc_radius": 3},
+        {"syn_update_sigma": 0},
+        {"syn_total_sigma": 0},
+    ],
+)
+def test_public_syn_controls_reject_linear_models(
+    linear_pair_factory, transform, options
+):
+    fixed, moving, _ = linear_pair_factory(True, "rigid")
+    with pytest.raises(ValueError, match='require transform="syn"'):
+        register(moving, fixed, transform=transform, **options)
+
+
 @pytest.mark.parametrize("shape", [(23, 31), (7, 9, 11)])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_local_ncc_rejects_roundoff_in_constant_neighborhoods(device, shape, dtype):
