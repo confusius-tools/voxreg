@@ -88,6 +88,7 @@ def make_field_grid(data: xr.DataArray, *, device: str = "cpu") -> FieldGrid:
 
 
 def _check_field(field: torch.Tensor, grid: FieldGrid) -> None:
+    """Check component/spatial shape and the resident grid's precision and device."""
     if field.shape[1:] != (len(grid.shape), *grid.shape):
         raise ValueError("Field shape must be (batch, components, *grid.shape).")
     if field.dtype != grid.indices.dtype or field.device != grid.indices.device:
@@ -99,6 +100,7 @@ def _check_field(field: torch.Tensor, grid: FieldGrid) -> None:
 def _sample_field(
     field: torch.Tensor, displacement: torch.Tensor, grid: FieldGrid
 ) -> torch.Tensor:
+    """Sample a field at physical displacements from its native voxel centers."""
     offsets = _map_displacement(
         grid.inverse_lattice[None], displacement, grid.voxel_axes
     )
@@ -162,7 +164,7 @@ def compose_fields(
 
 
 def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch.Tensor:
-    """Gaussian smoothing in voxel units, with fixed active-axis boundaries.
+    """Smooth fields with a Gaussian in voxel units and fixed active boundaries.
 
     As in ITK SyN, sigma=0 bypasses smoothing/boundary enforcement. A plane has
     only two active boundaries; its singleton acquisition axis is never expanded.
@@ -211,7 +213,8 @@ def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch
     return result.reshape_as(field).masked_fill(grid.boundary, 0)
 
 
-def _pixel_norm(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
+def _measure_norm(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
+    """Measure physical vectors in native voxel-coordinate units."""
     if grid.voxel_scale is not None:
         values = field * grid.voxel_scale
         if field.device.type == "cpu":
@@ -223,10 +226,10 @@ def _pixel_norm(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
     )
 
 
-def _inverse_update(field, inverse, grid, damping):
-    """One damped, clipped inverse update, without a host-side stopping decision."""
+def _update_inverse(field, inverse, grid, damping):
+    """Apply one damped, clipped inverse update without host-side polling."""
     residual = compose_fields(field, inverse, grid)
-    norms = _pixel_norm(residual, grid)
+    norms = _measure_norm(residual, grid)
     maximum = norms.flatten(1).amax(dim=1).reshape(-1, *([1] * len(grid.shape)))
     fraction = (
         damping * maximum / norms.clamp_min(torch.finfo(field.dtype).tiny)
@@ -236,7 +239,7 @@ def _inverse_update(field, inverse, grid, damping):
     )
 
 
-def _contracted_cpu_inverse(field, grid, iterations):
+def _compute_contracted_cpu_inverse(field, grid, iterations):
     """Use fewer fixed-point updates only when a voxel-space bound certifies them."""
     voxels = _map_displacement(
         grid.inverse_lattice[None], field, grid.voxel_axes
@@ -263,10 +266,10 @@ def _contracted_cpu_inverse(field, grid, iterations):
     for _ in range(count):
         inverse = -_sample_field(field, inverse, grid)
     inverse = inverse.masked_fill(grid.boundary, 0)
-    left = _pixel_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(1)
+    left = _measure_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(1)
     if not (left <= 1e-10).all():
         return None
-    right = _pixel_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(1)
+    right = _measure_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(1)
     return inverse, torch.maximum(left, right)
 
 
@@ -314,18 +317,18 @@ def invert_field(
     if inverse.shape != field.shape:
         raise ValueError("Initial inverse must match the field shape.")
     for iteration in range(iterations):
-        inverse = _inverse_update(field, inverse, grid, 0.75 if iteration == 0 else 0.5)
+        inverse = _update_inverse(field, inverse, grid, 0.75 if iteration == 0 else 0.5)
     left = (
-        _pixel_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(dim=1)
+        _measure_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(dim=1)
     )
     right = (
-        _pixel_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(dim=1)
+        _measure_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(dim=1)
     )
     return inverse, torch.maximum(left, right)
 
 
-def jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
-    """Finite-difference det(I + du/dphysical) on oblique/sheared/reversed grids.
+def compute_jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
+    """Compute det(I + du/dphysical) on oblique, sheared or reversed grids.
 
     Positive sampled determinants alone do not prove global invertibility.
 
@@ -347,6 +350,7 @@ def jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
     if voxel_axes is not None:
         # Exact axis permutations/reversals need no packed physical-derivative tensor.
         def entry(component, physical_axis):
+            """Read one physical derivative through the exact axis permutation."""
             voxel_axis = voxel_axes.index(physical_axis)
             return (
                 grid.inverse_lattice[voxel_axis, physical_axis]
@@ -365,9 +369,6 @@ def jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
         _map_displacement(
             grid.inverse_lattice.T[None],
             derivative.flatten(0, 1),
-            tuple(grid.voxel_axes.index(k) for k in range(len(grid.shape)))
-            if grid.voxel_axes is not None
-            else None,
         )
         .reshape(field.shape[0], field.shape[1], *grid.shape, len(grid.shape))
         .movedim(1, -2)

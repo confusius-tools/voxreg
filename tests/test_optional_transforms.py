@@ -5,7 +5,7 @@ import pytest
 import xarray as xr
 from registration_options import RegistrationOptions
 
-from voxreg import register, syn
+from voxreg import register, rigid, syn
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine", "syn"])
@@ -45,11 +45,17 @@ def test_optional_transforms(
 
     def unexpected(*args, **kwargs):
         raise AssertionError(
-            "Dense field export must not run when transforms are disabled"
+            "Transform export must not run when transforms are disabled"
         )
 
-    for name in ("_world_field", "_inverse_world_field", "_labeled_field"):
+    for name in (
+        "_build_world_field",
+        "_build_inverse_world_field",
+        "_build_labeled_field",
+    ):
         monkeypatch.setattr(syn, name, unexpected)
+    if model != "syn":
+        monkeypatch.setattr(rigid, "build_world_matrices", unexpected)
     omitted = register(moving, target, **options)
     assert omitted.forward_transforms is None and omitted.inverse_transforms is None
     xr.testing.assert_identical(omitted.registered, exported.registered)

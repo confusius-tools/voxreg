@@ -2,22 +2,26 @@
 
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from numpy.testing import assert_allclose, assert_array_equal
+from registration_options import RegistrationOptions
 from scipy.ndimage import map_coordinates
 
 from voxreg import position_to_world, register
 from voxreg.sampling import _sample_displaced
-from voxreg.syn import local_ncc
+from voxreg.syn import compute_local_ncc
 
 
 @pytest.mark.parametrize("shape", [(23, 31), (7, 9, 11)])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_local_ncc_rejects_roundoff_in_constant_neighborhoods(device, shape, dtype):
-    values = torch.full((2, *shape), 0.1, device=device, dtype=dtype, requires_grad=True)
-    loss, meaningful = local_ncc(values, values.detach(), torch.ones_like(values, dtype=torch.bool), 2)
+    values = torch.full(
+        (2, *shape), 0.1, device=device, dtype=dtype, requires_grad=True
+    )
+    loss, meaningful = compute_local_ncc(
+        values, values.detach(), torch.ones_like(values, dtype=torch.bool), 2
+    )
     assert not meaningful.any()
     assert torch.equal(loss, torch.zeros_like(loss))
     gradient = torch.autograd.grad(loss.sum(), values)[0]
@@ -30,7 +34,7 @@ def test_local_ncc_follows_fitting_tensor_precision(device, dtype):
     moving = values.sin().requires_grad_()
     fixed = (values * 3).cos()
     valid = torch.ones_like(moving, dtype=torch.bool)
-    loss, meaningful = local_ncc(moving, fixed, valid, radius=1)
+    loss, meaningful = compute_local_ncc(moving, fixed, valid, radius=1)
     assert loss.dtype == dtype and meaningful.all() and torch.isfinite(loss).all()
     gradient = torch.autograd.grad(loss.sum(), moving)[0]
     assert gradient.dtype == dtype and torch.isfinite(gradient).all()
@@ -332,7 +336,7 @@ def test_syn_float32_working_fields_keep_double_geometry_and_original_data(
     fixed = fixed.copy(data=2**30 + fixed.values.astype(np.float64) * 0.001)
     moving = moving.copy(data=2**30 + moving.values.astype(np.float64) * 0.001)
     untouched = moving.copy(deep=True)
-    candidate, inverse = syn._candidate_fields, syn._final_inverse
+    candidate, inverse = syn._build_candidate_fields, syn._compute_final_inverse
     flags = (torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32)
     calls = []
 
@@ -350,15 +354,21 @@ def test_syn_float32_working_fields_keep_double_geometry_and_original_data(
         calls.append("inverse")
         return inverse(field, grid)
 
-    monkeypatch.setattr(syn, "_candidate_fields", candidate_checked)
-    monkeypatch.setattr(syn, "_final_inverse", inverse_checked)
+    monkeypatch.setattr(syn, "_build_candidate_fields", candidate_checked)
+    monkeypatch.setattr(syn, "_compute_final_inverse", inverse_checked)
     result = register(
-        moving, fixed, transform="syn", intensity_scaling="none",
-        device=device, max_iterations=2, return_transforms=True,
+        moving,
+        fixed,
+        transform="syn",
+        intensity_scaling="none",
+        device=device,
+        max_iterations=2,
+        return_transforms=True,
     )
     assert calls.count("candidate") == calls.count("inverse") == 2
     assert flags == (
-        torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32,
+        torch.backends.cudnn.allow_tf32,
     )
     assert result.transforms is not None and result.inverse_transforms is not None
     assert result.transforms.dtype == result.inverse_transforms.dtype == np.float64
@@ -376,12 +386,17 @@ def test_syn_float32_fitting_is_independent_of_large_world_origin(
     fixed, moving, *_ = nonlinear_pair_factory(planar)
     affine = position_to_world(fixed).copy()
     affine[:3, 3] += [1e9, -2e9, 3e9]
-    options: RegistrationOptions = dict(
-        transform="syn", intensity_scaling="none", device=device,
-        max_iterations=4, return_transforms=True,
-    )
+    options: RegistrationOptions = {
+        "transform": "syn",
+        "intensity_scaling": "none",
+        "device": device,
+        "max_iterations": 4,
+        "return_transforms": True,
+    }
     original = register(moving, fixed, **options)
-    shifted = register(voxel(moving.values, affine), voxel(fixed.values, affine), **options)
+    shifted = register(
+        voxel(moving.values, affine), voxel(fixed.values, affine), **options
+    )
     assert original.transforms is not None and shifted.transforms is not None
     assert np.any(original.transforms.values != 0)
     assert_allclose(shifted.transforms, original.transforms, rtol=0, atol=1e-9)
@@ -396,8 +411,10 @@ def test_syn_rejects_unrepresentable_float32_working_lattice(nonlinear_pair_fact
     affine = np.diag([1e-40, 1e-40, 1e-40, 1.0])
     with pytest.raises(ValueError, match="working lattice.*float32"):
         register(
-            voxel(moving.values, affine), voxel(fixed.values, affine),
-            transform="syn", max_iterations=1,
+            voxel(moving.values, affine),
+            voxel(fixed.values, affine),
+            transform="syn",
+            max_iterations=1,
         )
 
 
@@ -433,24 +450,33 @@ def test_displaced_nearest_uses_even_ties():
     assert_array_equal(_sample_displaced(image, query, "nearest"), [[[0, 2, 2, 4]]])
 
 
-def test_local_ncc_against_explicit_neighborhoods():
+@pytest.mark.parametrize("shape", [(6, 7), (4, 5, 6)])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_local_ncc_against_explicit_neighborhoods(device, shape, dtype):
     rng = np.random.default_rng(55)
-    x, y = rng.normal(size=(2, 6, 7)), rng.normal(size=(2, 6, 7))
+    x, y = rng.normal(size=(2, *shape)), rng.normal(size=(2, *shape))
+    if dtype == torch.float32:
+        x, y = x.astype(np.float32), y.astype(np.float32)
     valid = rng.uniform(size=x.shape) > 0.2
     expected = []
     for frame in range(2):
         scores = []
-        for j, i in np.ndindex(6, 7):
-            region = (slice(max(0, j - 1), j + 2), slice(max(0, i - 1), i + 2))
+        for point in np.ndindex(shape):
+            region = tuple(slice(max(0, p - 1), p + 2) for p in point)
             mask = valid[frame][region]
-            if valid[frame, j, i] and mask.sum() > 1:
+            if valid[(frame, *point)] and mask.sum() > 1:
                 scores.append(
                     np.corrcoef(x[frame][region][mask], y[frame][region][mask])[0, 1]
                     ** 2
                 )
         expected.append(-np.mean(scores))
-    actual, meaningful = local_ncc(
-        torch.tensor(x), torch.tensor(y), torch.tensor(valid), 1
+    actual, meaningful = compute_local_ncc(
+        torch.tensor(x, device=device),
+        torch.tensor(y, device=device),
+        torch.tensor(valid, device=device),
+        1,
     )
     assert meaningful.all()
-    assert_allclose(actual, expected, rtol=0, atol=1e-13)
+    assert_allclose(
+        actual.cpu(), expected, rtol=0, atol=2e-6 if dtype == torch.float32 else 1e-13
+    )

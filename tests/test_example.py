@@ -24,7 +24,8 @@ spec.loader.exec_module(example)
 @pytest.mark.parametrize(
     "dtype", [np.float32, np.float64, np.int16, np.int64, np.uint64]
 )
-def test_nifti_round_trip_and_window(recording_factory, tmp_path, dtype):
+@pytest.mark.parametrize("suffix", ["nii.gz", "nii"])
+def test_nifti_round_trip_and_window(recording_factory, tmp_path, dtype, suffix):
     data, _, affine = recording_factory(oblique=True, strided=True)
     if np.issubdtype(dtype, np.integer):
         data = data.copy(data=np.rint(data.values * 100).astype(dtype))
@@ -32,7 +33,7 @@ def test_nifti_round_trip_and_window(recording_factory, tmp_path, dtype):
         data = data.astype(dtype)
         if dtype == np.float64:
             data.values[:] += 1e-10
-    path = tmp_path / "recording.nii.gz"
+    path = tmp_path / f"recording.{suffix}"
     example.save_nifti(path, data)
     restored = example.load_recording(path)
     assert_array_equal(restored.values, data.values)
@@ -46,9 +47,13 @@ def test_nifti_round_trip_and_window(recording_factory, tmp_path, dtype):
     assert_array_equal(single.values, data.values[1:2])
     assert_array_equal(single.time, data.time[1:2])
     assert_allclose(single.time.attrs["volume_acquisition_duration"], 0.1)
-    single_path = tmp_path / "single.nii.gz"
+    single_path = tmp_path / f"single.{suffix}"
     example.save_nifti(single_path, single)
     assert_array_equal(example.load_recording(single_path).values, single.values)
+    assert_allclose(
+        example.load_recording(single_path).time.attrs["volume_acquisition_duration"],
+        single.time.attrs["volume_acquisition_duration"],
+    )
     sidecar = tmp_path / "recording.json"
     sidecar.write_text(
         json.dumps(

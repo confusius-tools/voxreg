@@ -73,8 +73,13 @@ def _validate_registration_geometry(data: xr.DataArray) -> None:
                 f"{dim} coordinates must fit ConfUSIus's signed int64 indices."
             )
         if len(values) > 1:
-            steps = np.diff(values.astype(float))
-            if steps[0] == 0 or not np.allclose(steps, steps[0], rtol=1e-7, atol=1e-10):
+            # Integer differences preserve unit steps above float64's exact range.
+            steps = np.diff(values.astype(np.int64))
+            increasing = values[1] > values[0]
+            if steps[0] == 0 or not (
+                np.all(steps == steps[0])
+                and np.all((values[1:] > values[:-1]) == increasing)
+            ):
                 raise ValueError(
                     f"{dim} coordinates must be uniformly spaced and strictly monotonic."
                 )
@@ -88,7 +93,7 @@ def _validate_registration_geometry(data: xr.DataArray) -> None:
         )
 
 
-def _center_positions(
+def _compute_center_positions(
     data: xr.DataArray, mode: str, name: str
 ) -> npt.NDArray[np.float64]:
     """Return geometric or original-intensity centroids in array-position k/j/i."""
@@ -117,7 +122,9 @@ def _center_positions(
     return np.asarray(centers)
 
 
-def _plane_alignment(fixed: xr.DataArray, moving: xr.DataArray, mapped_normal=None):
+def _compute_plane_alignment(
+    fixed: xr.DataArray, moving: xr.DataArray, mapped_normal=None
+):
     """Align normals (unoriented unless seeded), with normal-only center shift."""
     affines = [position_to_world(data) for data in (fixed, moving)]
     normals, centers = [], []

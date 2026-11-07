@@ -1,12 +1,14 @@
 """Physical centering uses original intensities, not fitting/display scaling."""
 
+# ruff: noqa: B009 -- ITK generates these attributes dynamically; getattr keeps typing accurate.
+
 from typing import Literal
 
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import torch
 from confusius import create_voxeldata
+from registration_options import RegistrationOptions
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
 

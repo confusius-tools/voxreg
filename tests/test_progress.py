@@ -5,11 +5,11 @@ from io import StringIO
 import confusius._utils.progress as cf_progress
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from confusius import create_voxeldata
 from numpy.testing import assert_array_equal
+from registration_options import RegistrationOptions
 from rich.console import Console
 
 from voxreg import register, rigid

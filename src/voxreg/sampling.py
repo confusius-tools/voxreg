@@ -11,16 +11,18 @@ import torch
 import torch.nn.functional as F
 import xarray as xr
 
-from voxreg.geometry import _plane_alignment, position_to_world
+from voxreg.geometry import _compute_plane_alignment, position_to_world
 from voxreg.transforms import (
-    initial_linear_parameters,
-    intrinsic_linear,
-    linear_world_matrices,
+    build_intrinsic_linear,
+    build_linear_world_matrices,
+    recover_linear_parameters,
     validate_matrices,
 )
 
 
 class _TensorOptions(TypedDict):
+    """Type shared tensor construction options."""
+
     device: str
     dtype: torch.dtype
 
@@ -114,14 +116,15 @@ def make_plane(
     lattice = basis.T @ pixels
     h, w = data.sizes["j"], data.sizes["i"]
     center_pixel = np.array([(w - 1) / 2, (h - 1) / 2])
-    j, i = np.indices((h, w), dtype=float)
-    points = (np.stack((i, j), axis=-1) - center_pixel) @ lattice.T
     geometric_center = affine[:3, 3] + pixels @ center_pixel
     rotation_offset = None
     if center is not None:
         rotation_offset = basis.T @ (geometric_center - center)
-        points = points + rotation_offset
-    radius = np.sqrt(np.mean(np.sum(points**2, axis=-1)))
+    variance = (np.array([w, h], dtype=float) ** 2 - 1) / 12
+    radius = np.sqrt(
+        (lattice**2 @ variance).sum()
+        + (0 if rotation_offset is None else rotation_offset @ rotation_offset)
+    )
     ell = np.linalg.norm(pixels, axis=0).min()
     options: _TensorOptions = {"device": device, "dtype": dtype}
     inverse_lattice = torch.tensor(np.linalg.inv(lattice), **options)
@@ -247,7 +250,7 @@ def make_grid(
                     "Noncoplanar slices need a plane-compatible initial_transform or initialization='align_planes'; centering alone cannot correct tilt."
                 )
             assert seeds is not None
-            plane_rotation, plane_shift = _plane_alignment(
+            plane_rotation, plane_shift = _compute_plane_alignment(
                 fixed, moving, seeds[0, :3, :3] @ normal
             )
         plane = make_plane(fixed, device=device, dtype=dtype, center=center)
@@ -338,7 +341,7 @@ def make_grid(
     )
 
 
-def rotation_vectors(vectors: torch.Tensor) -> torch.Tensor:
+def build_rotations(vectors: torch.Tensor) -> torch.Tensor:
     """Compute right-handed XYZ rotations with axes stored in z/y/x order.
 
     Parameters
@@ -361,11 +364,12 @@ def rotation_vectors(vectors: torch.Tensor) -> torch.Tensor:
     return (identity + a * skew + b * (skew @ skew)).flip((-2, -1))
 
 
-def _model_physical_transform(
+def _build_model_physical_transform(
     parameters: torch.Tensor, grid: SpatialGrid
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Embed centered model parameters as world linear maps and center shifts."""
     if grid.transform != "rigid":
-        linear, translation = intrinsic_linear(parameters, grid)
+        linear, translation = build_intrinsic_linear(parameters, grid)
         if grid.planar:
             basis = grid.resident_basis
             identity = torch.eye(2, device=parameters.device, dtype=parameters.dtype)
@@ -379,24 +383,29 @@ def _model_physical_transform(
         basis = grid.resident_basis
         identity = torch.eye(2, device=parameters.device, dtype=parameters.dtype)
         rotation = torch.eye(3, device=parameters.device, dtype=parameters.dtype) + (
-            basis @ (rotation_matrices(parameters[:, 0]) - identity) @ basis.T
+            basis @ (build_plane_rotations(parameters[:, 0]) - identity) @ basis.T
         )
         translation = parameters[:, 1:] @ basis.T
     else:
-        rotation, translation = rotation_vectors(parameters[:, :3]), parameters[:, 3:]
+        rotation, translation = (
+            build_rotations(parameters[:, :3]),
+            parameters[:, 3:],
+        )
     return rotation, translation
 
 
-def _physical_transform(parameters, grid):
-    linear, translation = _model_physical_transform(parameters, grid)
+def _build_physical_transform(parameters, grid):
+    """Compose centered model motion with the optional seeded plane placement."""
+    linear, translation = _build_model_physical_transform(parameters, grid)
     if grid.resident_rotation is not None:
         linear = grid.resident_rotation @ linear
         translation = translation @ grid.resident_rotation.T + grid.resident_shift
     return linear, translation
 
 
-def _grid_coordinates(parameters, grid, dimensions, *, sampler_order=False):
-    rotation, translation = _physical_transform(parameters, grid)
+def _compute_grid_coordinates(parameters, grid, dimensions, *, sampler_order=False):
+    """Build normalized moving queries for the native fixed sampling domain."""
+    rotation, translation = _build_physical_transform(parameters, grid)
     identity = torch.eye(3, device=parameters.device, dtype=parameters.dtype)
     linear = (
         grid.base
@@ -435,6 +444,7 @@ def _sample_grid(
     interpolation: str,
     displacement: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Sample independent grids, sharing cached CPU lattices and source storage."""
     cpu_volume = (
         images.device.type == "cpu"
         and not grid.planar
@@ -448,7 +458,7 @@ def _sample_grid(
         and displacement is None
         and interpolation == "linear"  # Preserve nearest-neighbor tie arithmetic.
     )
-    mapped, rotation = _grid_coordinates(
+    mapped, rotation = _compute_grid_coordinates(
         parameters, grid, images.ndim - 1, sampler_order=native_order
     )
     if displacement is not None:
@@ -492,12 +502,13 @@ def _sample_grid(
     return sampled, valid
 
 
-def _plane_coordinates(parameters, plane):
+def _compute_plane_coordinates(parameters, plane):
+    """Build planar queries as displacements from identity to limit cancellation."""
     if plane.transform == "rigid":
-        rotation = rotation_matrices(parameters[:, 0])
+        rotation = build_plane_rotations(parameters[:, 0])
         physical_translation = parameters[:, 1:]
     else:
-        rotation, physical_translation = intrinsic_linear(parameters, plane)
+        rotation, physical_translation = build_intrinsic_linear(parameters, plane)
     # Compose tiny matrices first; dense, skinny GEMMs are slow on CPU and CUDA.
     delta = (
         plane.plane_to_normalized
@@ -527,10 +538,12 @@ def _plane_coordinates(parameters, plane):
 def _prepare_displaced_sampling(images, parameters, geometry):
     """Cache complete seed queries, never a resampled or prewarped image."""
     if isinstance(geometry, SpatialGrid):
-        base, rotation = _grid_coordinates(parameters, geometry, images.ndim - 1)
+        base, rotation = _compute_grid_coordinates(
+            parameters, geometry, images.ndim - 1
+        )
         mapping = geometry.world_to_normalized @ rotation @ geometry.resident_basis
     else:
-        base, rotation = _plane_coordinates(parameters, geometry)
+        base, rotation = _compute_plane_coordinates(parameters, geometry)
         mapping = geometry.plane_to_normalized @ rotation
     return base, mapping, geometry
 
@@ -598,7 +611,7 @@ def _map_displacement(matrix, field, axes=None):
 
 
 def _sample_displaced(images, normalized, interpolation):
-    """Fixed-order linear interpolation with double geometry and image-dtype math.
+    """Interpolate with double geometry and image-dtype arithmetic in fixed order.
 
     Unlike float32 normalized grid_sample, voxel coordinates are not quantized
     before selecting interpolation cells. At float32-image voxel knots, remove
@@ -669,7 +682,7 @@ def _sample_displaced(images, normalized, interpolation):
     return result
 
 
-def rotation_matrices(angles: torch.Tensor) -> torch.Tensor:
+def build_plane_rotations(angles: torch.Tensor) -> torch.Tensor:
     """Build differentiable 2D rotations.
 
     Parameters
@@ -724,7 +737,7 @@ def sample_rigid(
     """
     if isinstance(plane, SpatialGrid):
         return _sample_grid(images, parameters, plane, interpolation, displacement)
-    grid, rotation = _plane_coordinates(parameters, plane)
+    grid, rotation = _compute_plane_coordinates(parameters, plane)
     if displacement is not None:
         mapping = plane.plane_to_normalized @ rotation
         return _sample_prepared(
@@ -742,7 +755,7 @@ def sample_rigid(
     return sampled, valid
 
 
-def global_ncc(
+def compute_global_ncc(
     moved: torch.Tensor, fixed: torch.Tensor, valid: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute independent, valid-sample negative squared global correlations.
@@ -807,7 +820,7 @@ def global_ncc(
     return torch.where(meaningful, loss, torch.zeros_like(loss)), meaningful
 
 
-def _initial_parameters(
+def _recover_initial_parameters(
     transforms: npt.ArrayLike, plane: Plane | SpatialGrid, count: int
 ) -> npt.NDArray[np.float64]:
     """Validate world pull seeds and recover the optimized centered parameters."""
@@ -824,7 +837,7 @@ def _initial_parameters(
             "bij,j->bi", values[:, :3, :3] - np.eye(3), plane.center
         )
     if plane.transform != "rigid":
-        return initial_linear_parameters(values, plane)
+        return recover_linear_parameters(values, plane)
     rotations = values[:, :3, :3]
     if not np.allclose(
         rotations.transpose(0, 2, 1) @ rotations, np.eye(3), rtol=0, atol=1e-6
@@ -894,7 +907,7 @@ def _initial_parameters(
     return np.column_stack((vectors, translations))
 
 
-def _model_world_matrices(
+def _build_model_world_matrices(
     parameters: npt.ArrayLike, plane: Plane | SpatialGrid
 ) -> npt.NDArray[np.float64]:
     """Embed centered model transforms in homogeneous world z/y/x coordinates.
@@ -914,10 +927,10 @@ def _model_world_matrices(
         Fixed-world-to-moving-world pull matrices.
     """
     if plane.transform != "rigid":
-        return linear_world_matrices(parameters, plane)
+        return build_linear_world_matrices(parameters, plane)
     values = np.asarray(parameters, dtype=np.float64)
     if isinstance(plane, SpatialGrid) and not plane.planar:
-        rotation = rotation_vectors(torch.from_numpy(values[:, :3])).numpy()
+        rotation = build_rotations(torch.from_numpy(values[:, :3])).numpy()
         matrices = np.broadcast_to(np.eye(4), (len(values), 4, 4)).copy()
         matrices[:, :3, :3] = rotation
         matrices[:, :3, 3] = values[:, 3:] - np.einsum(
@@ -938,7 +951,7 @@ def _model_world_matrices(
     return matrices
 
 
-def world_matrices(parameters, plane):
+def build_world_matrices(parameters, plane):
     """Export the complete fixed-world-to-moving-world pull, including plane placement.
 
     Parameters
@@ -953,7 +966,7 @@ def world_matrices(parameters, plane):
     numpy.ndarray
         Complete homogeneous world z/y/x pulls, shaped (batch, 4, 4).
     """
-    matrices = _model_world_matrices(parameters, plane)
+    matrices = _build_model_world_matrices(parameters, plane)
     if isinstance(plane, SpatialGrid) and plane.plane_rotation is not None:
         displacement = (
             np.einsum("bij,j->bi", matrices[:, :3, :3] - np.eye(3), plane.center)

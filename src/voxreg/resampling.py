@@ -13,22 +13,23 @@ from voxreg.geometry import (
     _validate_registration_geometry,
     position_to_world,
 )
-from voxreg.rigid import _automatic_batch_size, _output_template
+from voxreg.rigid import _build_output_template, _choose_batch_size
 from voxreg.sampling import _sample_displaced
 from voxreg.transforms import validate_matrices
 
 
 def _sample_linear(
-    images: torch.Tensor, query: torch.Tensor
+    images: torch.Tensor, query: torch.Tensor, *, voxel_extent: bool = False
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Consume owned xyz index queries without fitting-only coordinate round trips."""
     sizes = np.array(images.shape[1:][::-1])
+    extent = (sizes == 1) | voxel_extent
     # One transfer; the adjacent double preserves half-open singleton faces.
     lower, upper, scale, shift = torch.tensor(
         np.stack(
             (
-                np.where(sizes == 1, -0.5, -1e-10),
-                np.where(sizes == 1, np.nextafter(0.5, -np.inf), sizes - 1 + 1e-10),
+                np.where(extent, -0.5, -1e-10),
+                np.where(extent, np.nextafter(sizes - 0.5, -np.inf), sizes - 1 + 1e-10),
                 np.where(sizes == 1, 0.0, 2 / np.maximum(sizes - 1, 1)),
                 np.where(sizes == 1, 0.0, -1.0),
             )
@@ -119,7 +120,8 @@ def resample(
         time metadata. Integer interpolation is rounded to nearest-even and clipped.
     valid : xarray.DataArray
         Boolean mask of supported moving-image sample centers. Singleton axes
-        have half-open voxel-extent support, as for slice registration.
+        have half-open voxel-extent support. Mixed slice/volume pairs use this
+        support on every axis, matching registration.
 
     Raises
     ------
@@ -165,6 +167,7 @@ def resample(
         if "time" in transforms.dims:
             if (
                 "time" not in transforms.coords
+                or transforms.time.dims != ("time",)
                 or not transforms.get_index("time").is_unique
             ):
                 raise ValueError("transforms must have unique time labels.")
@@ -238,17 +241,22 @@ def resample(
             else np.arange(count)
         )
         moving = moving.expand_dims(time=time)
-    if "time" not in moving.coords or not moving.get_index("time").is_unique:
+    if (
+        "time" not in moving.coords
+        or moving.time.dims != ("time",)
+        or not moving.get_index("time").is_unique
+    ):
         raise ValueError("moving must have unique time labels.")
     frames = moving.sizes["time"]
     if not shared and count != frames:
         raise ValueError("Expected one transform per moving frame.")
     if batch_size is None:
-        batch_size = _automatic_batch_size(
+        batch_size = _choose_batch_size(
             moving, reference, "syn" if field else "affine", device
         )
 
     native_linear = interpolation == "linear"
+    mixed = (moving.sizes["k"] == 1) != (reference.sizes["k"] == 1)
     source_affine, target_affine = (
         position_to_world(moving),
         position_to_world(reference),
@@ -341,18 +349,21 @@ def resample(
             normalized = []
             for axis, size in enumerate(moving.shape[1:]):
                 coordinate = query[..., axis]
-                if size == 1:
-                    valid &= (coordinate >= -0.5) & (coordinate < 0.5)
-                    normalized.append(torch.zeros_like(coordinate))
+                if mixed or size == 1:
+                    valid &= (coordinate >= -0.5) & (coordinate < size - 0.5)
                 else:
                     # Allow only double-coordinate roundoff at ordinary lattice faces.
                     valid &= (coordinate >= -1e-10) & (coordinate <= size - 1 + 1e-10)
-                    normalized.append(coordinate * (2 / (size - 1)) - 1)
+                normalized.append(
+                    torch.zeros_like(coordinate)
+                    if size == 1
+                    else coordinate * (2 / (size - 1)) - 1
+                )
         original = torch.tensor(
             np.ascontiguousarray(moving.values[first:last], dtype=dtype), device=device
         )
         if native_linear:
-            sampled, valid = _sample_linear(original, query)
+            sampled, valid = _sample_linear(original, query, voxel_extent=mixed)
         else:
             sampled = _sample_displaced(
                 original, torch.stack(normalized[::-1], dim=-1), interpolation
@@ -366,7 +377,7 @@ def resample(
             output = np.clip(np.rint(output), limits.min, limits.max)
         outputs.append(output.astype(moving.dtype, copy=False))
         masks.append(valid.cpu().numpy())
-    template = _output_template(moving, reference, False)
+    template = _build_output_template(moving, reference, False)
     resampled = template.copy(data=np.concatenate(outputs))
     valid_data = template.copy(data=np.concatenate(masks))
     valid_data.attrs = {"description": "Valid moving-image sample centers"}

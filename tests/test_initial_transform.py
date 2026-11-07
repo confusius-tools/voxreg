@@ -1,18 +1,20 @@
 """ITK-style optimized initial poses, not frozen pre-transform composition."""
 
+# ruff: noqa: B009 -- ITK generates these attributes dynamically; getattr keeps typing accurate.
+
 from dataclasses import replace
 
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from confusius import create_voxeldata
+from registration_options import RegistrationOptions
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
-from voxreg.sampling import _initial_parameters, make_grid, world_matrices
+from voxreg.sampling import _recover_initial_parameters, build_world_matrices, make_grid
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
@@ -72,14 +74,16 @@ def test_inverse_parameterization_including_pi(angle):
         axis = np.array(axis) / np.linalg.norm(axis)
         matrix[:3, :3] = Rotation.from_rotvec(angle * axis).as_matrix()[::-1, ::-1]
         matrix[:3, 3] = [0.2, -0.3, 0.4]
-        parameters = _initial_parameters(matrix, grid, 1)
+        parameters = _recover_initial_parameters(matrix, grid, 1)
         np.testing.assert_allclose(
-            world_matrices(parameters, grid)[0], matrix, atol=3e-14, rtol=0
+            build_world_matrices(parameters, grid)[0], matrix, atol=3e-14, rtol=0
         )
         shift = np.array([1e9, -2e9, 3e9])
         shifted = replace(grid, center=grid.center + shift)
-        seed = world_matrices(parameters, shifted)[0]
-        recovered = world_matrices(_initial_parameters(seed, shifted, 1), shifted)[0]
+        seed = build_world_matrices(parameters, shifted)[0]
+        recovered = build_world_matrices(
+            _recover_initial_parameters(seed, shifted, 1), shifted
+        )[0]
         points = world_points(fixed)
         points[:3] += shift[:, None]
         ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
@@ -137,7 +141,9 @@ def test_initial_pose_enables_large_displacement_and_is_refined(device):
         ]
     )
     np.testing.assert_allclose(
-        world_matrices(p, make_grid(fixed, moving))[0], result.transforms, atol=1e-13
+        build_world_matrices(p, make_grid(fixed, moving))[0],
+        result.transforms,
+        atol=1e-13,
     )
 
 
@@ -427,7 +433,7 @@ def test_float32_rotation_roundoff_preserves_seed_center():
     seed = seed.astype(np.float32)
     untouched = seed.copy()
     grid = make_grid(fixed, moving)
-    matrix = world_matrices(_initial_parameters(seed, grid, 1), grid)[0]
+    matrix = build_world_matrices(_recover_initial_parameters(seed, grid, 1), grid)[0]
     center = np.r_[grid.center, 1]
     np.testing.assert_allclose(matrix @ center, seed @ center, atol=2e-14, rtol=0)
     np.testing.assert_allclose(matrix[:3, :3].T @ matrix[:3, :3], np.eye(3), atol=1e-15)

@@ -8,7 +8,12 @@ from numpy.testing import assert_allclose, assert_array_equal
 from scipy.ndimage import map_coordinates
 
 from voxreg import position_to_world
-from voxreg.sampling import global_ncc, make_plane, sample_rigid, world_matrices
+from voxreg.sampling import (
+    build_world_matrices,
+    compute_global_ncc,
+    make_plane,
+    sample_rigid,
+)
 
 
 @pytest.mark.parametrize("planar", [False, True])
@@ -82,7 +87,7 @@ def test_physical_sampler_against_scipy(recording_factory, strided, sheared):
     parameters = torch.tensor(
         [[0, 0, 0], [0.019, 0.15, -0.12], [-0.13, -0.21, 0.17]], dtype=torch.float64
     )
-    matrices = world_matrices(parameters.numpy(), plane)
+    matrices = build_world_matrices(parameters.numpy(), plane)
     j, i = np.indices(data.shape[-2:])
     points = np.stack((np.zeros_like(i), j, i, np.ones_like(i)))
     mapped = np.einsum(
@@ -130,7 +135,7 @@ def test_identity_boundaries_and_metric(recording_factory):
     moved, valid = sample_rigid(images, torch.zeros((len(images), 3)), plane)
     assert valid.all()
     assert_allclose(moved, images, atol=2e-6)
-    loss, meaningful = global_ncc(moved, images[0], valid)
+    loss, meaningful = compute_global_ncc(moved, images[0], valid)
     expected = [
         -(np.corrcoef(image.numpy().ravel(), images[0].numpy().ravel())[0, 1] ** 2)
         for image in moved
@@ -180,13 +185,13 @@ def test_gradients_and_masked_ncc(recording_factory):
         sampled, _ = sample_rigid(images, p, plane)
         mask = torch.zeros_like(sampled, dtype=torch.bool)
         mask[:, 5:-5, 5:-5] = True
-        return global_ncc(sampled, fixed, mask)[0]
+        return compute_global_ncc(sampled, fixed, mask)[0]
 
     assert torch.autograd.gradcheck(
         objective, (parameters,), eps=1e-6, atol=1e-5, rtol=1e-4
     )
     moved, valid = sample_rigid(images, parameters, plane)
-    loss, _ = global_ncc(moved, fixed, valid)
+    loss, _ = compute_global_ncc(moved, fixed, valid)
     expected = -(
         np.corrcoef(
             moved.detach().numpy()[valid],
@@ -195,7 +200,7 @@ def test_gradients_and_masked_ncc(recording_factory):
         ** 2
     )
     assert_allclose(loss.detach(), [expected], atol=1e-12)
-    empty_loss, meaningful = global_ncc(
+    empty_loss, meaningful = compute_global_ncc(
         torch.ones_like(images), fixed, torch.zeros_like(images, dtype=torch.bool)
     )
     assert_array_equal(meaningful, [False])
@@ -204,7 +209,9 @@ def test_gradients_and_masked_ncc(recording_factory):
 
 def test_float32_ncc_rejects_rounded_constant_means(device):
     moved = torch.full((2, 23, 31), 0.1, device=device, requires_grad=True)
-    loss, meaningful = global_ncc(moved, moved.detach(), torch.ones_like(moved, dtype=torch.bool))
+    loss, meaningful = compute_global_ncc(
+        moved, moved.detach(), torch.ones_like(moved, dtype=torch.bool)
+    )
     assert not meaningful.any()
     assert torch.equal(loss, torch.zeros_like(loss))
     gradient = torch.autograd.grad(loss.sum(), moved)[0]
@@ -216,7 +223,7 @@ def test_float32_ncc_identical_odd_sized_frames(device):
     moved = source.sin().repeat(3, 1, 1, 1).requires_grad_()
     fixed = (source[0] * 3).cos()
     valid = torch.ones_like(moved, dtype=torch.bool)
-    loss, meaningful = global_ncc(moved, fixed, valid)
+    loss, meaningful = compute_global_ncc(moved, fixed, valid)
     assert meaningful.all() and torch.equal(loss, loss[:1].expand_as(loss))
     gradient = torch.autograd.grad(loss.sum(), moved)[0]
     assert torch.equal(gradient, gradient[:1].expand_as(gradient))
@@ -229,12 +236,16 @@ def test_ncc_follows_fitting_tensor_precision(device, dtype):
     fixed = (values[0] * 3).cos()
     valid = torch.ones_like(moved, dtype=torch.bool)
     valid[:, 0, 0] = False
-    loss, meaningful = global_ncc(moved, fixed, valid)
+    loss, meaningful = compute_global_ncc(moved, fixed, valid)
     assert loss.dtype == dtype and meaningful.all()
     gradient = torch.autograd.grad(loss.sum(), moved)[0]
     assert gradient.dtype == dtype and torch.isfinite(gradient).all()
     expected = [
-        -np.corrcoef(x[mask], fixed.cpu().numpy()[mask])[0, 1] ** 2
-        for x, mask in zip(moved.detach().cpu().numpy(), valid.cpu().numpy(), strict=True)
+        -(np.corrcoef(x[mask], fixed.cpu().numpy()[mask])[0, 1] ** 2)
+        for x, mask in zip(
+            moved.detach().cpu().numpy(), valid.cpu().numpy(), strict=True
+        )
     ]
-    assert_allclose(loss.detach().cpu(), expected, atol=2e-6 if dtype == torch.float32 else 1e-12)
+    assert_allclose(
+        loss.detach().cpu(), expected, atol=2e-6 if dtype == torch.float32 else 1e-12
+    )

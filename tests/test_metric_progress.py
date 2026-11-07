@@ -2,9 +2,9 @@
 
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import torch
 from numpy.testing import assert_array_equal
+from registration_options import RegistrationOptions
 
 from voxreg import register
 

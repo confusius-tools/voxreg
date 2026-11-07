@@ -27,20 +27,20 @@ def test_automatic_policy_caps(monkeypatch, model, planar):
     memory(monkeypatch)
     moving, fixed = images(planar=planar)
     expected = 256 if planar and model != "syn" else 32
-    assert rigid._automatic_batch_size(moving, fixed, model, "cuda") == expected
+    assert rigid._choose_batch_size(moving, fixed, model, "cuda") == expected
 
 
 def test_vram_size_and_reusable_cache(monkeypatch):
     moving, fixed = images(voxels=65536, planar=False)
     memory(monkeypatch, free=128 << 20)
-    assert rigid._automatic_batch_size(moving, fixed, "affine", "cuda") == 2
+    assert rigid._choose_batch_size(moving, fixed, "affine", "cuda") == 2
     memory(monkeypatch, free=128 << 20, reserved=512 << 20, allocated=128 << 20)
-    assert rigid._automatic_batch_size(moving, fixed, "affine", "cuda") == 8
+    assert rigid._choose_batch_size(moving, fixed, "affine", "cuda") == 8
     memory(monkeypatch, free=1)
-    assert rigid._automatic_batch_size(moving, fixed, "syn", "cuda") == 1
+    assert rigid._choose_batch_size(moving, fixed, "syn", "cuda") == 1
     memory(monkeypatch)
     fixed.size *= 128
-    assert rigid._automatic_batch_size(moving, fixed, "syn", "cuda") == 1
+    assert rigid._choose_batch_size(moving, fixed, "syn", "cuda") == 1
 
 
 def test_cpu_and_short_recording(monkeypatch):
@@ -49,11 +49,11 @@ def test_cpu_and_short_recording(monkeypatch):
 
     monkeypatch.setattr(rigid.torch.cuda, "mem_get_info", unexpected)
     moving, fixed = images()
-    assert rigid._automatic_batch_size(moving, fixed, "syn", "cpu") == 32
+    assert rigid._choose_batch_size(moving, fixed, "syn", "cpu") == 32
     moving, fixed = images(frames=3)
-    assert rigid._automatic_batch_size(moving, fixed, "affine", "cpu") == 3
+    assert rigid._choose_batch_size(moving, fixed, "affine", "cpu") == 3
     memory(monkeypatch)
-    assert rigid._automatic_batch_size(moving, fixed, "affine", "cuda") == 3
+    assert rigid._choose_batch_size(moving, fixed, "affine", "cuda") == 3
 
 
 def test_public_default_and_explicit_override(recording_factory, monkeypatch):
@@ -64,7 +64,7 @@ def test_public_default_and_explicit_override(recording_factory, monkeypatch):
         calls.append(True)
         return 2
 
-    monkeypatch.setattr(rigid, "_automatic_batch_size", choose)
+    monkeypatch.setattr(rigid, "_choose_batch_size", choose)
     result = register(moving, max_iterations=1, progress=False)
     assert calls == [True]
     assert result.diagnostics.attrs["batch_size"] == 2

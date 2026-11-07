@@ -9,8 +9,13 @@ from oracles import voxel
 from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register, rigid
-from voxreg.sampling import _initial_parameters, make_grid, sample_rigid, world_matrices
-from voxreg.transforms import affine_properties, configure_transform
+from voxreg.sampling import (
+    _recover_initial_parameters,
+    build_world_matrices,
+    make_grid,
+    sample_rigid,
+)
+from voxreg.transforms import check_affine_parameters, configure_transform
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
@@ -35,7 +40,7 @@ def observe_seed(monkeypatch, records):
                 tuple(target.shape),
                 tuple(sampled.shape[1:]),
                 grid.center.copy(),
-                world_matrices(parameters.cpu().numpy(), grid),
+                build_world_matrices(parameters.cpu().numpy(), grid),
             )
         )
         return (
@@ -160,7 +165,7 @@ def test_slice_affine_constraint_is_on_recording_to_volume_map(
         device=device,
         requires_grad=True,
     )
-    public = world_matrices(p.detach().cpu().numpy(), grid)
+    public = build_world_matrices(p.detach().cpu().numpy(), grid)
     native = np.linalg.inv(public)[0] if moving_slice else public[0]
     frame = np.column_stack(
         (grid.slice_basis, np.cross(grid.slice_basis[:, 0], grid.slice_basis[:, 1]))
@@ -169,7 +174,7 @@ def test_slice_affine_constraint_is_on_recording_to_volume_map(
     assert_allclose(np.linalg.norm(mapped[:, 2]), 1, atol=1e-13, rtol=0)
     assert_allclose(mapped[:, :2].T @ mapped[:, 2], 0, atol=1e-13, rtol=0)
     assert_allclose(
-        _initial_parameters(public, grid, 1),
+        _recover_initial_parameters(public, grid, 1),
         p.detach().cpu().numpy(),
         atol=1e-12,
         rtol=0,
@@ -182,10 +187,10 @@ def test_slice_affine_constraint_is_on_recording_to_volume_map(
     assert torch.isfinite(p.grad).all() and p.grad.abs().max() > 0
     collapsed = p.detach().clone()
     collapsed[:, :6] = -torch.tensor(grid.slice_basis.reshape(-1), device=device)
-    assert not affine_properties(collapsed, grid)[0].any()
+    assert not check_affine_parameters(collapsed, grid)[0].any()
     invalid = native.copy()
     invalid[:3, :3] = mapped @ np.diag([1, 1, 0.7]) @ frame.T
     with pytest.raises(ValueError, match="normal scale/shear/reflection"):
-        _initial_parameters(
+        _recover_initial_parameters(
             np.linalg.inv(invalid) if moving_slice else invalid, grid, 1
         )

@@ -217,7 +217,7 @@ def _run_fireants(
         sources = BatchedImages([image(frame) for frame in fitting[start:stop]])
         calls = 0
 
-        def global_ncc(moved, stationary):
+        def compute_global_ncc(moved, stationary):
             nonlocal calls
             calls += 1
             spatial = tuple(range(1, moved.ndim - 1))
@@ -242,7 +242,7 @@ def _run_fireants(
         }[model]
         options = {"scaling": False} if model == "rigid" else {}
         if linear:
-            options.update(loss_type="custom", custom_loss=global_ncc)
+            options.update(loss_type="custom", custom_loss=compute_global_ncc)
         else:
             options.update(
                 loss_type="cc",

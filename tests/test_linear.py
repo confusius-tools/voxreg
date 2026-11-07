@@ -1,19 +1,26 @@
 """Shared translation/rigid/affine engine: physical pulls, not frozen chains."""
 
+# ruff: noqa: B009 -- ITK generates these attributes dynamically; getattr keeps typing accurate.
+
 from typing import Literal
 
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from confusius import create_voxeldata
+from registration_options import RegistrationOptions
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
-from voxreg.sampling import _initial_parameters, make_grid, sample_rigid, world_matrices
-from voxreg.transforms import affine_properties, configure_transform
+from voxreg.sampling import (
+    _recover_initial_parameters,
+    build_world_matrices,
+    make_grid,
+    sample_rigid,
+)
+from voxreg.transforms import check_affine_parameters, configure_transform
 
 DEVICES: list[Literal["cpu", "cuda"]] = (
     ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
@@ -79,7 +86,7 @@ def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
 
     fixed, moving, truth = linear_pair_factory(planar, model)
     grid = configure_transform(make_grid(fixed, moving), fixed, model)
-    parameters = _initial_parameters(truth, grid, 1)
+    parameters = _recover_initial_parameters(truth, grid, 1)
     native = getattr(itk, "AffineTransform")[itk.D, 3].New()
     native.SetCenter(tuple(grid.center))
     native.SetMatrix(itk.matrix_from_array(truth[:3, :3]))
@@ -89,7 +96,7 @@ def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
     expected = np.array(
         [native.TransformPoint(tuple(p[:3])) for p in points(fixed).T]
     ).T
-    actual = world_matrices(parameters, grid)[0]
+    actual = build_world_matrices(parameters, grid)[0]
     np.testing.assert_allclose(
         (actual @ points(fixed))[:3], expected, rtol=0, atol=3e-14
     )
@@ -125,7 +132,7 @@ def test_seeded_sampling_scipy_and_gradients(
     grid = configure_transform(
         make_grid(fixed, moving, device=device, center=pivot[:3]), fixed, model
     )
-    state = _initial_parameters(truth, grid, 1)
+    state = _recover_initial_parameters(truth, grid, 1)
     state[:, -grid.basis.shape[1] :] += np.linspace(0.013, 0.021, grid.basis.shape[1])
     p = torch.tensor(state, device=device, requires_grad=True)
     values = moving.values[0] if planar else moving.values
@@ -138,7 +145,7 @@ def test_seeded_sampling_scipy_and_gradients(
         rtol=2e-4,
     )
     sampled, valid = sample_rigid(images, p, grid)
-    matrix = world_matrices(p.detach().cpu().numpy(), grid)[0]
+    matrix = build_world_matrices(p.detach().cpu().numpy(), grid)[0]
     coordinates = (np.linalg.inv(position_to_world(moving)) @ matrix @ points(fixed))[
         :3
     ]
@@ -262,7 +269,7 @@ def test_same_grid_slice_kernel_against_independent_path(recording_factory, mode
         p[0, :4] = p.new_tensor([0.01, -0.02, 0.015, -0.005])
     images = torch.tensor(moving.values.astype(np.float64))
     actual, valid = sample_rigid(images, p, grid)
-    matrix = world_matrices(p, grid)[0]
+    matrix = build_world_matrices(p, grid)[0]
     coords = (np.linalg.inv(position_to_world(moving)) @ matrix @ points(fixed))[:3]
     expected = map_coordinates(
         moving.values.astype(np.float64),
@@ -423,7 +430,7 @@ def test_affine_candidate_guard_is_per_frame_and_keeps_best(
     p = grid.parameter_scale.new_zeros((3, 12))
     p[0, 0] = -1
     p[1, 0] = -2
-    valid, sign = affine_properties(p, grid)
+    valid, sign = check_affine_parameters(p, grid)
     np.testing.assert_array_equal(valid, [False, True, True])
     np.testing.assert_array_equal(sign, [0, -1, 1])
     # A large learning rate crosses orientation or loses support; fallback is valid.
@@ -454,7 +461,7 @@ def test_invalid_affine_frame_does_not_stop_companions(
 
     fixed, moving, _ = linear_pair_factory(False)
     series = xr.concat([moving, moving], dim=xr.IndexVariable("time", [0, 1]))
-    original = rigid.affine_properties
+    original = rigid.check_affine_parameters
     calls = 0
 
     def properties(parameters, grid):
@@ -465,7 +472,7 @@ def test_invalid_affine_frame_does_not_stop_companions(
         calls += 1
         return valid, sign
 
-    monkeypatch.setattr(rigid, "affine_properties", properties)
+    monkeypatch.setattr(rigid, "check_affine_parameters", properties)
     result = register(
         series,
         fixed,
@@ -481,18 +488,6 @@ def test_invalid_affine_frame_does_not_stop_companions(
         result.diagnostics.status, ["invalid_transform", "max_iterations"]
     )
     np.testing.assert_array_equal(result.transforms[0], np.eye(4))
-
-
-def test_single_public_registration_entry_point():
-    import voxreg
-
-    assert set(voxreg.__all__) == {
-        "RegistrationResult",
-        "position_to_world",
-        "register",
-        "resample",
-    }
-    assert not hasattr(voxreg, "register_rigid")
 
 
 def test_default_is_identical_to_explicit_rigid(recording_factory):

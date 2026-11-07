@@ -6,7 +6,7 @@ import torch
 class WindowConvergence:
     """Track ITK's normalized, first-order B-spline energy-profile gradient.
 
-    Only finite, active losses enter the history. Stopped frames retain their
+    Callers select finite, active losses. Stopped frames retain their
     history and accumulated absolute energy; no tensors are read on the host.
 
     Parameters
@@ -20,6 +20,7 @@ class WindowConvergence:
     """
 
     def __init__(self, batch_size: int, window_size: int, device: torch.device):
+        """Initialize spline weights and device-resident per-frame histories."""
         # ITK's spline fitter uses float32 coordinates/weights, even for double energies.
         position = torch.arange(window_size, dtype=torch.float32, device="cpu")
         position /= window_size - 1
