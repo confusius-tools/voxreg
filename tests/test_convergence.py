@@ -78,7 +78,7 @@ def test_stops_before_next_update_and_disabled_window_reaches_limit(
             len(moved), dtype=torch.bool, device=moved.device
         )
 
-    monkeypatch.setattr(rigid, "global_ncc", flat_metric)
+    monkeypatch.setattr(rigid, "compute_global_ncc", flat_metric)
     data, _, _ = recording_factory()
     options: RegistrationOptions = {
         "device": device,
@@ -148,7 +148,7 @@ def test_terminal_check_preserves_frozen_full_budget_results(
     stopped = register(data, return_transforms=True, **options)
     stopped_calls = len(calls)
     calls.clear()
-    monkeypatch.setattr(rigid, "_all_frames_stopped", lambda status: False)
+    monkeypatch.setattr(rigid, "_check_all_frames_stopped", lambda status: False)
     full_budget = register(data, return_transforms=True, **options)
     assert stopped_calls < len(calls)
     for field in ["registered", "valid", "transforms", "diagnostics"]:
@@ -174,8 +174,8 @@ def test_polling_is_batch_wide_bounded_and_absent_in_fixed_budget_controls(
         polls.append(len(evaluations))
         return False
 
-    monkeypatch.setattr(rigid, "global_ncc", metric)
-    monkeypatch.setattr(rigid, "_all_frames_stopped", not_finished)
+    monkeypatch.setattr(rigid, "compute_global_ncc", metric)
+    monkeypatch.setattr(rigid, "_check_all_frames_stopped", not_finished)
     data, _, _ = recording_factory()
     options: RegistrationOptions = {
         "device": device,

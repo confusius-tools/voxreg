@@ -8,14 +8,8 @@ from confusius._utils.geometry import VoxelToWorldIndex
 from confusius.validation import validate_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 
-import voxreg
 from voxreg import position_to_world, register
 from voxreg.geometry import _check_affine, _validate_registration_geometry
-
-
-def test_voxeldata_helpers_are_owned_by_confusius():
-    assert not hasattr(voxreg, "create_voxeldata")
-    assert not hasattr(voxreg, "validate_voxeldata")
 
 
 def test_native_coordinates_and_world_index(recording_factory):
@@ -119,6 +113,33 @@ def test_unsigned_descending_native_indices():
     expected = np.eye(4)
     expected[1, 1], expected[1, 3] = -2, 5
     assert_array_equal(position_to_world(data), expected)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_large_native_indices_preserve_exact_uniform_steps(reverse):
+    coordinates = 2**53 + np.arange(4, dtype=np.int64)
+    if reverse:
+        coordinates = coordinates[::-1]
+    data = create_voxeldata(
+        np.ones((1, 4, 4)),
+        dims=("k", "j", "i"),
+        j=coordinates,
+        voxel_to_world=np.eye(4),
+    )
+    affine = position_to_world(data)
+    assert affine[1, 1] == (-1 if reverse else 1)
+    assert affine[1, 3] == coordinates[0]
+
+
+def test_large_nonuniform_native_steps_are_rejected():
+    data = create_voxeldata(
+        np.ones((1, 3, 4)),
+        dims=("k", "j", "i"),
+        j=[0, 100_000_000, 200_000_001],
+        voxel_to_world=np.eye(4),
+    )
+    with pytest.raises(ValueError, match="uniformly spaced"):
+        position_to_world(data)
 
 
 def test_native_indices_cannot_wrap_in_confusius():

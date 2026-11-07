@@ -95,13 +95,13 @@ def _worker(config_path, mode):
         moving, fixed, amplitudes = _voxel_inputs(arrays, metadata)
         record["input_sha256"] = metadata["input_sha256"]
         record["resident_input_bytes"] = sum(a.nbytes for a in arrays.values())
-        from voxreg.rigid import _automatic_batch_size
+        from voxreg.rigid import _choose_batch_size
 
         series = moving if "time" in moving.dims else moving.expand_dims(time=[0])
         config["batch_size"] = min(
             series.sizes["time"],
             config["batch_size"]
-            or _automatic_batch_size(
+            or _choose_batch_size(
                 series, fixed, config["model"], "cuda" if cuda else "cpu"
             ),
         )

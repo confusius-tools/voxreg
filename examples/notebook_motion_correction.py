@@ -106,12 +106,25 @@ def save_nifti(path: Path, data: xr.DataArray) -> None:
     image = nib.Nifti1Image(values.transpose(3, 2, 1, 0), affine, dtype=values.dtype)
     image.header.set_xyzt_units("mm", "sec")
     image.header["pixdim"][4] = (
-        np.median(np.diff(data.time.values)) if data.sizes["time"] > 1 else 1
+        np.median(np.diff(data.time.values))
+        if data.sizes["time"] > 1
+        else data.time.attrs.get("volume_acquisition_duration", 1)
     )
     image.header["toffset"] = float(data.time.values[0])
     nib.save(image, path)
-    path.with_name(path.name.removesuffix(".nii.gz") + ".json").write_text(
-        json.dumps({"VolumeTiming": data.time.values.tolist()}, indent=2) + "\n"
+    path.with_name(
+        path.name.removesuffix(".nii.gz").removesuffix(".nii") + ".json"
+    ).write_text(
+        json.dumps(
+            {
+                "VolumeTiming": data.time.values.tolist(),
+                "FrameAcquisitionDuration": data.time.attrs.get(
+                    "volume_acquisition_duration", float(image.header["pixdim"][4])
+                ),
+            },
+            indent=2,
+        )
+        + "\n"
     )
 
 

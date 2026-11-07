@@ -15,28 +15,42 @@ from confusius._utils.progress import progress_bar
 from voxreg.convergence import WindowConvergence
 from voxreg.geometry import (
     VOXEL_DIMS,
-    _center_positions,
-    _plane_alignment,
+    _compute_center_positions,
+    _compute_plane_alignment,
     _validate_registration_geometry,
     position_to_world,
 )
 from voxreg.sampling import (
     Plane,
     SpatialGrid,
-    _initial_parameters,
-    global_ncc,
+    _recover_initial_parameters,
+    build_world_matrices,
+    compute_global_ncc,
     make_grid,
     sample_rigid,
-    world_matrices,
 )
 from voxreg.transforms import (
-    affine_properties,
+    build_linear_diagnostics,
+    check_affine_parameters,
     configure_transform,
-    linear_diagnostics,
+)
+
+_STATUS_LABELS = np.array(
+    [
+        "running",
+        "converged",
+        "insufficient_overlap",
+        "invalid_metric",
+        "reference",
+        "max_iterations",
+        "invalid_transform",
+    ]
 )
 
 
 class _MetricOptions(TypedDict, total=False):
+    """Type optional resident metric callback arguments."""
+
     metric_callback: Callable[[torch.Tensor, torch.Tensor], None]
     metric_interval: int
 
@@ -84,8 +98,8 @@ class RegistrationResult:
         return self.forward_transforms
 
 
-def _fitting_images(raw, target_raw, intensity_scaling):
-    """Shared preprocessing; preserve float64/integer detail before float32 fitting."""
+def _prepare_fitting_images(raw, target_raw, intensity_scaling):
+    """Prepare float32 fitting images while preserving float64/integer contrast."""
     spatial_axes = tuple(range(1, raw.ndim))
     preprocessing_dtype = (
         np.float64
@@ -95,8 +109,8 @@ def _fitting_images(raw, target_raw, intensity_scaling):
         )
         else np.float32
     )
-    fit_raw = raw.astype(preprocessing_dtype)
-    target_raw = target_raw.astype(preprocessing_dtype)
+    fit_raw = raw.astype(preprocessing_dtype, copy=False)
+    target_raw = target_raw.astype(preprocessing_dtype, copy=False)
     moving_scale = float(np.abs(fit_raw).max())
     scale = max(moving_scale, float(np.abs(target_raw).max()))
     if moving_scale == 0:
@@ -110,10 +124,7 @@ def _fitting_images(raw, target_raw, intensity_scaling):
         fit, target = fit_raw / scale, target_raw / scale
     if preprocessing_dtype == np.float64:
         for values in (fit, target):
-            corner = (slice(None),) * (values.ndim - len(spatial_axes)) + (
-                slice(0, 1),
-            ) * len(spatial_axes)
-            values -= values[corner]
+            values -= values[(...,) + (slice(0, 1),) * len(spatial_axes)]
             amplitude = np.abs(values).max(
                 axis=tuple(range(-len(spatial_axes), 0)), keepdims=True
             )
@@ -124,7 +135,8 @@ def _fitting_images(raw, target_raw, intensity_scaling):
     return fit, target
 
 
-def _output_template(moving, fixed, same_grid):
+def _build_output_template(moving, fixed, same_grid):
+    """Preserve moving metadata and time coordinates on the fixed spatial grid."""
     if same_grid:
         return moving
     template = fixed.drop_vars("time", errors="ignore").expand_dims(time=moving.time)
@@ -140,7 +152,24 @@ def _output_template(moving, fixed, same_grid):
     return template
 
 
-def _all_frames_stopped(status: torch.Tensor) -> bool:
+def _build_result(
+    template, values, validity, forward, diagnostics, inverse, spatial_input
+):
+    """Package outputs, removing synthetic time only for a spatial input pair."""
+    if values.ndim == 3:
+        values, validity = values[:, None], validity[:, None]
+    registered, valid = template.copy(data=values), template.copy(data=validity)
+    valid.attrs = {"description": "Valid moving-image sample centers"}
+    if spatial_input:
+        registered, valid, diagnostics = (
+            value.isel(time=0, drop=True) for value in (registered, valid, diagnostics)
+        )
+        forward = None if forward is None else forward.isel(time=0, drop=True)
+        inverse = None if inverse is None else inverse.isel(time=0, drop=True)
+    return RegistrationResult(registered, valid, forward, diagnostics, inverse)
+
+
+def _check_all_frames_stopped(status: torch.Tensor) -> bool:
     """Read one batch-wide scalar; on CUDA this synchronizes the device stream."""
     return not (status == 0).any().item()
 
@@ -212,13 +241,13 @@ def _optimize(
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
     check_interval = 10 if images.is_cuda else 1
     orientation = (
-        affine_properties(u.detach() * plane.parameter_scale, plane)[1]
+        check_affine_parameters(u.detach() * plane.parameter_scale, plane)[1]
         if plane.transform == "affine"
         else None
     )
     for iteration in range(max_iterations):
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
-        loss, meaningful = global_ncc(moved, fixed, valid)
+        loss, meaningful = compute_global_ncc(moved, fixed, valid)
         if metric_callback is not None and iteration % metric_interval == 0:
             metric_callback(
                 steps, torch.where(meaningful & ~constant, loss.detach(), torch.nan)
@@ -228,7 +257,7 @@ def _optimize(
         active = status == 0
         with torch.no_grad():
             if orientation is not None:
-                admissible, sign = affine_properties(
+                admissible, sign = check_affine_parameters(
                     u.detach() * plane.parameter_scale, plane
                 )
                 status = torch.where(
@@ -273,19 +302,19 @@ def _optimize(
             and iteration + 1 >= convergence_window_size
             and (iteration + 1 - convergence_window_size) % check_interval == 0
             and iteration + 1 < max_iterations
-            and _all_frames_stopped(status)
+            and _check_all_frames_stopped(status)
         ):
             break
     with torch.no_grad():
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
-        loss, meaningful = global_ncc(moved, fixed, valid)
+        loss, meaningful = compute_global_ncc(moved, fixed, valid)
         if metric_callback is not None:
             metric_callback(steps, torch.where(meaningful & ~constant, loss, torch.nan))
         overlap = valid.sum(dim=spatial_axes) > 1
         good = overlap & meaningful & torch.isfinite(loss)
         eligible = (status == 0) | (status == 1)
         if orientation is not None:
-            admissible, sign = affine_properties(u * plane.parameter_scale, plane)
+            admissible, sign = check_affine_parameters(u * plane.parameter_scale, plane)
             status = torch.where(
                 eligible & (~admissible | (sign != orientation)), 6, status
             )
@@ -299,8 +328,8 @@ def _optimize(
     return best * plane.parameter_scale, steps, status
 
 
-def _automatic_batch_size(moving, fixed, transform, device):
-    """Conservative working-set estimate, not an optimizer probe or OOM retry."""
+def _choose_batch_size(moving, fixed, transform, device):
+    """Choose a frame batch from a conservative working-set estimate."""
     frames = moving.sizes["time"]
     if device == "cpu":
         return min(frames, 32)
@@ -569,8 +598,6 @@ def register(
         if fixed is None:
             raise ValueError("fixed is required for spatial-only input without time.")
         moving = moving.expand_dims(time=[0])
-    if moving.dims != ("time", *VOXEL_DIMS):
-        raise ValueError("moving must have dimensions (time, k, j, i).")
     implicit_fixed = fixed is None
     if fixed is None:
         fixed = moving.isel(time=0, drop=True)
@@ -621,7 +648,12 @@ def register(
         or convergence_minimum_value < 0
     ):
         raise ValueError("convergence_minimum_value must be finite and nonnegative.")
-    if not np.isfinite(learning_rate) or learning_rate <= 0:
+    if (
+        not isinstance(learning_rate, (int, float, np.integer, np.floating))
+        or isinstance(learning_rate, bool)
+        or not np.isfinite(learning_rate)
+        or learning_rate <= 0
+    ):
         raise ValueError("learning_rate must be finite and positive.")
     if device not in ("cpu", "cuda") or (
         device == "cuda" and not torch.cuda.is_available()
@@ -647,7 +679,7 @@ def register(
     if type(metric_interval) is not int or metric_interval < 1:
         raise ValueError("metric_interval must be a positive integer.")
     if batch_size is None:
-        batch_size = _automatic_batch_size(moving, fixed, transform, device)
+        batch_size = _choose_batch_size(moving, fixed, transform, device)
     if isinstance(progress, str):
         progress = moving.sizes["time"] > 1
     if initialization is not None and initial_transform is not None:
@@ -675,8 +707,8 @@ def register(
         ):
             raise ValueError("align_planes is only defined for two k=1 slices.")
         mode = "center_geometry" if initialization == "align_planes" else initialization
-        fixed_position = _center_positions(fixed, mode, "fixed")[0]
-        moving_positions = _center_positions(moving, mode, "moving")
+        fixed_position = _compute_center_positions(fixed, mode, "fixed")[0]
+        moving_positions = _compute_center_positions(moving, mode, "moving")
         af, am = position_to_world(fixed), position_to_world(moving)
         fixed_offset = af[:3, :3] @ fixed_position
         initial_transform = np.broadcast_to(
@@ -687,7 +719,7 @@ def register(
             am[:3, 3] - af[:3, 3] + moving_positions @ am[:3, :3].T - fixed_offset
         )
         if initialization == "align_planes":
-            rotation, _ = _plane_alignment(fixed, moving)
+            rotation, _ = _compute_plane_alignment(fixed, moving)
             initial_transform[:, :3, :3] = rotation
             initial_transform[:, :3, 3] -= (rotation - np.eye(3)) @ (
                 af[:3, 3] + fixed_offset
@@ -751,7 +783,9 @@ def register(
                     and initial_transform.attrs[key] != expected
                 ):
                     raise ValueError(f"initial_transform {key} must be {expected!r}.")
-        initial = _initial_parameters(initial_transform, plane, moving.sizes["time"])
+        initial = _recover_initial_parameters(
+            initial_transform, plane, moving.sizes["time"]
+        )
         if implicit_fixed:
             if not np.allclose(initial[0], 0, rtol=0, atol=1e-12):
                 raise ValueError(
@@ -766,7 +800,7 @@ def register(
     resampling_dtype = (
         np.float64 if integer_output or raw.dtype.itemsize > 4 else np.float32
     )
-    fit, target = _fitting_images(
+    fit, target = _prepare_fitting_images(
         raw, fixed.values[0] if planar else fixed.values, intensity_scaling
     )
     timings = {
@@ -804,15 +838,8 @@ def register(
             total_sigma=0.5,
             radius=2,
         )
-    outputs, masks, parameters, clocks, statuses, objectives, overlaps = (
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-    )
+    outputs, masks, parameters = [], [], []
+    clocks, statuses, objectives, overlaps = [], [], [], []
     with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
         for first in range(0, len(raw), batch_size):
             last = min(first + batch_size, len(raw))
@@ -837,6 +864,7 @@ def register(
             if metric_callback is not None:
 
                 def report_metrics(clocks, objective, first=first, last=last):
+                    """Report owned CPU arrays with recording-wide frame indices."""
                     metric_callback(
                         np.arange(first, last, dtype=np.int64),
                         clocks.detach().cpu().numpy().copy(),
@@ -877,7 +905,7 @@ def register(
                     sampled = torch.where(reference[reference_shape], original, sampled)
                     valid = valid | reference[reference_shape]
                 fitted, fit_valid = sample_rigid(images, physical, plane)
-                loss, meaningful = global_ncc(fitted, target_tensor, fit_valid)
+                loss, meaningful = compute_global_ncc(fitted, target_tensor, fit_valid)
                 nonconstant = images.amax(dim=spatial_axes) > images.amin(
                     dim=spatial_axes
                 )
@@ -899,10 +927,16 @@ def register(
             elif callable(progress):
                 progress(last, len(raw))
     params = np.concatenate(parameters)
-    matrices = world_matrices(params, plane)
+    values, validity = np.concatenate(outputs), np.concatenate(masks)
     diagnostic_params, diagnostic_plane = params, plane
     mixed = isinstance(plane, SpatialGrid) and plane.slice_basis is not None
+    matrices = (
+        build_world_matrices(params, plane)
+        if return_transforms or (mixed and transform == "affine")
+        else None
+    )
     if mixed and transform == "affine":
+        assert matrices is not None
         shifts = matrices[:, :3, 3] + np.einsum(
             "bij,j->bi", matrices[:, :3, :3] - np.eye(3), plane.center
         )
@@ -910,72 +944,54 @@ def register(
             ((matrices[:, :3, :3] - np.eye(3)).reshape(-1, 9), shifts)
         )
         diagnostic_plane = replace(plane, slice_basis=None, resident_slice_basis=None)
-    labels = np.array(
-        [
-            "running",
-            "converged",
-            "insufficient_overlap",
-            "invalid_metric",
-            "reference",
-            "max_iterations",
-            "invalid_transform",
-        ]
-    )
-    motion = (
-        {}
-        if transform != "rigid"
-        else (
-            {
-                "angle": (
-                    "time",
-                    diagnostic_params[:, 0],
-                    {"units": "rad", "basis": "intrinsic i/j plane"},
-                ),
-                "translation_i": (
-                    "time",
-                    diagnostic_params[:, 1],
-                    {
-                        "units": "mm",
-                        "meaning": "center displacement along intrinsic unit i",
-                    },
-                ),
-                "translation_j": (
-                    "time",
-                    diagnostic_params[:, 2],
-                    {
-                        "units": "mm",
-                        "meaning": "center displacement along orthogonalized intrinsic j",
-                    },
-                ),
-            }
-            if planar
-            else {
-                name: (
+    if transform != "rigid":
+        motion = build_linear_diagnostics(diagnostic_params, diagnostic_plane)
+    elif planar:
+        motion = {
+            "angle": (
+                "time",
+                diagnostic_params[:, 0],
+                {"units": "rad", "basis": "intrinsic i/j plane"},
+            ),
+            **{
+                f"translation_{axis}": (
                     "time",
                     diagnostic_params[:, column],
-                    {"units": "rad" if column < 3 else "mm", "basis": "world z/y/x"},
+                    {
+                        "units": "mm",
+                        "meaning": f"center displacement along {direction}",
+                    },
                 )
-                for column, name in enumerate(
-                    (
-                        "rotation_z",
-                        "rotation_y",
-                        "rotation_x",
-                        "translation_z",
-                        "translation_y",
-                        "translation_x",
-                    )
+                for column, axis, direction in (
+                    (1, "i", "intrinsic unit i"),
+                    (2, "j", "orthogonalized intrinsic j"),
                 )
-            }
-        )
-    )
-    if transform != "rigid":
-        motion = linear_diagnostics(diagnostic_params, diagnostic_plane)
+            },
+        }
+    else:
+        motion = {
+            name: (
+                "time",
+                diagnostic_params[:, column],
+                {"units": "rad" if column < 3 else "mm", "basis": "world z/y/x"},
+            )
+            for column, name in enumerate(
+                (
+                    "rotation_z",
+                    "rotation_y",
+                    "rotation_x",
+                    "translation_z",
+                    "translation_y",
+                    "translation_x",
+                )
+            )
+        }
     diagnostics = xr.Dataset(
         {
             "objective": ("time", np.concatenate(objectives)),
             "valid_fraction": ("time", np.concatenate(overlaps)),
             "n_iterations": ("time", np.concatenate(clocks)),
-            "status": ("time", labels[np.concatenate(statuses)]),
+            "status": ("time", _STATUS_LABELS[np.concatenate(statuses)]),
             **motion,
         },
         coords={"time": moving.time},
@@ -1007,7 +1023,7 @@ def register(
         if moving.sizes["k"] == 1:
             diagnostics["output_valid_fraction"] = (
                 "time",
-                np.concatenate(masks).reshape(len(raw), -1).mean(axis=1),
+                validity.reshape(len(raw), -1).mean(axis=1),
             )
             if np.any(diagnostics.output_valid_fraction.values == 0):
                 warnings.warn(
@@ -1035,25 +1051,16 @@ def register(
     )
     inverse_transforms = None
     if transforms is not None:
+        assert matrices is not None
         inverse_transforms = transforms.copy(data=np.linalg.inv(matrices))
         inverse_transforms.attrs["convention"] = "moving-world-to-fixed-world pull"
-    template = _output_template(moving, fixed, same_grid)
-    values, validity = np.concatenate(outputs), np.concatenate(masks)
-    if planar:
-        values, validity = values[:, None], validity[:, None]
-    registered = template.copy(data=values)
-    valid_data = template.copy(data=validity)
-    valid_data.attrs = {"description": "Valid moving-image sample centers"}
-    if spatial_input:
-        return RegistrationResult(
-            registered.isel(time=0, drop=True),
-            valid_data.isel(time=0, drop=True),
-            transforms.isel(time=0, drop=True) if transforms is not None else None,
-            diagnostics.isel(time=0, drop=True),
-            inverse_transforms.isel(time=0, drop=True)
-            if inverse_transforms is not None
-            else None,
-        )
-    return RegistrationResult(
-        registered, valid_data, transforms, diagnostics, inverse_transforms
+    template = _build_output_template(moving, fixed, same_grid)
+    return _build_result(
+        template,
+        values,
+        validity,
+        transforms,
+        diagnostics,
+        inverse_transforms,
+        spatial_input,
     )

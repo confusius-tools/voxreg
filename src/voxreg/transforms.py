@@ -29,19 +29,14 @@ def configure_transform(grid, fixed, transform):
         return grid
     dimensions = grid.basis.shape[1]
     affine = position_to_world(fixed)
-    lattice = grid.basis.T @ affine[:3, :3]
     sizes = np.array([fixed.sizes[d] for d in ("k", "j", "i")])
     ell = np.linalg.norm(affine[:3, :3][:, sizes > 1], axis=0).min()
     scales = np.full(dimensions, ell)
-    if transform == "affine" and getattr(grid, "slice_basis", None) is not None:
-        lattice = grid.slice_basis.T @ affine[:3, :3]
-        offset = grid.slice_basis.T @ (
-            affine[:3, 3] + affine[:3, :3] @ ((sizes - 1) / 2) - grid.center
-        )
-        variance = lattice**2 @ ((sizes.astype(float) ** 2 - 1) / 12) + offset**2
-        scales = np.r_[np.tile(ell / np.sqrt(variance), 3), scales]
-    elif transform == "affine":
-        center_offset = grid.basis.T @ (
+    if transform == "affine":
+        basis = getattr(grid, "slice_basis", None)
+        basis = grid.basis if basis is None else basis
+        lattice = basis.T @ affine[:3, :3]
+        center_offset = basis.T @ (
             affine[:3, 3] + affine[:3, :3] @ ((sizes - 1) / 2) - grid.center
         )
         variance = lattice**2 @ ((sizes.astype(float) ** 2 - 1) / 12) + center_offset**2
@@ -53,7 +48,7 @@ def configure_transform(grid, fixed, transform):
     )
 
 
-def intrinsic_linear(parameters, grid):
+def build_intrinsic_linear(parameters, grid):
     """Return centered intrinsic linear maps and shifts for non-rigid models.
 
     Parameters
@@ -95,8 +90,8 @@ def intrinsic_linear(parameters, grid):
     return linear, parameters[:, -dimensions:]
 
 
-def affine_properties(parameters, grid):
-    """Finite nonsingular map and orientation, without device scalar reads.
+def check_affine_parameters(parameters, grid):
+    """Check map finiteness, nonsingularity and orientation without scalar reads.
 
     Normalize before the small determinant to avoid overflow/underflow. A
     normalized determinant <= 1e-8 is treated as numerically singular.
@@ -115,7 +110,7 @@ def affine_properties(parameters, grid):
     orientation : torch.Tensor
         Per-frame sign of the normalized linear determinant.
     """
-    linear, _ = intrinsic_linear(parameters.detach(), grid)
+    linear, _ = build_intrinsic_linear(parameters.detach(), grid)
     largest = linear.abs().amax(dim=(-2, -1), keepdim=True)
     matrix = linear / largest.clamp_min(torch.finfo(linear.dtype).tiny)
     if matrix.shape[-1] == 2:
@@ -173,7 +168,7 @@ def validate_matrices(transforms, count):
     return values
 
 
-def initial_linear_parameters(values, grid):
+def recover_linear_parameters(values, grid):
     """Recover the complete optimized translation/affine seed, never a frozen chain.
 
     Parameters
@@ -215,8 +210,8 @@ def initial_linear_parameters(values, grid):
         parameters = np.column_stack(
             ((tangents - basis).reshape(len(values), -1), translation)
         )
-        reconstructed, _ = intrinsic_linear(torch.from_numpy(parameters), grid)
-        valid, _ = affine_properties(torch.from_numpy(parameters), grid)
+        reconstructed, _ = build_intrinsic_linear(torch.from_numpy(parameters), grid)
+        valid, _ = check_affine_parameters(torch.from_numpy(parameters), grid)
         if not valid.all():
             raise ValueError(
                 "Slice-to-volume affine seed must have independent tangent columns."
@@ -249,7 +244,7 @@ def initial_linear_parameters(values, grid):
     parameters = np.column_stack(
         ((intrinsic - np.eye(dimensions)).reshape(len(values), -1), local_translation)
     )
-    valid, _ = affine_properties(torch.from_numpy(parameters), grid)
+    valid, _ = check_affine_parameters(torch.from_numpy(parameters), grid)
     if not valid.all():
         raise ValueError(
             "Affine initial_transform must be nonsingular and numerically well-conditioned (normalized |determinant| > 1e-8)."
@@ -257,7 +252,7 @@ def initial_linear_parameters(values, grid):
     return parameters
 
 
-def linear_world_matrices(parameters, grid):
+def build_linear_world_matrices(parameters, grid):
     """Export full centered world pulls, including affine scale/shear/reflection.
 
     Parameters
@@ -275,7 +270,7 @@ def linear_world_matrices(parameters, grid):
     values = np.asarray(parameters, dtype=np.float64)
     dimensions = grid.basis.shape[1]
     if grid.transform == "affine" and getattr(grid, "slice_basis", None) is not None:
-        linear, _ = intrinsic_linear(torch.from_numpy(values), grid)
+        linear, _ = build_intrinsic_linear(torch.from_numpy(values), grid)
         matrices = np.broadcast_to(np.eye(4), (len(values), 4, 4)).copy()
         matrices[:, :3, :3] = linear.numpy()
         matrices[:, :3, 3] = values[:, -3:] - np.einsum(
@@ -294,7 +289,7 @@ def linear_world_matrices(parameters, grid):
     return matrices
 
 
-def linear_diagnostics(parameters, grid):
+def build_linear_diagnostics(parameters, grid):
     """Report actual linear coefficients and physical center shifts.
 
     Parameters

@@ -4,21 +4,21 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import torch
 import xarray as xr
 from confusius import create_voxeldata
 from confusius.validation import validate_voxeldata
+from registration_options import RegistrationOptions
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
 from voxreg.sampling import (
     SpatialGrid,
+    build_rotations,
+    build_world_matrices,
     make_grid,
-    rotation_vectors,
     sample_rigid,
-    world_matrices,
 )
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
@@ -93,7 +93,7 @@ def test_independent_grid_sampling_matches_scipy(
     )
     if identity:
         p[:] = 0
-    matrix = world_matrices(p[None], geometry)[0]
+    matrix = build_world_matrices(p[None], geometry)[0]
     if identity:
         np.testing.assert_array_equal(matrix, np.eye(4))
     coords, expected_valid = reference_coordinates(moving, fixed, matrix)
@@ -229,10 +229,12 @@ def test_rotation_vectors_use_physical_xyz_handedness():
     vectors = np.array([[0.2, -0.1, 0.3], [0, 0, 0]])
     expected = Rotation.from_rotvec(vectors[:, ::-1]).as_matrix()[:, ::-1, ::-1]
     np.testing.assert_allclose(
-        rotation_vectors(torch.tensor(vectors)), expected, atol=1e-15
+        build_rotations(torch.tensor(vectors)),
+        expected,
+        atol=1e-15,
     )
     assert torch.autograd.gradcheck(
-        rotation_vectors,
+        build_rotations,
         (torch.zeros((1, 3), dtype=torch.float64, requires_grad=True),),
     )
 

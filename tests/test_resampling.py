@@ -211,6 +211,63 @@ def test_singleton_support_and_labels(device):
     assert valid[0].values.all() and not valid[1:].values.any()
 
 
+@pytest.mark.parametrize("moving_slice", [False, True])
+@pytest.mark.parametrize("interpolation", ["linear", "nearest"])
+def test_mixed_support_matches_registration_and_scipy(
+    device, moving_slice, interpolation
+):
+    """Exported mixed pulls retain finite voxel support on every source axis."""
+    from oracles import voxel
+
+    shape = (1, 4, 5) if moving_slice else (4, 4, 5)
+    moving = voxel(np.arange(np.prod(shape), dtype=float).reshape(shape), np.eye(4))
+    affine = np.eye(4)
+    affine[:3, 3] = -0.5
+    affine[0, 0] = 0.25
+    reference = voxel(np.arange(180, dtype=float).reshape(6, 5, 6), affine)
+    if not moving_slice:
+        reference = reference.isel(k=slice(0, 1))
+    fitted = register(
+        moving,
+        reference,
+        transform="translation",
+        return_transforms=True,
+        intensity_scaling="none",
+        interpolation=interpolation,
+        learning_rate=1e-20,
+        max_iterations=1,
+        progress=False,
+        device=device,
+    )
+    assert fitted.forward_transforms is not None
+    actual, valid = resample(
+        moving,
+        reference,
+        fitted.forward_transforms,
+        interpolation=interpolation,
+        device=device,
+    )
+    query = (
+        affine[:3, :3] @ np.indices(reference.shape).reshape(3, -1)
+        + affine[:3, 3, None]
+    )
+    expected_valid = ((query >= -0.5) & (query < np.array(shape)[:, None] - 0.5)).all(
+        axis=0
+    )
+    expected = map_coordinates(
+        moving.values,
+        query if interpolation == "linear" else np.rint(query),
+        order=1 if interpolation == "linear" else 0,
+        mode="nearest",
+        prefilter=False,
+    )
+    expected[~expected_valid] = moving.values.min()
+    np.testing.assert_array_equal(valid.values.ravel(), expected_valid)
+    np.testing.assert_allclose(actual.values.ravel(), expected, atol=1e-12)
+    xr.testing.assert_identical(valid, fitted.valid)
+    xr.testing.assert_allclose(actual, fitted.registered)
+
+
 @pytest.mark.parametrize(
     "bad", [np.zeros((4, 4)), np.eye(3), np.full((4, 4), np.nan), np.empty((0, 4, 4))]
 )
@@ -246,6 +303,40 @@ def test_invalid_inputs(linear_pair_factory):
             moving.copy(data=np.full(moving.shape, 2**54, dtype=np.int64)),
             fixed,
             np.eye(4),
+        )
+
+
+@pytest.mark.parametrize("bad_labels", ["missing", "scalar", "duplicate"])
+@pytest.mark.parametrize("on_transform", [False, True])
+def test_rejects_invalid_time_coordinates(
+    linear_pair_factory, bad_labels, on_transform
+):
+    """Reject malformed labels before broadcasting or allocating sampling grids."""
+    fixed, moving, _ = linear_pair_factory(True)
+    labeled = (
+        xr.DataArray(
+            np.repeat(np.eye(4)[None], 2, axis=0),
+            dims=("time", "world_out", "world_in"),
+            coords={
+                "time": [0, 1],
+                "world_out": ["z", "y", "x", "1"],
+                "world_in": ["z", "y", "x", "1"],
+            },
+        )
+        if on_transform
+        else xr.concat([moving, moving], dim=xr.IndexVariable("time", [0, 1]))
+    )
+    if bad_labels == "missing":
+        labeled = labeled.drop_vars("time")
+    elif bad_labels == "scalar":
+        labeled = labeled.drop_indexes("time").assign_coords(time=0)
+    else:
+        labeled = labeled.assign_coords(time=[0, 0])
+    with pytest.raises(ValueError, match="time labels"):
+        resample(
+            moving if on_transform else labeled,
+            fixed,
+            labeled if on_transform else np.eye(4),
         )
 
 

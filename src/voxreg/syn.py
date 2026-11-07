@@ -18,11 +18,11 @@ from confusius._utils.progress import progress_bar
 from voxreg.convergence import WindowConvergence
 from voxreg.fields import (
     _check_field,
-    _contracted_cpu_inverse,
-    _pixel_norm,
+    _compute_contracted_cpu_inverse,
+    _measure_norm,
     compose_fields,
+    compute_jacobian_determinant,
     invert_field,
-    jacobian_determinant,
     make_field_grid,
     sample_field_at,
 )
@@ -33,16 +33,16 @@ from voxreg.geometry import position_to_world
 from voxreg.sampling import (
     _prepare_displaced_sampling,
     _sample_prepared,
-    global_ncc,
+    build_world_matrices,
+    compute_global_ncc,
     make_grid,
     sample_rigid,
-    world_matrices,
 )
 
 
 @lru_cache(maxsize=4)
-def _cpu_smoothing_weights(sigma, dimensions):
-    """Immutable planar/volumetric CPU kernels for SyN's two fixed sigmas."""
+def _build_cpu_smoothing_weights(sigma, dimensions):
+    """Build cached CPU smoothing kernels for SyN's two fixed sigmas."""
     radius = int(3 * sigma + 0.5)
     positions = torch.arange(-radius, radius + 1, dtype=torch.float32, device="cpu")
     kernel = torch.exp(-0.5 * (positions / sigma).square())
@@ -83,7 +83,7 @@ def smooth_field(field, grid, *, sigma):
         return _smooth_field(field, grid, sigma=sigma)
     _check_field(field, grid)
     dimensions = len(grid.shape)
-    radius, weights = _cpu_smoothing_weights(sigma, dimensions)
+    radius, weights = _build_cpu_smoothing_weights(sigma, dimensions)
     scale = field.abs().flatten(1).amax(1).reshape(-1, 1, *([1] * dimensions))
     scale = scale.clamp_min(torch.finfo(field.dtype).tiny)
     result = (field / scale).float()
@@ -101,8 +101,8 @@ def smooth_field(field, grid, *, sigma):
     return result.clamp(-1, 1).to(field.dtype) * scale
 
 
-def _box_sum(values, radius):
-    """Separable sliding sums in metric precision without a cubic convolution."""
+def _sum_neighborhoods(values, radius):
+    """Sum neighborhoods separably in metric precision."""
     dimensions = values.ndim - 2
     for axis in range(dimensions):
         padding = [0] * (2 * dimensions)
@@ -126,7 +126,7 @@ def _box_sum(values, radius):
     return values
 
 
-def local_ncc(moving, fixed, valid, radius):
+def compute_local_ncc(moving, fixed, valid, radius):
     """Compute masked squared neighborhood correlation independently per frame.
 
     Parameters
@@ -150,7 +150,7 @@ def local_ncc(moving, fixed, valid, radius):
     dtype = torch.float64 if moving.dtype == torch.float64 else torch.float32
     x, y = moving.to(dtype), fixed.to(dtype)
     w = valid.to(dtype)
-    stats = _box_sum(
+    stats = _sum_neighborhoods(
         torch.stack((w, w * x, w * y, w * x * x, w * y * y, w * x * y), dim=1), radius
     )
     n, sx, sy, sxx, syy, sxy = stats.unbind(dim=1)
@@ -171,22 +171,26 @@ def local_ncc(moving, fixed, valid, radius):
     return loss, counts > 1
 
 
-def _midpoint_loss(images, fixed_images, moving_sampler, fixed_sampler, uf, um, radius):
-    """One differentiable objective; optimizer clocks and callbacks remain outside."""
+def _compute_midpoint_loss(
+    images, fixed_images, moving_sampler, fixed_sampler, uf, um, radius
+):
+    """Compute the differentiable halfway objective and common support."""
     moved, mv = _sample_prepared(images, um, moving_sampler, fitting=True)
     stationary, fv = _sample_prepared(fixed_images, uf, fixed_sampler, fitting=True)
     valid = mv & fv
-    loss, meaningful = local_ncc(moved, stationary, valid, radius)
+    loss, meaningful = compute_local_ncc(moved, stationary, valid, radius)
     return loss, meaningful, valid
 
 
-def _candidate_fields(uf, um, gf, gm, grid, learning_rate, update_sigma, total_sigma):
-    """Independent halfway updates and their sampled-Jacobian acceptance guard."""
+def _build_candidate_fields(
+    uf, um, gf, gm, grid, learning_rate, update_sigma, total_sigma
+):
+    """Build independent halfway updates and check their sampled Jacobians."""
     broadcast = (slice(None),) + (None,) * (len(grid.shape) + 1)
     candidates = []
     for old, gradient in ((uf, gf), (um, gm)):
         gradient = smooth_field(torch.nan_to_num(gradient), grid, sigma=update_sigma)
-        maximum = _pixel_norm(gradient, grid).flatten(1).amax(dim=1)
+        maximum = _measure_norm(gradient, grid).flatten(1).amax(dim=1)
         scale = torch.where(
             maximum > 0,
             learning_rate / maximum.clamp_min(torch.finfo(uf.dtype).tiny),
@@ -200,7 +204,7 @@ def _candidate_fields(uf, um, gf, gm, grid, learning_rate, update_sigma, total_s
         candidates.append(candidate)
     admissible = uf.new_ones((len(uf),), dtype=torch.bool)
     for candidate in candidates:
-        determinant = jacobian_determinant(candidate, grid)
+        determinant = compute_jacobian_determinant(candidate, grid)
         admissible = (
             admissible
             & torch.isfinite(determinant).flatten(1).all(dim=1)
@@ -209,13 +213,14 @@ def _candidate_fields(uf, um, gf, gm, grid, learning_rate, update_sigma, total_s
     return candidates[0], candidates[1], admissible
 
 
-def _final_inverse(field, grid):
+def _compute_final_inverse(field, grid):
+    """Invert final fields, using certified CPU contraction when available."""
     if (
         field.device.type == "cpu"
         and not field.requires_grad
         and not torch.compiler.is_compiling()
     ):
-        contracted = _contracted_cpu_inverse(field, grid, 80)
+        contracted = _compute_contracted_cpu_inverse(field, grid, 80)
         if contracted is not None:
             return contracted
     return invert_field(field, grid, iterations=80)
@@ -240,6 +245,7 @@ def _fit(
     metric_callback,
     metric_interval,
 ):
+    """Fit independent halfway fields and finalize their best valid state in double."""
     physical_grid = grid
     # Only origin-free working field arithmetic is reduced; export geometry stays double.
     grid = replace(
@@ -281,7 +287,7 @@ def _fit(
     )
     broadcast = (slice(None),) + (None,) * (len(grid.shape) + 1)
     for iteration in range(max_iterations + 1):
-        loss, meaningful, valid = _midpoint_loss(
+        loss, meaningful, valid = _compute_midpoint_loss(
             images,
             fixed_images,
             moving_sampler,
@@ -319,7 +325,7 @@ def _fit(
                     active & (trend <= convergence_minimum_value), 1, status
                 )
             active = status == 0
-            candidate_f, candidate_m, admissible = _candidate_fields(
+            candidate_f, candidate_m, admissible = _build_candidate_fields(
                 uf, um, gf, gm, grid, learning_rate, update_sigma, total_sigma
             )
             steps = steps + active
@@ -342,12 +348,12 @@ def _fit(
         # Final inversion, validation and exported displacements retain double arithmetic.
         grid = physical_grid
         bf, bm = bf.double(), bm.double()
-        fi, _ = _final_inverse(bf, grid)
-        mi, _ = _final_inverse(bm, grid)
+        fi, _ = _compute_final_inverse(bf, grid)
+        mi, _ = _compute_final_inverse(bm, grid)
         forward = compose_fields(bm, fi, grid)
         inverse = compose_fields(bf, mi, grid)
-        determinant = jacobian_determinant(forward, grid)
-        inverse_det = jacobian_determinant(inverse, grid)
+        determinant = compute_jacobian_determinant(forward, grid)
+        inverse_det = compute_jacobian_determinant(inverse, grid)
         admissible = (
             torch.isfinite(forward).flatten(1).all(dim=1)
             & torch.isfinite(inverse).flatten(1).all(dim=1)
@@ -360,16 +366,16 @@ def _fit(
         bf = torch.where(admissible[broadcast], bf, 0)
         bm = torch.where(admissible[broadcast], bm, 0)
         left = (
-            _pixel_norm(compose_fields(forward, inverse, grid), grid)
+            _measure_norm(compose_fields(forward, inverse, grid), grid)
             .flatten(1)
             .amax(dim=1)
         )
         right = (
-            _pixel_norm(compose_fields(inverse, forward, grid), grid)
+            _measure_norm(compose_fields(inverse, forward, grid), grid)
             .flatten(1)
             .amax(dim=1)
         )
-        objective, meaningful, _ = _midpoint_loss(
+        objective, meaningful, _ = _compute_midpoint_loss(
             images,
             fixed_images,
             moving_sampler,
@@ -383,8 +389,8 @@ def _fit(
     return forward, inverse, steps, status, objective, torch.maximum(left, right)
 
 
-def _world_field(residual, grid, matrices, data):
-    """Complete affine-plus-residual world displacement at native fixed centers."""
+def _build_world_field(residual, grid, matrices, data):
+    """Build complete affine-plus-residual displacements at native fixed centers."""
     af = position_to_world(data)
     linear = torch.tensor(
         matrices[:, :3, :3], dtype=torch.float64, device=residual.device
@@ -406,8 +412,8 @@ def _world_field(residual, grid, matrices, data):
     return disp + world + offset.reshape(len(residual), 3, *([1] * len(grid.shape)))
 
 
-def _inverse_world_field(residual, grid, matrices, fixed, moving):
-    """Complete inverse on the original moving grid, including the inverse seed."""
+def _build_inverse_world_field(residual, grid, matrices, fixed, moving):
+    """Build the complete inverse on the moving grid, including the inverse seed."""
     af, am = position_to_world(fixed), position_to_world(moving)
     inv = np.linalg.inv(matrices)
     planar = len(grid.shape) == 2
@@ -444,7 +450,8 @@ def _inverse_world_field(residual, grid, matrices, fixed, moving):
     )
 
 
-def _labeled_field(values, template, convention):
+def _build_labeled_field(values, template, convention):
+    """Label complete world displacements on the template's native lattice."""
     # Scalar VoxelData coordinates/affine index survive the extra vector dimension.
     result = xr.concat(
         [template.copy(data=values[:, component]) for component in range(3)],
@@ -546,7 +553,7 @@ def register_syn(
     RegistrationResult
         Calibrated original intensities, validity, diagnostics and optional fields.
     """
-    from voxreg.rigid import RegistrationResult, _output_template
+    from voxreg.rigid import _STATUS_LABELS, _build_output_template, _build_result
 
     grid = make_field_grid(fixed, device=device)
     fixed_plane = make_grid(fixed, fixed, device=device)
@@ -558,19 +565,12 @@ def register_syn(
     initial = (
         np.zeros((len(raw), len(plane.parameter_scale))) if initial is None else initial
     )
-    matrices = world_matrices(initial, plane)
+    matrices = build_world_matrices(initial, plane)
     if np.any(np.linalg.det(matrices[:, :3, :3]) <= 0):
         raise ValueError("SyN affine seeds must preserve orientation.")
-    outputs = []
-    masks = []
-    forwards = []
-    inverses = []
-    clocks = []
-    statuses = []
-    objectives = []
-    inverse_errors = []
-    jacobians = []
-    nccs = []
+    outputs, masks, forwards, inverses = [], [], [], []
+    clocks, statuses, objectives = [], [], []
+    inverse_errors, jacobians, nccs = [], [], []
     with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
         for first in range(0, len(raw), batch_size):
             last = min(first + batch_size, len(raw))
@@ -588,6 +588,7 @@ def register_syn(
             timings["upload"] += perf_counter() - start
 
             def report(steps, loss, first=first, last=last):
+                """Report owned CPU arrays with recording-wide frame indices."""
                 metric_callback(
                     np.arange(first, last, dtype=np.int64),
                     steps.cpu().numpy().copy(),
@@ -644,12 +645,12 @@ def register_syn(
                 masks.append(valid.cpu().numpy())
                 if return_transforms:
                     forwards.append(
-                        _world_field(forward, grid, matrices[first:last], fixed)
+                        _build_world_field(forward, grid, matrices[first:last], fixed)
                         .cpu()
                         .numpy()
                     )
                     inverses.append(
-                        _inverse_world_field(
+                        _build_inverse_world_field(
                             inverse, grid, matrices[first:last], fixed, moving
                         )
                         .cpu()
@@ -657,7 +658,9 @@ def register_syn(
                     )
                 jacobians.append(
                     (
-                        jacobian_determinant(forward, grid).flatten(1).amin(dim=1)
+                        compute_jacobian_determinant(forward, grid)
+                        .flatten(1)
+                        .amin(dim=1)
                         * torch.tensor(
                             np.linalg.det(matrices[first:last, :3, :3]), device=device
                         )
@@ -668,7 +671,7 @@ def register_syn(
                 fitted, fv = sample_rigid(
                     images, parameters, plane, displacement=forward
                 )
-                loss, meaningful = global_ncc(fitted, stationary, fv)
+                loss, meaningful = compute_global_ncc(fitted, stationary, fv)
                 nccs.append(torch.where(meaningful, -loss, torch.nan).cpu().numpy())
                 clocks.append(steps.cpu().numpy())
                 statuses.append(status.cpu().numpy())
@@ -679,41 +682,25 @@ def register_syn(
                 advance(last - first)
             elif callable(progress):
                 progress(last, len(raw))
-    template = _output_template(moving, fixed, same_grid)
+    template = _build_output_template(moving, fixed, same_grid)
     values, validity = np.concatenate(outputs), np.concatenate(masks)
-    if planar:
-        values, validity = values[:, None], validity[:, None]
-    registered = template.copy(data=values)
-    valid_data = template.copy(data=validity)
-    valid_data.attrs = {"description": "Valid moving-image sample centers"}
     transforms = inverse_transforms = None
     if return_transforms:
         forward, inverse = np.concatenate(forwards), np.concatenate(inverses)
         if planar:
             forward, inverse = forward[:, :, None], inverse[:, :, None]
-        transforms = _labeled_field(
+        transforms = _build_labeled_field(
             forward, template, "fixed-world-to-moving-world pull"
         )
-        inverse_transforms = _labeled_field(
+        inverse_transforms = _build_labeled_field(
             inverse, moving, "moving-world-to-fixed-world pull"
         )
-    labels = np.array(
-        [
-            "running",
-            "converged",
-            "insufficient_overlap",
-            "invalid_metric",
-            "reference",
-            "max_iterations",
-            "invalid_transform",
-        ]
-    )
     diagnostics = xr.Dataset(
         {
             "objective": ("time", np.concatenate(objectives)),
             "ncc_squared": ("time", np.concatenate(nccs)),
             "n_iterations": ("time", np.concatenate(clocks)),
-            "status": ("time", labels[np.concatenate(statuses)]),
+            "status": ("time", _STATUS_LABELS[np.concatenate(statuses)]),
             "valid_fraction": ("time", validity.reshape(len(raw), -1).mean(axis=1)),
             "min_jacobian": ("time", np.concatenate(jacobians)),
             "inverse_error": (
@@ -738,16 +725,12 @@ def register_syn(
             "inverse_error_note": "sampled inverse is approximate; two-sided residual is reported, not forced to zero",
         },
     )
-    if spatial_input:
-        return RegistrationResult(
-            registered.isel(time=0, drop=True),
-            valid_data.isel(time=0, drop=True),
-            transforms.isel(time=0, drop=True) if transforms is not None else None,
-            diagnostics.isel(time=0, drop=True),
-            inverse_transforms.isel(time=0, drop=True)
-            if inverse_transforms is not None
-            else None,
-        )
-    return RegistrationResult(
-        registered, valid_data, transforms, diagnostics, inverse_transforms
+    return _build_result(
+        template,
+        values,
+        validity,
+        transforms,
+        diagnostics,
+        inverse_transforms,
+        spatial_input,
     )

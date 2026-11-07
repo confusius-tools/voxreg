@@ -1,19 +1,26 @@
 """3D slice placement with affine-defined singleton voxel extent."""
 
+# ruff: noqa: B009 -- ITK generates these attributes dynamically; getattr keeps typing accurate.
+
 from typing import Literal
 
 import numpy as np
 import pytest
-from registration_options import RegistrationOptions
 import torch
 from confusius import create_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 from oracles import sample_mixed as sample
 from oracles import voxel
+from registration_options import RegistrationOptions
 from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
-from voxreg.sampling import _initial_parameters, make_grid, sample_rigid, world_matrices
+from voxreg.sampling import (
+    _recover_initial_parameters,
+    build_world_matrices,
+    make_grid,
+    sample_rigid,
+)
 from voxreg.transforms import configure_transform
 
 DEVICES: list[Literal["cpu", "cuda"]] = (
@@ -129,8 +136,10 @@ def test_slice_volume_cpu_cuda_unchanged_precision_gate(
 def test_mixed_seed_roundtrip_and_sampler(slice_volume_pair_factory, model):
     target, volume, truth = slice_volume_pair_factory(model)
     grid = configure_transform(make_grid(target, volume), target, model)
-    parameters = _initial_parameters(truth, grid, 1)
-    assert_allclose(world_matrices(parameters, grid)[0], truth, atol=1e-14, rtol=0)
+    parameters = _recover_initial_parameters(truth, grid, 1)
+    assert_allclose(
+        build_world_matrices(parameters, grid)[0], truth, atol=1e-14, rtol=0
+    )
     images = torch.tensor(volume.values[None])
     state = torch.tensor(parameters, requires_grad=True)
     sampled, valid = sample_rigid(images, state, grid)
@@ -162,12 +171,12 @@ def test_affine_slice_has_nine_parameters_not_twelve(slice_volume_pair_factory):
     bad = truth.copy()
     bad[:3, 0] *= 2
     with pytest.raises(ValueError, match="unidentifiable normal"):
-        _initial_parameters(bad, grid, 1)
+        _recover_initial_parameters(bad, grid, 1)
     collapsed = np.zeros((1, 9))
     collapsed[0, :6] = -grid.slice_basis.reshape(-1)
-    from voxreg.transforms import affine_properties
+    from voxreg.transforms import check_affine_parameters
 
-    assert not affine_properties(torch.tensor(collapsed), grid)[0].any()
+    assert not check_affine_parameters(torch.tensor(collapsed), grid)[0].any()
 
 
 @pytest.mark.parametrize("model", ["rigid", "affine"])
@@ -356,8 +365,8 @@ def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(
     volume = voxel(volume.values, pose @ position_to_world(volume))
     truth = pose @ truth @ np.linalg.inv(pose)
     grid = configure_transform(make_grid(target, volume), target, model)
-    parameters = _initial_parameters(truth, grid, 1)
-    actual = world_matrices(parameters, grid)[0]
+    parameters = _recover_initial_parameters(truth, grid, 1)
+    actual = build_world_matrices(parameters, grid)[0]
     native = getattr(itk, "AffineTransform")[itk.D, 3].New()
     native.SetMatrix(itk.matrix_from_array(actual[:3, :3]))
     native.SetOffset(tuple(actual[:3, 3]))

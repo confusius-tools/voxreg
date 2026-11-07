@@ -9,8 +9,8 @@ from scipy.ndimage import gaussian_filter
 
 from voxreg.fields import (
     compose_fields,
+    compute_jacobian_determinant,
     invert_field,
-    jacobian_determinant,
     make_field_grid,
     smooth_field,
 )
@@ -107,7 +107,7 @@ def test_physical_jacobian_matches_affine_and_detects_reflection(
         matrix = linear.copy()
         matrix[0] *= sign
         field = np.einsum("ij,j...->i...", matrix - np.eye(d), points)[None]
-        actual = jacobian_determinant(torch.tensor(field, device=device), grid)
+        actual = compute_jacobian_determinant(torch.tensor(field, device=device), grid)
         assert_allclose(actual.cpu(), np.linalg.det(matrix), rtol=0, atol=2e-14)
         assert bool((actual > 0).all()) == (sign == 1)
 
@@ -133,8 +133,8 @@ def test_inverse_is_two_sided_and_batch_independent(
     assert_allclose(error.cpu(), expected, rtol=0, atol=1e-14)
     # Solve the forward equation; reverse interpolation error is reported, not hidden.
     assert maximum_pixels(left).max() < 0.001
-    assert (jacobian_determinant(field, grid) > 0).all()
-    assert (jacobian_determinant(inverse, grid) > 0).all()
+    assert (compute_jacobian_determinant(field, grid) > 0).all()
+    assert (compute_jacobian_determinant(inverse, grid) > 0).all()
     assert not inverse.masked_select(grid.boundary).any()
     for frame in range(len(values)):
         alone, _ = invert_field(field[frame : frame + 1], grid)
@@ -222,7 +222,7 @@ def test_identity_inverse_does_not_couple_to_other_frames(
     assert torch.isfinite(inverse).all() and torch.isfinite(error).all()
     assert not inverse[0].any() and error[0] == 0
     assert inverse[1].any() and error[1] > 0
-    assert_array_equal(jacobian_determinant(inverse[:1], grid).cpu(), 1)
+    assert_array_equal(compute_jacobian_determinant(inverse[:1], grid).cpu(), 1)
 
 
 @pytest.mark.parametrize("planar", [False, True])
@@ -230,7 +230,7 @@ def test_cpu_inverse_certificate_preserves_residual_checks(
     displacement_factory, monkeypatch, planar
 ):
     from voxreg import fields
-    from voxreg.syn import _final_inverse
+    from voxreg.syn import _compute_final_inverse
 
     data, _, _, values = displacement_factory(planar)
     grid = make_field_grid(data)
@@ -238,27 +238,27 @@ def test_cpu_inverse_certificate_preserves_residual_checks(
     expected, _ = invert_field(
         field, grid, iterations=80, initial=torch.zeros_like(field)
     )
-    original = fields._inverse_update
+    original = fields._update_inverse
     calls = []
 
     def observed(*args):
         calls.append(1)
         return original(*args)
 
-    monkeypatch.setattr(fields, "_inverse_update", observed)
-    inverse, error = _final_inverse(field, grid)
+    monkeypatch.setattr(fields, "_update_inverse", observed)
+    inverse, error = _compute_final_inverse(field, grid)
     assert not calls
     pixels = np.einsum(
         "ij,bj...->bi...", grid.inverse_lattice.numpy(), (inverse - expected).numpy()
     )
     assert np.linalg.norm(pixels, axis=1).max() < 1e-9
     left = (
-        fields._pixel_norm(compose_fields(field, inverse, grid), grid)
+        fields._measure_norm(compose_fields(field, inverse, grid), grid)
         .flatten(1)
         .amax(1)
     )
     right = (
-        fields._pixel_norm(compose_fields(inverse, field, grid), grid)
+        fields._measure_norm(compose_fields(inverse, field, grid), grid)
         .flatten(1)
         .amax(1)
     )
@@ -272,7 +272,7 @@ def test_cpu_inverse_preserves_original_fallback(
     displacement_factory, monkeypatch, planar, reason
 ):
     from voxreg import fields
-    from voxreg.syn import _final_inverse
+    from voxreg.syn import _compute_final_inverse
 
     data, _, _, values = displacement_factory(planar, strided=True)
     grid = make_field_grid(data)
@@ -281,15 +281,15 @@ def test_cpu_inverse_preserves_original_fallback(
         field[:, :, 0] = 0.001
     if reason == "gradient":
         field.requires_grad_()
-    original = fields._inverse_update
+    original = fields._update_inverse
     calls = []
 
     def observed(*args):
         calls.append(1)
         return original(*args)
 
-    monkeypatch.setattr(fields, "_inverse_update", observed)
-    inverse, error = _final_inverse(field, grid)
+    monkeypatch.setattr(fields, "_update_inverse", observed)
+    inverse, error = _compute_final_inverse(field, grid)
     assert len(calls) == 80
     assert torch.isfinite(inverse).all() and torch.isfinite(error).all()
     if reason == "gradient":
@@ -389,7 +389,10 @@ def test_prepared_seed_queries_preserve_samples_and_gradients(
             if isinstance(geometry, SpatialGrid):
                 query = (query[..., 1:] if geometry.planar else query).flip(-1)
             direct = torch.nn.functional.grid_sample(
-                images[:, None], query.float(), padding_mode="border", align_corners=True
+                images[:, None],
+                query.float(),
+                padding_mode="border",
+                align_corners=True,
             )[:, 0]
         assert_array_equal(cached.detach().cpu(), direct.detach().cpu())
         assert_array_equal(valid.cpu(), direct_valid.cpu())
@@ -407,7 +410,7 @@ def test_exact_sparse_lattice_keeps_general_field_math(
     from dataclasses import replace
 
     from voxreg import position_to_world
-    from voxreg.fields import _pixel_norm
+    from voxreg.fields import _measure_norm
 
     data, _, _, values = displacement_factory(planar)
     affine = position_to_world(data)
@@ -420,14 +423,12 @@ def test_exact_sparse_lattice_keeps_general_field_math(
     expected_norm = np.linalg.norm(
         np.einsum("ij,bj...->bi...", grid.inverse_lattice.cpu(), values), axis=1
     )
-    norm = _pixel_norm(field, grid)
+    norm = _measure_norm(field, grid)
     assert_allclose(norm.detach().cpu(), expected_norm, rtol=1e-14, atol=1e-14)
     reference = torch.linalg.vector_norm(field * grid.voxel_scale, dim=1)
     derivative = torch.autograd.grad(norm.sum(), field)[0]
     expected_derivative = torch.autograd.grad(reference.sum(), field)[0]
-    assert_allclose(
-        derivative.cpu(), expected_derivative.cpu(), rtol=1e-14, atol=1e-14
-    )
+    assert_allclose(derivative.cpu(), expected_derivative.cpu(), rtol=1e-14, atol=1e-14)
     assert torch.isfinite(derivative).all()
     fast = compose_fields(field, field * -0.7, grid)
     slow = compose_fields(field, field * -0.7, general)
@@ -437,8 +438,8 @@ def test_exact_sparse_lattice_keeps_general_field_math(
     assert_allclose(fast.detach().cpu(), expected, rtol=0, atol=1e-14)
     assert_allclose(fast.detach().cpu(), slow.detach().cpu(), rtol=0, atol=1e-14)
     assert_allclose(
-        jacobian_determinant(field, grid).detach().cpu(),
-        jacobian_determinant(field, general).detach().cpu(),
+        compute_jacobian_determinant(field, grid).detach().cpu(),
+        compute_jacobian_determinant(field, general).detach().cpu(),
         rtol=1e-14,
         atol=1e-14,
     )
@@ -479,7 +480,9 @@ def test_direct_jacobian_matches_packed_values_and_gradients(
     from dataclasses import replace
 
     data, _, _, values = displacement_factory(planar)
-    grid = make_field_grid(voxel(data.values, np.diag([0.24, -0.21, 0.18, 1])), device=device)
+    grid = make_field_grid(
+        voxel(data.values, np.diag([0.24, -0.21, 0.18, 1])), device=device
+    )
     voxel_axes = grid.voxel_axes
     assert voxel_axes is not None
     grid = replace(
@@ -494,8 +497,8 @@ def test_direct_jacobian_matches_packed_values_and_gradients(
             voxel_axes=voxel_axes[-1:] + voxel_axes[:-1],
         )
     field = torch.tensor(values, dtype=dtype, device=device, requires_grad=True)
-    direct = jacobian_determinant(field, grid)
-    packed = jacobian_determinant(field, replace(grid, voxel_axes=None))
+    direct = compute_jacobian_determinant(field, grid)
+    packed = compute_jacobian_determinant(field, replace(grid, voxel_axes=None))
     assert_array_equal(direct.detach().cpu(), packed.detach().cpu())
     dg = torch.autograd.grad(direct.sum(), field)[0]
     pg = torch.autograd.grad(packed.sum(), field)[0]
