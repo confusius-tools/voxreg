@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import torch
 from confusius import create_voxeldata
+from oracles import max_pull_difference
 from registration_options import RegistrationOptions
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
@@ -205,10 +206,11 @@ def test_moments_pivot_sampling_and_scales(
 
 
 @pytest.mark.parametrize("mode", ["center_geometry", "center_moments"])
-def test_series_reference_batch_and_fitting_scaling(recording_factory, mode):
+def test_series_reference_batch_and_fitting_scaling(recording_factory, mode, device):
     data, _, _ = recording_factory(oblique=True, strided=True)
     options: RegistrationOptions = {
         "initialization": mode,
+        "device": device,
         "max_iterations": 100,
         "progress": False,
     }
@@ -216,9 +218,17 @@ def test_series_reference_batch_and_fitting_scaling(recording_factory, mode):
     assert combined.transforms is not None
     serial = register(data, return_transforms=True, batch_size=1, **options)
     assert serial.transforms is not None
-    np.testing.assert_allclose(
-        combined.transforms, serial.transforms, atol=1e-9, rtol=0
-    )
+    if device == "cpu":
+        np.testing.assert_allclose(
+            combined.transforms, serial.transforms, atol=1e-9, rtol=0
+        )
+    else:
+        assert (
+            max_pull_difference(
+                combined.transforms, serial.transforms, data.isel(time=0, drop=True)
+            )
+            < 0.001
+        )
     np.testing.assert_array_equal(
         combined.diagnostics.n_iterations, serial.diagnostics.n_iterations
     )

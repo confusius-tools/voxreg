@@ -100,14 +100,23 @@ rigid recovery checks retain the 0.25-minimum-spacing-voxel gate for no transfor
 dB, square root and power 2. No anatomical or real-data default qualification is
 claimed. Future lazy execution must preserve recording-wide reductions.
 
-With CUDA hidden, the final full suite passed (956 passed, 297 skipped).
-With CUDA enabled, the final full run has 1327 passed and 13 failures.
+At the intensity-scaling commit, the CPU-only suite had 956 passed, 297 skipped;
+the CUDA-enabled run had 1327 passed and 13 failures.
 All 13 failing cases were reproduced on unchanged pre-scaling `HEAD`: two
 initialization batch comparisons, six auto-device availability-probe-count checks,
 three 3D batch comparisons and two per-frame seed comparisons. These existing
 CUDA/batching test failures remain unresolved; no tolerance, truth gate, optimizer
 or production device-selection behavior was changed to hide them. Prior
 CPU-only qualification notes above describe the original feature checks.
+
+Test-only follow-up fixes count voxreg's resolver calls rather than Torch's
+internal probes and restore explicit CPU baselines. Centering now has separate
+strict CPU and physical CUDA batch checks. The full CUDA-enabled suite has
+1341 passed and one remaining failure: `center_moments`, at 0.00306 voxels versus
+the unchanged 0.001-voxel batch gate. Traces show nearly identical trajectories
+(parameter differences around 1e-8), but NCC rounding selects iteration 61 versus
+81. No production change is retained: passing precision/reduction candidates
+failed the unchanged-speed requirement. Pre-commit checks pass.
 
 The live benchmark adapter now explicitly requests no moving/fixed transform,
 preserving its fitting policy; the notebook example explicitly requests its

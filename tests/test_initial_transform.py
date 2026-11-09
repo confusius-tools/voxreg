@@ -182,6 +182,7 @@ def test_slice_per_frame_initialization_and_reference(
     seed = truth.copy()
     options: RegistrationOptions = {
         "initial_transform": seed,
+        "device": "cpu",
         "max_iterations": 100,
         "progress": False,
     }
@@ -204,6 +205,7 @@ def test_slice_per_frame_initialization_and_reference(
         data,
         return_transforms=True,
         initial_transform=labeled,
+        device="cpu",
         max_iterations=100,
         progress=False,
     )

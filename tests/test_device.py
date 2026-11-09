@@ -16,14 +16,19 @@ from voxreg import register, resample
 def test_auto_registration_matches_explicit_device(
     linear_pair_factory, monkeypatch, device, planar, transform
 ):
+    from voxreg import registration
+
     fixed, moving, _ = linear_pair_factory(planar, "rigid")
     calls = []
+    resolve = registration.resolve_device
 
-    def available():
-        calls.append(True)
-        return device == "cuda"
+    def record_resolution(choice):
+        """Count voxreg resolution, not Torch's internal availability probes."""
+        calls.append(choice)
+        return resolve(choice)
 
-    monkeypatch.setattr(torch.cuda, "is_available", available)
+    monkeypatch.setattr(registration, "resolve_device", record_resolution)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: device == "cuda")
     options: RegistrationOptions = {
         "transform": transform,
         "max_iterations": 2,
@@ -36,7 +41,7 @@ def test_auto_registration_matches_explicit_device(
     calls.clear()
     # Omitting device exercises the public auto default, including stage dispatch.
     auto = register(moving, fixed, **options)
-    assert len(calls) == 1
+    assert calls == ["auto"]
     xr.testing.assert_allclose(
         auto.registered, explicit.registered, rtol=1e-5, atol=2e-6
     )

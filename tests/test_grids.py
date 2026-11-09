@@ -368,9 +368,14 @@ def test_3d_batch_and_cpu_cuda_independence(linear_pair_factory, model):
         "max_iterations": 120,
         "progress": False,
     }
-    together = register(data, fixed, return_transforms=True, batch_size=2, **options)
+    # Keep the strict CPU batch check separate from CUDA agreement below.
+    together = register(
+        data, fixed, return_transforms=True, batch_size=2, device="cpu", **options
+    )
     assert together.transforms is not None
-    alone = register(data, fixed, return_transforms=True, batch_size=1, **options)
+    alone = register(
+        data, fixed, return_transforms=True, batch_size=1, device="cpu", **options
+    )
     assert alone.transforms is not None
     np.testing.assert_allclose(together.transforms, alone.transforms, atol=1e-8, rtol=0)
     np.testing.assert_array_equal(

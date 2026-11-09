@@ -5,6 +5,15 @@ Goal: a small, physically correct CPU/CUDA registration engine for ConfUSIus.
 numerical contracts, evidence and accuracy limits. Work one roadmap point at a
 time, then stop for user review and a separate commit.
 
+## Next
+
+Verify Figure 2 DVARS on valid brain support: the reproduced spikes disappear
+when 31 invalid ROI voxels are excluded. Do not change registration to fix QC
+padding effects. Intensity scaling is committed as `aafa19c`; its real-data default
+qualification remains a separate follow-up. CUDA test-only fixes pass; moment
+initialization still differs by 0.00306 voxels across batches (gate: 0.001).
+Investigate without slowing registration; the slower reduction fix was rejected.
+
 ## Performance and qualification priorities
 
 1. **Review coruscant benchmark results when available.** Establish the current
