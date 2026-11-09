@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from voxreg.sampling import Plane, SpatialGrid
 
 
-IntensityScaling: TypeAlias = Literal["db", "sqrt"] | float | None
+IntensityScaling: TypeAlias = Literal["log1p", "sqrt"] | float | None
 """Fitting-only magnitude transform, or no transform."""
 
 
@@ -136,7 +136,7 @@ def validate_intensity_scaling(value: IntensityScaling, name: str) -> None:
 
     Parameters
     ----------
-    value : {"db", "sqrt"} or float, optional
+    value : {"log1p", "sqrt"} or float, optional
         Magnitude transform or a positive finite power exponent.
     name : str
         Public argument name used in errors.
@@ -151,7 +151,7 @@ def validate_intensity_scaling(value: IntensityScaling, name: str) -> None:
     ValueError
         If the transform is unknown or the exponent is not positive and finite.
     """
-    if value is None or (isinstance(value, str) and value in ("db", "sqrt")):
+    if value is None or (isinstance(value, str) and value in ("log1p", "sqrt")):
         return
     if isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(
         value, (bool, np.bool_)
@@ -162,7 +162,7 @@ def validate_intensity_scaling(value: IntensityScaling, name: str) -> None:
         except OverflowError:
             pass
     raise ValueError(
-        f"{name} must be None, 'db', 'sqrt' or a positive finite exponent."
+        f"{name} must be None, 'log1p', 'sqrt' or a positive finite exponent."
     )
 
 
@@ -175,7 +175,7 @@ def _scale_intensities(
     ----------
     values : numpy.ndarray
         Finite native intensities, with any leading time axis retained.
-    scaling : {"db", "sqrt"} or float, optional
+    scaling : {"log1p", "sqrt"} or float, optional
         Validated transform. No transform preserves signed values.
     name : str
         Image side used in errors.
@@ -188,18 +188,13 @@ def _scale_intensities(
     Raises
     ------
     ValueError
-        If dB has no positive magnitude or power scaling overflows.
+        If power scaling overflows.
     """
     if scaling is None:
         return values
     magnitude = np.abs(values.astype(np.float64))
-    if scaling == "db":
-        maximum = magnitude.max()
-        if maximum == 0:
-            raise ValueError(f"{name} dB scaling requires a positive magnitude.")
-        # Keep fitting finite at zeros; log differences avoid ratio underflow.
-        with np.errstate(divide="ignore"):
-            return 10 * np.maximum(np.log10(magnitude) - np.log10(maximum), -12)
+    if scaling == "log1p":
+        return np.log1p(magnitude)
     exponent = 0.5 if scaling == "sqrt" else float(scaling)
     with np.errstate(over="ignore", under="ignore", invalid="ignore"):
         transformed = magnitude**exponent
@@ -225,16 +220,15 @@ def prepare_fitting_images(
         Native original intensities with a leading frame axis.
     target_raw : numpy.ndarray
         Shared native fixed image without a frame axis.
-    moving_intensity_scaling, fixed_intensity_scaling : {"db", "sqrt"} or float, optional
+    moving_intensity_scaling, fixed_intensity_scaling : {"log1p", "sqrt"} or float, optional
         Independent fitting transforms, applied before metric conditioning.
-        dB uses each input's global magnitude maximum with a -120 dB floor;
-        powers use magnitudes. Moving reductions span the entire recording,
-        not optimizer batches. Transforms are evaluated in float64.
+        log1p computes ln(1 + abs(x)); powers use magnitudes. Transforms are
+        evaluated in float64. Numerical conditioning is per image, never across
+        frames or shared between moving and fixed images.
     metric : str, optional
         Selected metric; MI uses native per-image ranges instead of NCC conditioning.
     implicit_fixed : bool, default: False
-        Whether to reuse the first transformed moving frame as the fitting target,
-        including its recording-wide dB reference.
+        Whether to reuse the first transformed moving frame as the fitting target.
 
     Returns
     -------
@@ -264,8 +258,7 @@ def prepare_fitting_images(
     )
     fit_raw = raw.astype(preprocessing_dtype, copy=False)
     target_raw = target_raw.astype(preprocessing_dtype, copy=False)
-    moving_scale = float(np.abs(fit_raw).max())
-    if moving_scale == 0:
+    if not np.any(fit_raw):
         raise ValueError("An all-zero recording cannot be registered.")
     fit_raw = _scale_intensities(fit_raw, moving_intensity_scaling, "moving")
     target_raw = (
@@ -273,15 +266,9 @@ def prepare_fitting_images(
         if implicit_fixed
         else _scale_intensities(target_raw, fixed_intensity_scaling, "fixed")
     )
-    scale = max(float(np.abs(fit_raw).max()), float(np.abs(target_raw).max()))
-    if scale == 0:
+    if not np.any(fit_raw) and not np.any(target_raw):
         raise ValueError("Intensity scaling produced all-zero fitting images.")
-    if metric == "mi":
-        # Subtract native offsets before dividing so double/integer contrast
-        # survives even when it is tiny relative to an image's DC intensity.
-        fit, target = fit_raw, target_raw
-    else:
-        fit, target = fit_raw / scale, target_raw / scale
+    fit, target = fit_raw, target_raw
     if metric == "mi":
         # Native ranges stay fixed across all levels, samples and ROI changes.
         def normalize(values, axes):
@@ -298,13 +285,19 @@ def prepare_fitting_images(
 
         fit = normalize(fit, spatial_axes)
         target = normalize(target, tuple(range(target.ndim)))
-    elif preprocessing_dtype == np.float64:
+    else:
+        conditioned = []
         for values in (fit, target):
-            values -= values[(...,) + (slice(0, 1),) * len(spatial_axes)]
-            amplitude = np.abs(values).max(
-                axis=tuple(range(-len(spatial_axes), 0)), keepdims=True
-            )
-            values /= np.where(amplitude > 0, amplitude, 1)
+            axes = tuple(range(-len(spatial_axes), 0))
+            amplitude = np.abs(values).max(axis=axes, keepdims=True)
+            # Bound each image independently before subtraction or float32 fitting.
+            values = values / np.where(amplitude > 0, amplitude, 1)
+            if preprocessing_dtype == np.float64:
+                values -= values[(...,) + (slice(0, 1),) * len(spatial_axes)]
+                amplitude = np.abs(values).max(axis=axes, keepdims=True)
+                values /= np.where(amplitude > 0, amplitude, 1)
+            conditioned.append(values)
+        fit, target = conditioned
     fit, target = fit.astype(np.float32), target.astype(np.float32)
     if np.ptp(target) == 0:
         raise ValueError("The fixed image must not be constant.")

@@ -79,28 +79,33 @@ analytic truth defines acceptance, not agreement between backends.
 
 ## Intensity scaling
 
-Separate moving/fixed controls now default to `None`, replacing shared default
-`"db"` and removing the old argument/string `"none"`. ConfUSIus's implementation
-was inspected: real-data dB uses `10*log10(abs(x)/max(abs(x)))`, and powers use
-`abs(x)**p` with positive finite exponents. Voxreg explicitly retains a -120 dB
-floor for finite fitting, uses independent explicit-image maxima (recording-wide
-for moving), and evaluates transforms in float64 before float32 fitting. These
-are changed settings/conventions, not a claim of identical historical dB fits.
+Moving/fixed controls default independently to `None`. `"log1p"` now computes
+`ln(1 + abs(x))`, replacing `"db"`; `"sqrt"` and positive finite powers still use
+magnitudes. The shared `intensity_scaling` argument and `"none"`/`"db"` spellings
+are rejected. Transform evaluation remains float64 before float32 fitting.
+Recording-wide numerical normalization is removed: NCC conditioning is per image,
+MI ranges remain per image, and no transform requires a temporal intensity scan.
+Zeros need no log floor; log1p compression depends on absolute intensity units.
 See [the complete policy](README.md#fitting-intensity-scaling).
 
-The 98 scaling checks pass with CUDA available on an NVIDIA GeForce RTX 5080
+The scaling checks pass with CUDA available on an NVIDIA GeForce RTX 5080
 Laptop GPU; integration cases explicitly cover CPU and CUDA. They compare
 conditioning to independent NumPy magnitude/range calculations and fits to
 pretransformed-image runs, across NCC/MI, linear/SyN/staged pyramids, masks and
 native resampling. They check signed inputs, zeros, finite positive exponents,
 overflow/underflow, low contrast, invalid settings, input immutability,
-recording-wide dB/reference behavior and unchanged fitting images across batches.
+log1p zeros/reference behavior and unchanged fitting images across batches.
+Direct conditioning comparisons verify independence from unrelated frames for
+float32/float64/integer inputs, NCC/MI and every transform.
 Independent native-centroid calculations and frozen-optimizer regressions cover
 explicit/implicit references and stages, including rejection of negative native
 moment weights despite magnitude-based fitting transforms. Expanded synthetic
 rigid recovery checks retain the 0.25-minimum-spacing-voxel gate for no transform,
-dB, square root and power 2. No anatomical or real-data default qualification is
-claimed. Future lazy execution must preserve recording-wide reductions.
+log1p, square root and power 2. The full CUDA-enabled suite had 1368 passed;
+a subsequent bright-frame isolation regression also passes (final focused scaling
+suite: 125 passed). A repeat full run timed out under high host load without
+reported failures; pre-commit checks pass. No anatomical, performance or real-data
+default qualification is claimed. Lazy execution must preserve per-image conditioning.
 
 At the intensity-scaling commit, the CPU-only suite had 956 passed, 297 skipped;
 the CUDA-enabled run had 1327 passed and 13 failures.
@@ -124,8 +129,8 @@ With this policy, the full CUDA-enabled suite passes: 1342 passed; pre-commit
 checks pass.
 
 The live benchmark adapter now explicitly requests no moving/fixed transform,
-preserving its fitting policy; the notebook example explicitly requests its
-previous dB policy and records the new argument names. Frozen historical sources,
+explicitly selecting no nonlinear transform. The live notebook example now
+requests log1p; this is not numerically equivalent to its historical dB settings. Frozen historical sources,
 settings, paper outputs and artifacts were not migrated or rerun. New comparisons
 must disclose the default/convention changes rather than relabel old results.
 

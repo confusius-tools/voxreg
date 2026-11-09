@@ -5,15 +5,6 @@ Goal: a small, physically correct CPU/CUDA registration engine for ConfUSIus.
 numerical contracts, evidence and accuracy limits. Work one roadmap point at a
 time, then stop for user review and a separate commit.
 
-## Next
-
-Verify Figure 2 DVARS on valid brain support: the reproduced spikes disappear
-when 31 invalid ROI voxels are excluded. Do not change registration to fix QC
-padding effects. Intensity scaling is committed as `aafa19c`; its real-data default
-qualification remains a separate follow-up. Physical batch agreement now allows
-1% of the minimum voxel spacing (user-selected); registration and truth gates are
-unchanged. The observed 0.00306-voxel CUDA difference is within that tolerance.
-
 ## Performance and qualification priorities
 
 1. **Review coruscant benchmark results when available.** Establish the current
@@ -34,36 +25,14 @@ unchanged. The observed 0.00306-voxel CUDA difference is within that tolerance.
 
 ## Planned capabilities and investigations
 
-### Figure 2 real-data motion quality: audit support before optimizer tuning
+### Optional fitting winsorization
 
-Case: rat75 / 20220523 / slice32 power Doppler, frames 220–339. Paper entry script:
-`/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius-paper/paper/figures/fig2/scripts/03_plot_volumewise_motion_correction.py`.
-
-[Initial reproduction](VALIDATION.md#first-real-data-motion-quality-case) is
-complete: fresh default-voxreg DVARS spikes disappear when excluding 31 unsupported
-ROI voxels. All affected default-run samples fall within half-voxel cell extents,
-exposing a center-range versus ITK cell-support difference. Audit that contract
-before optimizer tuning. The older voxreg cache was not reproduced by tested
-fresh settings; its configuration provenance remains unresolved.
-
-- Preserve the paper script, original figures and caches; check provenance and
-  use separate, explicitly configured outputs for new runs.
-- Compare raw/corrected per-frame DVARS using the same brain mask, window and
-  definition, both on the raw-support region and common valid spatial support.
-  The initial restricted-ROI check lacks ConfUSIus's own support mask and is not
-  fully support-matched.
-- Explicitly match reference frame, fitting transform, model, interpolation,
-  initialization, pyramid schedule and iteration/convergence policy. The paper
-  uses ConfUSIus correlation, unscaled fitting and `learning_rate=1.0`; voxreg
-  used default dB fitting in the initial reproduction (the current default is no
-  transform). Disclose optimizer differences; equal numeric learning rates do not
-  establish equivalence.
-- Inspect offending adjacent pairs, transforms, metric traces, status/steps,
-  residuals and anatomical alignment. DVARS is temporal QC, not a correspondence
-  objective or ground truth; lower DVARS alone establishes neither better
-  correction nor a general method ranking. This is not a timing benchmark.
-- Establish a minimal reproducible cause before changing defaults/optimizers;
-  retain bounded evidence and a regression when a defect is established.
+Add independent moving/fixed percentile-clipping arguments to `register`, disabled
+by default and shared across stages. Define percentile units/order, per-image
+bounds, masks, zero/constant inputs and ordering before intensity transforms;
+keep native moment initialization and final resampling unchanged. Validate against
+NumPy percentile/clip, including lazy chunk invariance; expose no ANTs/FireANTs
+compatibility aliases.
 
 ### Lazy recordings and resampling with Dask
 
@@ -86,14 +55,15 @@ one fixed/moving volume pair and working state must fit worker RAM/VRAM.
 - **Validation:** remove whole-recording `.values`/`np.asarray` conversions and
   eager finite scans from graph construction. Validate geometry, labels and
   options eagerly; check data within tasks and document deferred failures.
-- **Conditioning:** preserve recording-wide semantics through documented lazy,
-  bounded-memory reductions, or introduce an explicit per-frame policy. Never
-  silently normalize per chunk; results must be invariant to time chunking and
-  execution order.
+- **Conditioning:** use the same per-image policy as eager registration, never
+  per-chunk normalization or a recording-wide intensity reference. Results must
+  be invariant to time chunking and execution order.
 - **Shared execution:** share each batch fit across images, maps and diagnostics.
   Document joint computation/storage without repeated fitting or whole-recording
   persistence. Progress, callbacks and timings must describe execution, not graph
-  construction, with defined worker/scheduler behavior.
+  construction. Support distributed workers as well as local schedulers; execute
+  callbacks within tasks with global frame indices and document repeated calls
+  on recomputation.
 - **Resampling:** support lazy images and dense fields, including eager/lazy
   combinations. Shared transforms apply to all frames; time-labelled transforms
   select per frame. Load only required image/transform frames, allow incremental
@@ -113,13 +83,16 @@ Time chunking alone does not provide complex-data support.
 
 Details live in the linked docs rather than being duplicated here:
 
+- **Figure 2 DVARS investigation:** valid-support QC resolves the reported spikes;
+  no registration change needed. Evidence and remaining interpretation limits are
+  in [validation](VALIDATION.md#first-real-data-motion-quality-case).
+
 - **Separate intensity scaling:** moving/fixed controls default independently to
-  `None`; `"db"`, `"sqrt"` and positive finite powers follow ConfUSIus magnitude
-  conventions with an explicit finite dB floor. Native moments/output intensities
-  stay untouched; stages/pyramids/masks share the documented policy. Implicit
-  references use moving scaling and recording-wide reductions before batching;
-  lazy execution must preserve these reductions. Obsolete API spellings are
-  removed. Synthetic default/precision regressions pass; real-data qualification
+  `None`; `"log1p"` uses ln(1 + abs(x)), while `"sqrt"` and positive finite
+  powers use magnitudes. Native moments/output intensities stay untouched;
+  stages/pyramids/masks share the documented per-image conditioning policy.
+  Recording-wide numerical scaling and the `"db"` spelling are removed; implicit
+  references use moving scaling. Synthetic default/precision regressions pass; real-data qualification
   of the changed defaults remains open. See [scaling](README.md#fitting-intensity-scaling)
   and [validation](VALIDATION.md#intensity-scaling).
 - **Automatic device selection:** `register`/`resample` default to `device="auto"`;

@@ -136,7 +136,7 @@ def sample_matrices(
     Parameters
     ----------
     values : (T, H, W) numpy.ndarray
-        Intensities to sample, e.g. dB fitting images.
+        Intensities to sample, e.g. logarithmic fitting images.
     matrices : (T, 4, 4) numpy.ndarray
         World z/y/x pull transforms.
     affine : (4, 4) numpy.ndarray
@@ -344,7 +344,7 @@ def main() -> None:
         raise ValueError("The notebook requires frames 220:340.")
     result = register(
         data,
-        moving_intensity_scaling="db",
+        moving_intensity_scaling="log1p",
         return_transforms=True,
         device=args.device,
         batch_size=args.batch_size,
@@ -374,7 +374,7 @@ def main() -> None:
         "optimizer": {
             "max_iterations": 100,
             "learning_rate": 0.1,
-            "moving_intensity_scaling": "db",
+            "moving_intensity_scaling": "log1p",
             "fixed_intensity_scaling": None,
             "fitting_sampling_dtype": "float32",
             "geometry_and_state_dtype": "float64",

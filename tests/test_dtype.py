@@ -86,7 +86,7 @@ def test_original_dtype_and_fractional_sampling(
         )
 
 
-@pytest.mark.parametrize("scaling", [None, "db", "sqrt", 2.0])
+@pytest.mark.parametrize("scaling", [None, "log1p", "sqrt", 2.0])
 def test_float64_low_contrast_preprocessing_and_original_precision(
     recording_factory, scaling
 ):

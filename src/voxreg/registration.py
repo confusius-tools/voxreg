@@ -160,21 +160,23 @@ def register(
         Moments requires nonnegative original values with positive mass in every
         image. Named modes estimate no rotation; the implicit reference stays
         exactly identity.
-    moving_intensity_scaling : {"db", "sqrt"} or float, optional
-        Fitting-only transform; not provided means no transform. dB uses
-        10*log10(abs(x)/max(abs(x))) with a -120 dB floor, including zeros.
-        sqrt and positive finite numeric exponents use abs(x)**exponent.
+    moving_intensity_scaling : {"log1p", "sqrt"} or float, optional
+        Fitting-only transform; not provided means no nonlinear transform.
+        log1p uses ln(1 + abs(x)), preserving zeros without a floor or reference.
+        Its compression depends on the absolute intensity scale. sqrt and
+        positive finite numeric exponents use abs(x)**exponent.
         Signed input is allowed; magnitude transforms discard its sign.
         Transforms are evaluated in float64 before metric conditioning and
         float32 fitting. Power overflow raises ValueError; underflow rounds to zero.
-        Reductions span the entire recording before batching, including outside
-        masks. Original intensities drive initialization and final resampling.
+        Numerical conditioning is independent per image/frame before batching,
+        including outside masks; there is no recording-wide intensity reference.
+        Original intensities drive initialization and final resampling.
         Pass native intensities rather than pretransformed moment weights.
-    fixed_intensity_scaling : {"db", "sqrt"} or float, optional
+    fixed_intensity_scaling : {"log1p", "sqrt"} or float, optional
         Independent transform of an explicit fixed image, with the same rules.
         Not provided means no transform, not inheritance from moving scaling.
-        Without explicit fixed, the first-frame reference uses moving scaling
-        and the recording-wide maximum; specifying this argument then is invalid.
+        Without explicit fixed, the first-frame reference uses moving scaling;
+        specifying this argument then is invalid.
         The implicit reference output remains exactly the original first frame.
     metric : {"ncc", "local_ncc", "mi"}, optional
         Fitting objective. None preserves global squared NCC for linear models

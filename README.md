@@ -76,7 +76,7 @@ result = voxreg.register(
 | `transform` | `"translation"`, `"rigid"` (default), `"affine"`, `"syn"`, a `Stage`, or a sequence of model names/`Stage` specifications. Slices use `k=1`; volumes have at least two samples on each axis. |
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
 | `fixed_mask`, `moving_mask` | Optional boolean ROI VoxelData in their own physical grids. Fixed mask is spatial-only; moving mask can be shared or per-frame with matching time labels. Masks restrict fitting at every stage and level. |
-| `moving_intensity_scaling`, `fixed_intensity_scaling` | Independent fitting-only transforms: `None` (default), `"db"`, `"sqrt"` or a positive finite power exponent. Fixed scaling applies only to an explicit fixed image. |
+| `moving_intensity_scaling`, `fixed_intensity_scaling` | Independent fitting-only transforms: `None` (default), `"log1p"`, `"sqrt"` or a positive finite power exponent. Fixed scaling applies only to an explicit fixed image. |
 | `metric` | Default `None` retains global squared NCC for linear models and local squared NCC for SyN. Explicit `"ncc"` selects global NCC, `"local_ncc"` selects SyN local NCC, and `"mi"` selects mutual information. |
 | `mi_bins`, `mi_sigma` | MI histogram bins (default `32`, range `2`–`256`) and Gaussian standard deviation in bin widths (default `0.5`, range `0.1`–`10`). |
 | `resample_interpolation` | Final resampling of original intensities: `"linear"` (default), `"nearest"` or cubic `"bspline"`. Fitting always uses linear interpolation. |
@@ -115,18 +115,17 @@ For all options, including optimizer controls and callbacks, use
 ## Fitting intensity scaling
 
 Both scaling arguments default to `None`: no nonlinear transform, preserving
-signed values before numerical metric conditioning. This replaces the old shared
-`intensity_scaling="db"` default; the old argument and string `"none"` are removed.
-To request dB fitting for an explicit pair, set both arguments to `"db"`; an
-omitted fixed transform does not inherit the moving transform.
+signed values before numerical metric conditioning. The old shared
+`intensity_scaling` argument and strings `"none"`/`"db"` are removed. An omitted
+fixed transform does not inherit the moving transform.
 
-Following ConfUSIus's magnitude conventions, `"db"` computes
-`10*log10(abs(x)/max(abs(x)))` and `"sqrt"`/numeric powers compute
-`abs(x)**exponent`. Exponents must be positive and finite; booleans are invalid.
-Unlike ConfUSIus's raw dB conversion, voxreg floors normalized magnitudes at
-`1e-12` (−120 dB), including zeros, so fitting stays finite. Signed inputs are
-allowed but magnitude transforms discard their signs. All-zero recordings and
-constant fixed fitting images remain invalid.
+`"log1p"` computes `ln(1 + abs(x))`, preserving zeros without a floor or global
+reference. Its compression depends on the absolute intensity scale: values much
+smaller than 1 barely change, while large values behave like natural log.
+`"sqrt"`/numeric powers compute `abs(x)**exponent`, following ConfUSIus's magnitude
+convention. Exponents must be positive and finite; booleans are invalid. Signed
+inputs are allowed but magnitude transforms discard their signs. All-zero
+recordings and constant fixed fitting images remain invalid.
 
 Transforms are evaluated in float64 before metric-range preparation/pyramids and
 float32 fitting. Power overflow raises a descriptive error; underflow rounds to
@@ -134,16 +133,18 @@ zero and may erase contrast. Final resampling always uses original intensities
 and dtype, and moment initialization uses original nonnegative native weights.
 Masks restrict fitting samples, not transforms or their reductions.
 
-Moving dB uses one maximum over the entire recording; explicit fixed dB uses its
-own image maximum. The implicit first-frame reference reuses the transformed
-first moving frame, including that recording-wide maximum, and its output is
-preserved exactly. Non-`None` fixed scaling without an explicit fixed image is an
-error. Stages inherit both controls and transform originals afresh, never a
-previous stage's fitting image. Conditioning precedes optimizer batching;
-changing `batch_size` does not change fitting intensities. Future lazy execution
-must preserve these global reductions, not normalize independently by time chunk.
-Historical benchmark sources/artifacts retain their original API/settings; new
-comparisons must disclose this default and dB-convention change.
+There is no recording-wide intensity normalization. NCC bounds each image/frame
+independently by its magnitude maximum; double/integer or transformed inputs also
+retain per-image offset/contrast conditioning before float32 conversion. MI uses
+independent per-image min/max ranges. A bright unrelated frame cannot change
+another frame's conditioning, and temporal chunks need no shared intensity scan.
+Masks do not limit these per-image reductions.
+
+The implicit reference reuses the transformed first moving frame and its output
+is preserved exactly. Non-`None` fixed scaling without an explicit fixed image is
+an error. Stages transform originals afresh, never a previous stage's fitting
+image. Historical benchmark sources/artifacts retain their original API/settings;
+new comparisons must disclose the log1p and per-image-conditioning changes.
 
 ## Physical units
 

@@ -176,7 +176,7 @@ ROI construction, best-state selection, callbacks and stopping remain outside it
 Defaults retain global NCC for linear models and local NCC for SyN; explicit
 global NCC and Gaussian-Parzen MI also operate on SyN's two halfway images.
 
-MI maps each native fitting image's min/max to [0, 1] after optional dB scaling.
+MI maps each native fitting image's min/max to [0, 1] after its optional transform.
 These full-image ranges include values outside masks and are fixed before pyramid
 smoothing. Native offset subtraction precedes division for high-offset double
 or integer images; an overflow-safe path handles opposite extreme intensities.
@@ -254,12 +254,12 @@ Float32 NCC uses aligned global reductions and local pooling sums with
 roundoff-aware variance guards. SyN rejects lattices that become nonfinite or
 singular in float32 working arithmetic rather than silently corrupting fields.
 Independent moving/fixed intensity transforms affect fitting only; original
-inputs are never modified. Preparation evaluates magnitude dB/power in float64
-before metric conditioning and pyramids. Moving reductions span the recording,
-not batches; an implicit target copies the first transformed moving frame.
-Explicit fixed scaling defaults independently to no transform. Initialization
-precedes conditioning and stages always start from originals; future lazy workers
-must share the same recording-wide reductions. See [scaling semantics](README.md#fitting-intensity-scaling).
+inputs are never modified. Preparation evaluates magnitude log1p/power in float64
+before per-image metric conditioning and pyramids. No intensity reductions span
+time or couple moving/fixed images; an implicit target copies the first transformed
+moving frame. Explicit fixed scaling defaults independently to no transform.
+Initialization precedes conditioning and stages always start from originals.
+See [scaling semantics](README.md#fitting-intensity-scaling).
 Integer results are rounded nearest-even and clipped;
 integer inputs outside `[-2**53, 2**53]` are rejected.
 

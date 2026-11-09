@@ -13,7 +13,7 @@ from voxreg.preparation import prepare_fitting_images
 @pytest.mark.parametrize("metric", [None, "mi"])
 @pytest.mark.parametrize(
     "moving_scaling,fixed_scaling",
-    [(None, None), ("db", "sqrt"), ("sqrt", 2.0), (3, "db")],
+    [(None, None), ("log1p", "sqrt"), ("sqrt", 2.0), (3, "log1p")],
 )
 def test_conditioning_matches_numpy_magnitude_oracle(
     metric, moving_scaling, fixed_scaling
@@ -23,9 +23,8 @@ def test_conditioning_matches_numpy_magnitude_oracle(
     originals = moving.copy(), fixed.copy()
     expected = []
     for values, scaling in ((moving, moving_scaling), (fixed, fixed_scaling)):
-        if scaling == "db":
-            magnitude = np.abs(values)
-            values = 10 * np.log10(np.maximum(magnitude / magnitude.max(), 1e-12))
+        if scaling == "log1p":
+            values = np.log1p(np.abs(values))
         elif scaling is not None:
             values = np.abs(values) ** (0.5 if scaling == "sqrt" else scaling)
         axes = tuple(range(values.ndim - 2, values.ndim))
@@ -51,16 +50,46 @@ def test_conditioning_matches_numpy_magnitude_oracle(
     assert_array_equal(fixed, originals[1])
 
 
-def test_implicit_db_reference_uses_recording_wide_maximum():
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int16])
+@pytest.mark.parametrize("metric", [None, "mi"])
+@pytest.mark.parametrize("scaling", [None, "log1p", "sqrt", 2.0])
+def test_conditioning_is_independent_of_other_frames(dtype, metric, scaling):
+    values = np.array([[[1, 2, 3], [4, 8, 16]]], dtype=dtype)
+    fixed = np.array([[2, 3, 5], [7, 11, 13]], dtype=dtype)
+    alone, target = prepare_fitting_images(values, fixed, scaling, None, metric)
+    combined = np.concatenate((values, values * np.array(100, dtype=dtype)))
+    together, combined_target = prepare_fitting_images(
+        combined, fixed, scaling, None, metric
+    )
+    assert_array_equal(alone[0], together[0])
+    assert_array_equal(target, combined_target)
+    assert np.ptp(alone) > 0
+    assert_array_equal(values, np.array([[[1, 2, 3], [4, 8, 16]]], dtype=dtype))
+
+
+def test_float32_conditioning_preserves_signed_contrast_with_bright_other_frame():
+    values = np.array([[[0, -1, 2], [3, -4, 8]]], dtype=np.float32)
+    fixed = np.array([[0, -2, 1], [4, 8, -16]], dtype=np.float32)
+    combined = np.concatenate((values, values * np.float32(1e30)))
+    fit, target = prepare_fitting_images(combined, fixed)
+    assert_array_equal(fit[0], values[0] / 8)
+    assert_array_equal(target, fixed / 16)
+    assert np.isfinite(fit).all()
+
+
+def test_log1p_reference_and_zeros_match_numpy_without_global_reference():
     values = np.array([[[0, 1e-14], [0.1, 1]], [[0, 1e-10], [10, 100.0]]])
-    fit, target = prepare_fitting_images(values, values[0], "db", implicit_fixed=True)
-    expected = 10 * np.log10(np.maximum(values / values.max(), 1e-12))
-    expected -= expected[:, :1, :1]
-    expected /= np.abs(expected).max(axis=(1, 2), keepdims=True)
+    fit, target = prepare_fitting_images(
+        values, values[0], "log1p", implicit_fixed=True
+    )
+    expected = np.log1p(np.abs(values))
+    expected /= expected.max(axis=(1, 2), keepdims=True)
     assert_allclose(fit, expected, atol=1e-7)
     assert_array_equal(target, fit[0])
-    _, independently_scaled = prepare_fitting_images(values, values[0], "db", "db")
-    assert not np.allclose(target, independently_scaled)
+    _, independently_scaled = prepare_fitting_images(
+        values, values[0], "log1p", "log1p"
+    )
+    assert_array_equal(target, independently_scaled)
 
 
 @pytest.mark.parametrize("side", ["moving", "fixed"])
@@ -68,6 +97,7 @@ def test_implicit_db_reference_uses_recording_wide_maximum():
     "bad",
     [
         "none",
+        "db",
         "invalid",
         0,
         -1,
@@ -95,7 +125,7 @@ def test_invalid_scaling_rejected_before_stages(recording_factory, side, bad):
 def test_obsolete_shared_option_is_removed(recording_factory):
     data, _, _ = recording_factory()
     with pytest.raises(TypeError, match="intensity_scaling"):
-        options: RegistrationOptions = {"intensity_scaling": "db"}
+        options: RegistrationOptions = {"intensity_scaling": "log1p"}
         register(data, **options)
 
 
@@ -115,7 +145,7 @@ def test_power_overflow_is_descriptive(recording_factory, side):
 
 
 @pytest.mark.parametrize("side", ["moving", "fixed"])
-@pytest.mark.parametrize("scaling", ["db", "sqrt", 2.0])
+@pytest.mark.parametrize("scaling", ["log1p", "sqrt", 2.0])
 def test_moments_reject_negative_native_weights_before_magnitude_scaling(
     recording_factory, side, scaling
 ):
@@ -136,25 +166,22 @@ def test_moments_reject_negative_native_weights_before_magnitude_scaling(
         )
 
 
-def test_zero_fixed_db_and_total_power_underflow_are_rejected():
+def test_zero_fixed_log1p_and_total_power_underflow_are_rejected():
     values = np.array([[[0.1, 0.2], [0.3, 0.4]]])
-    with pytest.raises(ValueError, match="fixed.*positive magnitude"):
-        prepare_fitting_images(values, np.zeros((2, 2)), None, "db")
+    with pytest.raises(ValueError, match="fixed image must not be constant"):
+        prepare_fitting_images(values, np.zeros((2, 2)), None, "log1p")
     with pytest.raises(ValueError, match="all-zero fitting"):
         prepare_fitting_images(values, values[0], 10000.0, 10000.0)
 
 
-@pytest.mark.parametrize("scaling", ["db", "sqrt", np.float64(2.0)])
+@pytest.mark.parametrize("scaling", ["log1p", "sqrt", np.float64(2.0)])
 def test_extreme_finite_magnitudes_and_zeros(scaling):
     values = np.array([[[0, 1e-300], [1e-200, 1e100]]])
     fit, target = prepare_fitting_images(values, values[0], scaling, scaling)
     assert np.isfinite(fit).all() and np.isfinite(target).all()
     assert target[1, 1] == 1
     assert target[0, 0] == 0
-    if scaling == "db":
-        assert_array_equal(target, [[0, 0], [0, 1]])
-    else:
-        assert target[1, 0] < 1e-10
+    assert target[1, 0] < 1e-10
 
 
 @pytest.mark.parametrize("metric", ["ncc", "mi"])
@@ -162,7 +189,7 @@ def test_extreme_finite_magnitudes_and_zeros(scaling):
     "model", ["rigid", "syn", ("translation", Stage("rigid"), "syn")]
 )
 @pytest.mark.parametrize(
-    "moving_scaling,fixed_scaling", [(2.0, None), (None, "sqrt"), ("db", "sqrt")]
+    "moving_scaling,fixed_scaling", [(2.0, None), (None, "sqrt"), ("log1p", "sqrt")]
 )
 def test_independent_transforms_match_pretransformed_fit_and_native_resampling(
     recording_factory, metric, model, moving_scaling, fixed_scaling, device
@@ -192,8 +219,8 @@ def test_independent_transforms_match_pretransformed_fit_and_native_resampling(
         **options,
     )
     moving_values = data.values
-    if moving_scaling == "db":
-        moving_values = 10 * np.log10(moving_values / moving_values.max())
+    if moving_scaling == "log1p":
+        moving_values = np.log1p(np.abs(moving_values))
     elif moving_scaling is not None:
         moving_values = moving_values**moving_scaling
     fixed_values = np.sqrt(fixed.values) if fixed_scaling == "sqrt" else fixed.values
@@ -218,7 +245,7 @@ def test_independent_transforms_match_pretransformed_fit_and_native_resampling(
 
 @pytest.mark.parametrize("explicit", [False, True])
 @pytest.mark.parametrize("model", ["rigid", ("translation", "rigid")])
-@pytest.mark.parametrize("scaling", ["db", "sqrt", 2.0])
+@pytest.mark.parametrize("scaling", ["log1p", "sqrt", 2.0])
 def test_moment_initialization_uses_native_weights(
     recording_factory, monkeypatch, explicit, model, scaling
 ):
@@ -277,7 +304,7 @@ def test_moment_initialization_uses_native_weights(
         assert_array_equal(scaled.transforms[0], np.eye(4))
 
 
-@pytest.mark.parametrize("scaling", ["db", "sqrt", 2.0])
+@pytest.mark.parametrize("scaling", ["log1p", "sqrt", 2.0])
 def test_batches_do_not_recondition_frames(recording_factory, scaling):
     data, _, _ = recording_factory()
     data = data.copy(data=data.values * np.array([1, 0.001, 100])[:, None, None, None])

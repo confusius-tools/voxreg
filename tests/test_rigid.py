@@ -25,7 +25,7 @@ def assert_mapping_close(data, actual, expected, tolerance_pixels):
 @pytest.mark.parametrize(
     "oblique,strided", [(False, False), (True, False), (True, True)]
 )
-@pytest.mark.parametrize("scaling", [None, "db", "sqrt", 2.0])
+@pytest.mark.parametrize("scaling", [None, "log1p", "sqrt", 2.0])
 def test_known_rigid_recovery(recording_factory, oblique, strided, scaling):
     data, truth, affine = recording_factory(oblique=oblique, strided=strided)
     result = register(data, return_transforms=True, moving_intensity_scaling=scaling)

@@ -69,7 +69,7 @@ def native_centers(fixed, moving, mode):
 
 
 @pytest.mark.parametrize("mode", ["center_geometry", "center_moments"])
-@pytest.mark.parametrize("scaling", [None, "db", "sqrt", 2.0])
+@pytest.mark.parametrize("scaling", [None, "log1p", "sqrt", 2.0])
 @pytest.mark.parametrize("device", DEVICES)
 def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
     fixed, moving = volume_pair()
@@ -246,13 +246,13 @@ def test_series_reference_batch_and_fitting_scaling(recording_factory, mode, dev
 
     with patch("voxreg.linear._optimize", frozen):
         linear = register(data, return_transforms=True, **options)
-        db = register(
-            data, return_transforms=True, moving_intensity_scaling="db", **options
+        logarithmic = register(
+            data, return_transforms=True, moving_intensity_scaling="log1p", **options
         )
-    np.testing.assert_array_equal(linear.transforms, db.transforms)
+    np.testing.assert_array_equal(linear.transforms, logarithmic.transforms)
     np.testing.assert_array_equal(
         linear.diagnostics.attrs["rotation_center_zyx_mm"],
-        db.diagnostics.attrs["rotation_center_zyx_mm"],
+        logarithmic.diagnostics.attrs["rotation_center_zyx_mm"],
     )
 
 
