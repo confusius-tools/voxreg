@@ -10,6 +10,8 @@ import xarray as xr
 
 from voxreg.geometry import (
     VOXEL_DIMS,
+    _length_scale_to_mm,
+    _same_physical_grid,
     _validate_registration_geometry,
     position_to_world,
 )
@@ -96,10 +98,15 @@ def resample(
         [-2**53, 2**53], as for registration.
     reference : xarray.DataArray
         Spatial VoxelData defining the output lattice; its intensities are unused.
+        Input world units may differ; geometry is converted to mm internally.
+        Outputs retain this reference grid's native coordinates and length unit.
     transforms : array-like or xarray.DataArray
         World z/y/x homogeneous pull matrix (4, 4), per-frame matrices (N, 4, 4),
-        or an exported world-mm displacement DataArray. Fields must match the
-        reference grid exactly; they are not implicitly regridded. Use forward
+        or a world displacement DataArray. Bare matrices use mm. Labelled
+        matrices use spatial_units (default mm); field components must declare
+        spatial_units. ConfUSIus length units are converted to mm. Field lattice
+        units are independent of component units. Fields must match the physical
+        reference grid; they are not implicitly regridded. Use forward
         transforms with moving images and the fixed reference, or inverse
         transforms with fixed images and the moving reference.
         Spatial images/maps broadcast over time-dependent maps/images. When both
@@ -162,8 +169,7 @@ def resample(
     if labeled:
         if not isinstance(transforms.data, np.ndarray):
             raise TypeError("transforms must be NumPy-backed.")
-        if transforms.attrs.get("spatial_units", "mm") != "mm":
-            raise ValueError("transforms spatial_units must be mm.")
+        _length_scale_to_mm(transforms.attrs.get("spatial_units", "mm"))
         if "time" in transforms.dims:
             if (
                 "time" not in transforms.coords
@@ -204,17 +210,32 @@ def resample(
             )
         scalar = transforms.isel(world_component=0, drop=True)
         _validate_registration_geometry(scalar)
-        if not scalar.xindexes["z"].equals(reference.xindexes["z"]):
+        if not _same_physical_grid(scalar, reference):
             raise ValueError(
                 "Displacement field must match the reference grid exactly."
             )
         if (
             transforms.attrs.get("representation") != "displacement"
-            or transforms.attrs.get("spatial_units") != "mm"
+            or "spatial_units" not in transforms.attrs
         ):
             raise ValueError(
-                "Fields must declare representation='displacement' and spatial_units='mm'."
+                "Fields must declare representation='displacement' and physical spatial_units (for example mm)."
             )
+        scale = _length_scale_to_mm(transforms.attrs["spatial_units"])
+        if (
+            "units" in transforms.attrs
+            and _length_scale_to_mm(transforms.attrs["units"]) != scale
+        ):
+            raise ValueError(
+                "Field units and spatial_units must describe the same length unit."
+            )
+        if scale != 1:
+            with np.errstate(over="ignore", invalid="ignore"):
+                values = np.asarray(values, dtype=np.float64) * scale
+            if not np.isfinite(values).all():
+                raise ValueError(
+                    "Displacements must remain finite when converted to mm."
+                )
         count = transforms.sizes.get("time", 1)
         shared = "time" not in transforms.dims
     else:
@@ -229,7 +250,7 @@ def resample(
             raise ValueError(
                 "Expected nonempty transform matrices shaped (4, 4) or (N, 4, 4)."
             )
-        values = validate_matrices(values, count)
+        values = validate_matrices(transforms, count)
         if np.any(np.linalg.matrix_rank(values[:, :3, :3]) != 3):
             raise ValueError("Transform matrices must be nonsingular.")
 

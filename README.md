@@ -67,13 +67,14 @@ result = voxreg.register(
 
 | Argument | Purpose |
 | --- | --- |
-| `moving`, `fixed` | NumPy-backed VoxelData in mm: `(k, j, i)` images or `(time, k, j, i)` recordings. `fixed` is spatial-only and required for a single image. |
+| `moving`, `fixed` | NumPy-backed VoxelData with physical length units: `(k, j, i)` images or `(time, k, j, i)` recordings. `fixed` is spatial-only and required for a single image. |
 | `transform` | `"translation"`, `"rigid"` (default), `"affine"`, `"syn"`, a `Stage`, or a sequence of model names/`Stage` specifications. Slices use `k=1`; volumes have at least two samples on each axis. |
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
 | `fixed_mask`, `moving_mask` | Optional boolean ROI VoxelData in their own physical grids. Fixed mask is spatial-only; moving mask can be shared or per-frame with matching time labels. Masks restrict fitting at every stage and level. |
 | `intensity_scaling` | `"db"` (default) for nonnegative power, or `"none"` for already-prepared/signed data. Affects fitting only. |
 | `metric` | Default `None` retains global squared NCC for linear models and local squared NCC for SyN. Explicit `"ncc"` selects global NCC, `"local_ncc"` selects SyN local NCC, and `"mi"` selects mutual information. |
 | `mi_bins`, `mi_sigma` | MI histogram bins (default `32`, range `2`–`256`) and Gaussian standard deviation in bin widths (default `0.5`, range `0.1`–`10`). |
+| `interpolation` | Final resampling of original intensities: `"linear"` (default) or `"nearest"`. Fitting always uses linear interpolation. |
 | `batch_size` | Maximum frames fitted together; automatic by default. Full returned images still occupy CPU memory. |
 | `max_iterations` | Per-frame update limit at each level: an integer (default `100`) or one integer per level. Inspect diagnostics rather than assuming convergence. |
 | `shrink_factors`, `smoothing_sigmas` | Explicit coarse→fine downsampling factors and Gaussian image smoothing standard deviations in mm. Defaults `(1,)` and `(0.0,)` retain native-resolution fitting. |
@@ -105,6 +106,30 @@ Dask-backed inputs are not supported.
 
 For all options, including optimizer controls and callbacks, use
 `help(voxreg.register)` or read the [API docstring](src/voxreg/rigid.py).
+
+## Physical units
+
+World coordinates may use ConfUSIus length units: `m`, `cm`, `mm`, `um`/`µm`
+or `nm`. Fixed images, moving images and masks may each use different units.
+Voxreg converts their geometry to **mm internally**, without changing inputs.
+Image outputs retain the reference/fixed grid's native coordinates and length
+unit; intensity units and dtype still come from the moving image.
+
+Exported matrices and displacement components, physical motion diagnostics,
+bare matrix seeds and `smoothing_sigmas` remain in **mm**. CC radii and SyN
+deformation smoothing remain in **voxels**. Labelled matrix seeds and resampling
+transforms may declare other supported length units through `spatial_units`;
+only matrix translations are scaled, since linear coefficients are dimensionless.
+Matrices map world coordinates expressed in one common declared length unit,
+not separately in each input image's native unit.
+Displacement fields must declare `spatial_units` for their values; their grid's
+coordinate unit is independent. A field must match the physical reference grid
+without implicit regridding, even when the grid units differ.
+
+`position_to_world(data)` returns the array-position affine in mm. Request a
+different output unit explicitly, for example `position_to_world(data, units="um")`.
+These are spatial coordinate units, separate from intensity `attrs["units"]`.
+Unknown or non-length units are rejected rather than assigned an assumed scale.
 
 ## Mutual information
 
@@ -151,7 +176,7 @@ result = voxreg.register(
 )
 ```
 
-Masks must be NumPy-backed boolean VoxelData with physical coordinates in mm.
+Masks must be NumPy-backed boolean VoxelData with supported physical length units.
 Convert binary integer masks explicitly with `mask.astype(bool)`. Their shape,
 spacing, origin and orientation may differ from the images. The fixed mask is
 spatial-only; a spatial moving mask broadcasts across recording frames, while
@@ -232,6 +257,9 @@ stage's pyramid diagnostics and zero-based `stage`/`transform` attributes.
 status and sums updates across all stages. Its level variables describe only the
 final stage; consult `stage_diagnostics` for earlier levels. Phase timings sum
 stage timings; `stage_overhead_seconds` records validation/orchestration overhead.
+Convergence windows restart at every stage and level. A summary `converged`
+status describes the final stage/level; it does not assert that every earlier
+stage converged. Objectives from different metrics or levels are not combined.
 
 Progress callbacks count completed stage/frame work units, with a total of
 `number_of_frames * number_of_stages`, including skipped frames. Metric callbacks

@@ -9,7 +9,8 @@ See the [public API](README.md#voxregregister) for usage and the function's
 
 - Moving data is `(k, j, i)` or `(time, k, j, i)`; fixed data is spatial-only.
   A recording without explicit fixed uses its first frame, preserved exactly.
-- Inputs are finite, real, NumPy-backed VoxelData in mm. Native spatial coordinates
+- Inputs are finite, real, NumPy-backed VoxelData with ConfUSIus length units.
+  Native spatial coordinates
   are uniform, monotonic integers; offsets, crops, strides and reversal are supported.
 - Fixed/moving shapes, spacings, origins and orientations may differ. Geometry
   comes from ConfUSIus's lazy world index, not mutable metadata shortcuts.
@@ -22,6 +23,24 @@ Public transforms use **world z/y/x in mm**. For linear models:
 moving_world = T @ fixed_world
 moving_position = inverse(G_moving) @ T @ G_fixed @ fixed_position
 ```
+
+VoxelToWorldIndex may declare m, cm, mm, um/µm or nm independently on each
+image/mask. `position_to_world` converts the full physical affine (top three
+rows, including its origin) to mm by default; its explicit `units` keyword can
+request another supported output unit. Native indices and input metadata are
+preserved. Geometry validation requires world-coordinate units to agree with
+the index and delegates supported length conversions to ConfUSIus.
+
+Matrix translations and displacement components are in mm for exported maps;
+linear coefficients remain dimensionless. Labelled inputs may declare another
+`spatial_units` unit and are copied/converted once on import. Bare matrices use
+mm. Displacement grid coordinates and component units are independent, with
+physical grid equivalence checked after normalization. Field value `units`,
+when present, must agree with `spatial_units`. Unknown units are errors.
+Image outputs retain the reference grid's native length units and moving
+intensity metadata. Physical smoothing arguments and motion diagnostics remain
+in mm; CC radii and field smoothing remain in voxels. Unit conversion cannot
+recover physical precision already lost in an input affine's float64 values.
 
 `G` maps zero-based array positions to world coordinates, including the native
 coordinate offset and stride. It is not necessarily the stored voxel-to-world

@@ -5,12 +5,17 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
-from confusius._utils.geometry import VoxelToWorldIndex
+from confusius._utils.geometry import VoxelToWorldIndex, convert_length_units
 
 VOXEL_DIMS = ("k", "j", "i")
 """Native voxel dimensions, always last in a supported registration array."""
 WORLD_DIMS = ("z", "y", "x")
 """World coordinate and affine component order."""
+
+
+def _length_scale_to_mm(units):
+    """Use ConfUSIus's supported physical length units, without guessing a scale."""
+    return float(convert_length_units(1, units, "mm"))
 
 
 def _check_affine(affine: npt.ArrayLike) -> npt.NDArray[np.float64]:
@@ -58,9 +63,12 @@ def _validate_registration_geometry(data: xr.DataArray) -> None:
     ):
         raise ValueError("VoxelData requires ConfUSIus's VoxelToWorldIndex on z/y/x.")
     matrix = _check_affine(index.voxel_to_world)
+    _length_scale_to_mm(index.units)
     for world in WORLD_DIMS:
-        if data.coords[world].attrs.get("units") != "mm" or index.units != "mm":
-            raise ValueError("World coordinate units must be mm.")
+        if data.coords[world].attrs.get("units") != index.units:
+            raise ValueError(
+                "World coordinate units must match VoxelToWorldIndex units."
+            )
     coordinates = {}
     for dim in VOXEL_DIMS:
         if dim not in data.coords or data.coords[dim].dims != (dim,):
@@ -151,18 +159,25 @@ def _compute_plane_alignment(
     return rotation, second * (second @ (centers[1] - centers[0]))
 
 
-def position_to_world(data: xr.DataArray) -> npt.NDArray[np.float64]:
-    """Return the physical affine mapping zero-based array positions to world.
+def position_to_world(
+    data: xr.DataArray, *, units: str = "mm"
+) -> npt.NDArray[np.float64]:
+    """Return the array-position to world affine in explicit physical units.
 
     Parameters
     ----------
     data : xarray.DataArray
         VoxelData with uniform integer native coordinates.
+    units : str, default: "mm"
+        Output length unit supported by ConfUSIus: m, cm, mm, um/µm or nm.
+        The default normalizes geometry for voxreg's mm transforms regardless
+        of the input index unit. Native coordinates and metadata are not modified.
 
     Returns
     -------
     (4, 4) numpy.ndarray
-        Array-position k/j/i to world z/y/x map, accounting for crop and stride.
+        Array-position k/j/i to world z/y/x map in units, accounting for crop
+        and stride. Both lattice coefficients and world origins are converted.
     """
     _validate_registration_geometry(data)
     conversion = np.eye(4)
@@ -173,4 +188,28 @@ def position_to_world(data: xr.DataArray) -> npt.NDArray[np.float64]:
             int(values[1]) - int(values[0]) if len(values) > 1 else 1.0
         )
     index = cast(VoxelToWorldIndex, data.xindexes["z"])
-    return index.voxel_to_world @ conversion
+    scale = float(convert_length_units(1, index.units, units))
+    matrix = index.voxel_to_world @ conversion
+    if scale != 1:
+        with np.errstate(over="ignore", invalid="ignore"):
+            matrix[:3] *= scale
+        _check_affine(matrix)
+    return matrix
+
+
+def _same_physical_grid(first, second, *, affines=None):
+    """Compare array-position lattices in mm, allowing only unit-conversion roundoff."""
+    if any(first.sizes[d] != second.sizes[d] for d in VOXEL_DIMS):
+        return False
+    a, b = (
+        (position_to_world(first), position_to_world(second))
+        if affines is None
+        else affines
+    )
+    ell = min(np.linalg.norm(matrix[:3, :3], axis=0).min() for matrix in (a, b))
+    tolerance = np.minimum(
+        32 * np.finfo(float).eps * np.maximum(np.abs(a[:3]), np.abs(b[:3]))
+        + 32 * np.finfo(float).eps * ell,
+        1e-7 * ell,
+    )
+    return bool((np.abs(a[:3] - b[:3]) <= tolerance).all())

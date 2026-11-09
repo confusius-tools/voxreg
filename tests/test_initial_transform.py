@@ -288,7 +288,7 @@ def test_reference_and_labeled_seed_validation(recording_factory):
         labeled.isel(time=slice(None, None, -1)),
         labeled.isel(world_in=slice(None, None, -1)),
         labeled.rename(world_out="axis"),
-        labeled.assign_attrs(spatial_units="m"),
+        labeled.assign_attrs(spatial_units="seconds"),
         labeled.assign_attrs(convention="moving-to-fixed"),
     ]:
         with pytest.raises(ValueError, match="initial_transform"):

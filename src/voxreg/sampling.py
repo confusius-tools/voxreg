@@ -11,7 +11,11 @@ import torch
 import torch.nn.functional as F
 import xarray as xr
 
-from voxreg.geometry import _compute_plane_alignment, position_to_world
+from voxreg.geometry import (
+    _compute_plane_alignment,
+    _same_physical_grid,
+    position_to_world,
+)
 from voxreg.metrics import compute_global_ncc  # noqa: F401 -- preserve the previous internal import path
 from voxreg.transforms import (
     build_intrinsic_linear,
@@ -231,7 +235,7 @@ def make_grid(
     if (
         planar
         and not reversed_normal
-        and fixed.xindexes["z"].equals(moving.xindexes["z"])
+        and _same_physical_grid(fixed, moving, affines=(af, am))
     ):
         # Retain the qualified same-grid 2D arithmetic and kernel exactly.
         return make_plane(fixed, device=device, dtype=dtype, center=center)

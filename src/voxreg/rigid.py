@@ -560,6 +560,9 @@ def register(
     ----------
     moving : xarray.DataArray
         Finite real NumPy-backed VoxelData, (k, j, i) or (time, k, j, i).
+        World coordinates may use ConfUSIus length units (m, cm, mm, um/µm, nm);
+        fixed, moving and masks may use different units. Geometry is normalized
+        to mm. Output images retain the fixed grid's native coordinates and units.
         Slice pairs use k=1; volume pairs require all spatial axes >= 2.
         Integer values must lie within [-2**53, 2**53] for exact float conversion.
     fixed : xarray.DataArray, optional
@@ -599,7 +602,9 @@ def register(
         image values outside an ROI can influence interpolation near its boundary.
     initial_transform : array-like or xarray.DataArray, optional
         Model-compatible fixed-world-to-moving-world pull matrix in world z/y/x,
-        with translations in mm. Shape (4, 4) broadcasts to all frames;
+        with translations in mm for bare arrays. Labelled spatial_units may
+        declare any supported length unit; translations are converted to mm.
+        Shape (4, 4) broadcasts to all frames;
         (N, 4, 4) follows moving frame order. SyN accepts an orientation-preserving
         affine seed as its global prealignment; the dense result includes that
         seed. Dense restart seeds are not supported. Labeled arrays must use
@@ -973,7 +978,9 @@ def _register(
     _validate_registration_geometry(fixed)
     if fixed.dims != VOXEL_DIMS:
         raise ValueError("fixed must have dimensions (k, j, i), without time.")
-    same_grid = moving.xindexes["z"].equals(fixed.xindexes["z"])
+    same_grid = moving.coords["z"].attrs["units"] == fixed.coords["z"].attrs[
+        "units"
+    ] and moving.xindexes["z"].equals(fixed.xindexes["z"])
     if transform == "syn" and (moving.sizes["k"] == 1) != (fixed.sizes["k"] == 1):
         raise ValueError(
             "SyN requires two native k=1 planes or two 3D volumes; mixed-dimensional deformation is unsupported."
@@ -1164,10 +1171,7 @@ def _register(
                 raise ValueError(
                     "initial_transform time labels must match moving in order."
                 )
-            for key, expected in (
-                ("spatial_units", "mm"),
-                ("convention", "fixed-world-to-moving-world pull"),
-            ):
+            for key, expected in (("convention", "fixed-world-to-moving-world pull"),):
                 if (
                     key in initial_transform.attrs
                     and initial_transform.attrs[key] != expected

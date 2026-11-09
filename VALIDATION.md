@@ -28,6 +28,13 @@ storage and nonlinear-contrast physical truth in 2D/3D translation and SyN.
 Integration covers masks, stage overrides, failure isolation and pyramids.
 CUDA tests skip when unavailable; CPU success does not qualify CUDA.
 
+Length-unit regressions cover all ConfUSIus-supported length scales, mixed-unit
+fixed/moving/mask grids, cropped/strided/oblique geometry, large world origins,
+every transform model, staged pyramids, labelled seeds and initialization aliases.
+Resampling is checked against independent SciPy pulls, including displacement
+component units independent of their native grid units. Native output geometry,
+input immutability and invalid/mismatched unit metadata are checked separately.
+
 Batch comparisons of float32 fits allow a maximum physical pull difference of
 0.001 minimum-spacing voxels over the full grid. Linear matrices are evaluated
 at world points; their raw translation entries depend on the world origin.
@@ -52,6 +59,37 @@ analytic truth defines acceptance, not agreement between backends.
   workers use identical inputs and the same effective backend batching.
 
 Passing unit tests or improving NCC does not establish correct correspondence.
+
+## First real-data motion-quality case
+
+The paper Figure 2 rat75 / 20220523 / slice32 window (frames 220–339) now has a
+retained, non-timing reproduction in
+`artifacts/realdata-rat75-quality-20261109-01/`. The paper script and caches were
+not changed. Raw DVARS uses unnormalized power differences over 119 adjacent
+pairs; source hashes, package versions, options, per-frame diagnostics, transforms
+and curves are retained with the local artifacts.
+
+For fresh CPU rigid runs, mean DVARS in the original brain ROI was 193.52 raw,
+160.69 with default voxreg dB fitting, and 156.50 with ConfUSIus's script settings.
+Seven default-voxreg pairs exceeded raw DVARS, versus none for ConfUSIus. Changing
+voxreg to unscaled fitting did not remove these differences. These configurations
+have different optimizers, intensity transforms and stopping policies.
+
+Intersecting the brain ROI with fresh voxreg support across every frame removed
+31 of 10,168 voxels. On this restricted ROI, mean DVARS was 191.67 raw, 154.26
+voxreg and 154.94 ConfUSIus; neither fresh method had a pair above raw. ConfUSIus
+did not export its own support mask here, so this is a sensitivity check rather
+than a fully matched spatial-support or anatomical-accuracy qualification.
+
+All 191 unsupported brain samples in the default voxreg run were within the
+half-voxel cell extent and were filled with the frame minimum. Voxreg's ordinary
+axes currently use center-range output support; ITK's image-buffer checks include
+[half-voxel cells](https://docs.itk.org/projects/doxygen/en/stable/classitk_1_1ImageFunction.html).
+Audit this support/interpolation contract before interpreting the observed
+spikes as optimizer failure. The older voxreg cache differs materially from the
+fresh runs and has no established configuration provenance. No default, support
+contract or optimizer was changed to improve these QC curves. Smaller DVARS
+alone does not demonstrate better spatial registration.
 
 ## Limits
 

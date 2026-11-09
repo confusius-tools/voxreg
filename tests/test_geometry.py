@@ -157,8 +157,7 @@ def test_units_and_unsupported_dimensions():
     data = create_voxeldata(
         np.ones((1, 4, 5)), dims=("k", "j", "i"), voxel_to_world=np.eye(4), units="m"
     )
-    with pytest.raises(ValueError, match="mm"):
-        _validate_registration_geometry(data)
+    _validate_registration_geometry(data)
     poses = create_voxeldata(
         np.ones((2, 1, 4, 5)),
         dims=("pose", "k", "j", "i"),

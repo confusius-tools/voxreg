@@ -5,7 +5,7 @@ from dataclasses import replace
 import numpy as np
 import torch
 
-from voxreg.geometry import position_to_world
+from voxreg.geometry import _length_scale_to_mm, position_to_world
 
 
 def configure_transform(grid, fixed, transform):
@@ -136,6 +136,8 @@ def validate_matrices(transforms, count):
     ----------
     transforms : array-like
         One (4, 4) pull or a (count, 4, 4) array of world z/y/x pulls.
+        Bare matrices use mm. Labelled spatial_units convert translations to mm;
+        the dimensionless linear part and homogeneous row remain unchanged.
     count : int
         Number of moving frames after broadcasting a shared matrix.
 
@@ -155,6 +157,15 @@ def validate_matrices(transforms, count):
     if values.dtype.kind not in "iuf":
         raise TypeError("initial_transform must contain real numeric matrices.")
     values = np.array(values, dtype=np.float64, copy=True)
+    try:
+        scale = _length_scale_to_mm(
+            getattr(transforms, "attrs", {}).get("spatial_units", "mm")
+        )
+    except ValueError as error:
+        raise ValueError(f"initial_transform spatial_units: {error}") from error
+    if values.shape[-2:] == (4, 4) and scale != 1:
+        with np.errstate(over="ignore", invalid="ignore"):
+            values[..., :3, 3] *= scale
     if values.shape == (4, 4):
         values = np.broadcast_to(values, (count, 4, 4))
     if values.shape != (count, 4, 4) or not np.isfinite(values).all():
