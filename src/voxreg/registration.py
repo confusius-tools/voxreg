@@ -23,11 +23,13 @@ from voxreg.masks import (
 )
 from voxreg.metrics import Metric, validate_metric
 from voxreg.preparation import (
+    IntensityScaling,
     PreparedRegistration,
     RegistrationSettings,
     choose_batch_size,
     prepare_fitting_images,
     resolve_device,
+    validate_intensity_scaling,
 )
 from voxreg.results import LinearFit, RegistrationResult
 from voxreg.sampling import (
@@ -56,7 +58,8 @@ def register(
     | npt.ArrayLike
     | xr.DataArray
     | None = None,
-    intensity_scaling: Literal["none", "db"] = "db",
+    moving_intensity_scaling: IntensityScaling = None,
+    fixed_intensity_scaling: IntensityScaling = None,
     metric: Literal["ncc", "local_ncc", "mi"] | None = None,
     mi_bins: int = 32,
     mi_sigma: float = 0.5,
@@ -157,21 +160,29 @@ def register(
         Moments requires nonnegative original values with positive mass in every
         image. Named modes estimate no rotation; the implicit reference stays
         exactly identity.
-    intensity_scaling : {"none", "db"}, default: "db"
-        Fitting preprocessing only; original intensities are resampled for output.
-        dB requires nonnegative power; normalized zeros are floored at 1e-12.
-        Pass original linear intensities; for dB fitting use this option instead
-        of scaling the inputs yourself. Logarithms, square roots and other nonlinear
-        preprocessing change center_moments weights. Already-transformed data needs
-        center_geometry or an explicit seed instead. Only fitting is scaled;
-        initialization and original-intensity output remain unscaled.
+    moving_intensity_scaling : {"db", "sqrt"} or float, optional
+        Fitting-only transform; not provided means no transform. dB uses
+        10*log10(abs(x)/max(abs(x))) with a -120 dB floor, including zeros.
+        sqrt and positive finite numeric exponents use abs(x)**exponent.
+        Signed input is allowed; magnitude transforms discard its sign.
+        Transforms are evaluated in float64 before metric conditioning and
+        float32 fitting. Power overflow raises ValueError; underflow rounds to zero.
+        Reductions span the entire recording before batching, including outside
+        masks. Original intensities drive initialization and final resampling.
+        Pass native intensities rather than pretransformed moment weights.
+    fixed_intensity_scaling : {"db", "sqrt"} or float, optional
+        Independent transform of an explicit fixed image, with the same rules.
+        Not provided means no transform, not inheritance from moving scaling.
+        Without explicit fixed, the first-frame reference uses moving scaling
+        and the recording-wide maximum; specifying this argument then is invalid.
+        The implicit reference output remains exactly the original first frame.
     metric : {"ncc", "local_ncc", "mi"}, optional
         Fitting objective. None preserves global squared NCC for linear models
         and rectangular local squared NCC for SyN. Explicit ncc selects global
         squared NCC for any model. local_ncc explicitly selects SyN local NCC.
         mi selects Gaussian-Parzen mutual information.
         MI independently maps each native fitting image's min/max to [0, 1]
-        after intensity_scaling, before pyramid smoothing. Ranges include the
+        after the respective intensity transform, before pyramid smoothing. Ranges include the
         entire native image, including outside ROIs, and stay fixed during fitting.
         Original intensities and final interpolation remain unchanged.
     mi_bins : int, default: 32
@@ -394,7 +405,8 @@ def register(
         moving_mask=moving_mask,
         initial_transform=initial_transform,
         initialization=initialization,
-        intensity_scaling=intensity_scaling,
+        moving_intensity_scaling=moving_intensity_scaling,
+        fixed_intensity_scaling=fixed_intensity_scaling,
         metric=metric,
         mi_bins=mi_bins,
         mi_sigma=mi_sigma,
@@ -483,7 +495,8 @@ def run_stage(
     moving_mask = settings.moving_mask
     initial_transform = settings.initial_transform
     initialization = settings.initialization
-    intensity_scaling = settings.intensity_scaling
+    moving_intensity_scaling = settings.moving_intensity_scaling
+    fixed_intensity_scaling = settings.fixed_intensity_scaling
     metric = settings.metric
     mi_bins = settings.mi_bins
     mi_sigma = settings.mi_sigma
@@ -613,8 +626,10 @@ def run_stage(
         raise ValueError(
             'syn_cc_radius, syn_update_sigma and syn_total_sigma require transform="syn" when nondefault.'
         )
-    if intensity_scaling not in ("none", "db"):
-        raise ValueError("intensity_scaling must be none or db.")
+    validate_intensity_scaling(moving_intensity_scaling, "moving_intensity_scaling")
+    validate_intensity_scaling(fixed_intensity_scaling, "fixed_intensity_scaling")
+    if implicit_fixed and fixed_intensity_scaling is not None:
+        raise ValueError("fixed_intensity_scaling requires an explicit fixed image.")
     if resample_interpolation not in ("linear", "nearest", "bspline"):
         raise ValueError("resample_interpolation must be linear, nearest or bspline.")
     if (
@@ -748,7 +763,12 @@ def run_stage(
     planar = isinstance(plane, Plane) or plane.planar
     raw = moving.values[:, 0] if planar else moving.values
     fit, target = prepare_fitting_images(
-        raw, fixed.values[0] if planar else fixed.values, intensity_scaling, metric
+        raw,
+        fixed.values[0] if planar else fixed.values,
+        moving_intensity_scaling,
+        fixed_intensity_scaling,
+        metric,
+        implicit_fixed=implicit_fixed,
     )
     timings = {
         "prepare": perf_counter() - start,

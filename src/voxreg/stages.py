@@ -22,6 +22,8 @@ class Stage:
     Unset options inherit the corresponding shared register argument. Shared
     arguments in turn default to the existing model settings. Sequence options
     are copied to tuples; inputs and this specification are not modified.
+    Moving/fixed intensity scaling is shared across stages and always starts
+    from original intensities, never the preceding stage's fitting images.
 
     Attributes
     ----------

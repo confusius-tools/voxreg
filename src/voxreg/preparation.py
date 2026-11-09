@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
@@ -16,6 +16,10 @@ from voxreg.interpolation import Interpolation
 if TYPE_CHECKING:
     from voxreg.metrics import Metric
     from voxreg.sampling import Plane, SpatialGrid
+
+
+IntensityScaling: TypeAlias = Literal["db", "sqrt"] | float | None
+"""Fitting-only magnitude transform, or no transform."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -37,7 +41,8 @@ class RegistrationSettings:
         | xr.DataArray
         | None
     ) = None
-    intensity_scaling: Literal["none", "db"] = "db"
+    moving_intensity_scaling: IntensityScaling = None
+    fixed_intensity_scaling: IntensityScaling = None
     metric: Literal["ncc", "local_ncc", "mi"] | None = None
     mi_bins: int = 32
     mi_sigma: float = 0.5
@@ -126,11 +131,91 @@ def resolve_device(device: Literal["auto", "cpu", "cuda"]) -> Literal["cpu", "cu
     return "cuda"
 
 
+def validate_intensity_scaling(value: IntensityScaling, name: str) -> None:
+    """Validate a fitting transform before any stage executes.
+
+    Parameters
+    ----------
+    value : {"db", "sqrt"} or float, optional
+        Magnitude transform or a positive finite power exponent.
+    name : str
+        Public argument name used in errors.
+
+    Returns
+    -------
+    None
+        Valid settings require no conversion.
+
+    Raises
+    ------
+    ValueError
+        If the transform is unknown or the exponent is not positive and finite.
+    """
+    if value is None or (isinstance(value, str) and value in ("db", "sqrt")):
+        return
+    if isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(
+        value, (bool, np.bool_)
+    ):
+        try:
+            if np.isfinite(float(value)) and value > 0:
+                return
+        except OverflowError:
+            pass
+    raise ValueError(
+        f"{name} must be None, 'db', 'sqrt' or a positive finite exponent."
+    )
+
+
+def _scale_intensities(
+    values: npt.NDArray, scaling: IntensityScaling, name: str
+) -> npt.NDArray:
+    """Transform magnitudes in float64, rejecting nonfinite power results.
+
+    Parameters
+    ----------
+    values : numpy.ndarray
+        Finite native intensities, with any leading time axis retained.
+    scaling : {"db", "sqrt"} or float, optional
+        Validated transform. No transform preserves signed values.
+    name : str
+        Image side used in errors.
+
+    Returns
+    -------
+    numpy.ndarray
+        Unchanged values or transformed float64 magnitudes.
+
+    Raises
+    ------
+    ValueError
+        If dB has no positive magnitude or power scaling overflows.
+    """
+    if scaling is None:
+        return values
+    magnitude = np.abs(values.astype(np.float64))
+    if scaling == "db":
+        maximum = magnitude.max()
+        if maximum == 0:
+            raise ValueError(f"{name} dB scaling requires a positive magnitude.")
+        # Keep fitting finite at zeros; log differences avoid ratio underflow.
+        with np.errstate(divide="ignore"):
+            return 10 * np.maximum(np.log10(magnitude) - np.log10(maximum), -12)
+    exponent = 0.5 if scaling == "sqrt" else float(scaling)
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        transformed = magnitude**exponent
+    if not np.isfinite(transformed).all():
+        raise ValueError(f"{name} intensity scaling overflowed float64.")
+    return transformed
+
+
 def prepare_fitting_images(
     raw: npt.NDArray,
     target_raw: npt.NDArray,
-    intensity_scaling: Literal["none", "db"],
+    moving_intensity_scaling: IntensityScaling = None,
+    fixed_intensity_scaling: IntensityScaling = None,
     metric: str | None = None,
+    *,
+    implicit_fixed: bool = False,
 ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     """Prepare float32 fitting images while preserving double/integer contrast.
 
@@ -140,10 +225,16 @@ def prepare_fitting_images(
         Native original intensities with a leading frame axis.
     target_raw : numpy.ndarray
         Shared native fixed image without a frame axis.
-    intensity_scaling : {"none", "db"}
-        Intensity transform applied only to fitting images.
+    moving_intensity_scaling, fixed_intensity_scaling : {"db", "sqrt"} or float, optional
+        Independent fitting transforms, applied before metric conditioning.
+        dB uses each input's global magnitude maximum with a -120 dB floor;
+        powers use magnitudes. Moving reductions span the entire recording,
+        not optimizer batches. Transforms are evaluated in float64.
     metric : str, optional
         Selected metric; MI uses native per-image ranges instead of NCC conditioning.
+    implicit_fixed : bool, default: False
+        Whether to reuse the first transformed moving frame as the fitting target,
+        including its recording-wide dB reference.
 
     Returns
     -------
@@ -155,13 +246,17 @@ def prepare_fitting_images(
     Raises
     ------
     ValueError
-        If all moving values are zero, the fixed image is constant, or dB inputs
-        contain negative values.
+        If all moving values are zero, the fixed image is constant, a scaling
+        option is invalid, or a transform produces nonfinite values.
     """
+    validate_intensity_scaling(moving_intensity_scaling, "moving_intensity_scaling")
+    validate_intensity_scaling(fixed_intensity_scaling, "fixed_intensity_scaling")
     spatial_axes = tuple(range(1, raw.ndim))
     preprocessing_dtype = (
         np.float64
-        if any(
+        if moving_intensity_scaling is not None
+        or fixed_intensity_scaling is not None
+        or any(
             np.issubdtype(data.dtype, np.integer) or data.dtype.itemsize > 4
             for data in (raw, target_raw)
         )
@@ -170,15 +265,18 @@ def prepare_fitting_images(
     fit_raw = raw.astype(preprocessing_dtype, copy=False)
     target_raw = target_raw.astype(preprocessing_dtype, copy=False)
     moving_scale = float(np.abs(fit_raw).max())
-    scale = max(moving_scale, float(np.abs(target_raw).max()))
     if moving_scale == 0:
         raise ValueError("An all-zero recording cannot be registered.")
-    if intensity_scaling == "db":
-        if fit_raw.min() < 0 or target_raw.min() < 0:
-            raise ValueError("dB scaling requires nonnegative power intensities.")
-        fit = 10 * np.log10(np.maximum(fit_raw / scale, 1e-12))
-        target = 10 * np.log10(np.maximum(target_raw / scale, 1e-12))
-    elif metric == "mi":
+    fit_raw = _scale_intensities(fit_raw, moving_intensity_scaling, "moving")
+    target_raw = (
+        fit_raw[0].copy()
+        if implicit_fixed
+        else _scale_intensities(target_raw, fixed_intensity_scaling, "fixed")
+    )
+    scale = max(float(np.abs(fit_raw).max()), float(np.abs(target_raw).max()))
+    if scale == 0:
+        raise ValueError("Intensity scaling produced all-zero fitting images.")
+    if metric == "mi":
         # Subtract native offsets before dividing so double/integer contrast
         # survives even when it is tiny relative to an image's DC intensity.
         fit, target = fit_raw, target_raw

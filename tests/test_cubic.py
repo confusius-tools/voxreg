@@ -210,7 +210,6 @@ def test_cubic_registration_preserves_fitting_and_matches_exported_pull(
         "max_iterations": 2,
         "shrink_factors": (2, 1),
         "smoothing_sigmas": (0.18, 0),
-        "intensity_scaling": "none",
         "return_transforms": True,
         "progress": False,
         "device": device,
@@ -307,7 +306,6 @@ def test_final_interpolation_validation(linear_pair_factory):
     fixed, moving, _ = linear_pair_factory(True, "rigid")
     options: RegistrationOptions = {
         "max_iterations": 1,
-        "intensity_scaling": "none",
         "progress": False,
     }
     with pytest.raises(ValueError, match="resample_interpolation"):

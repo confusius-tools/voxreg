@@ -22,7 +22,6 @@ def test_single_stage_preserves_single_model(
     fixed, moving, _ = linear_pair_factory(planar, "rigid")
     options: RegistrationOptions = {
         "max_iterations": 3,
-        "intensity_scaling": "none",
         "device": device,
         "return_transforms": True,
         "progress": False,
@@ -50,7 +49,6 @@ def test_stage_overrides_and_manual_handoff(linear_pair_factory, device, planar)
         Stage("syn", max_iterations=4, syn_update_sigma=0.8),
     )
     options: RegistrationOptions = {
-        "intensity_scaling": "none",
         "device": device,
         "return_transforms": True,
         "progress": False,
@@ -148,7 +146,6 @@ def test_motion_stages_isolate_failures_and_preserve_reference(
             max_iterations=3,
             shrink_factors=(2, 1),
             smoothing_sigmas=(0.18, 0),
-            intensity_scaling="none",
             return_transforms=True,
             batch_size=batch_size,
             progress=lambda done, total, events=events: events.append((done, total)),
@@ -321,7 +318,6 @@ def test_rigid_affine_syn_recovers_physical_truth(linear_pair_factory, device, p
         transform=("rigid", "affine", "syn"),
         max_iterations=100,
         convergence_window_size=1000,
-        intensity_scaling="none",
         device=device,
         return_transforms=True,
         progress=False,

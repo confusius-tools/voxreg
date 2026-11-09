@@ -66,7 +66,6 @@ def test_full_masks_preserve_native_fit(linear_pair_factory, device, planar, mod
     options: RegistrationOptions = {
         "transform": model,
         "max_iterations": 3,
-        "intensity_scaling": "none",
         "device": device,
         "return_transforms": True,
         "progress": False,
@@ -98,7 +97,6 @@ def test_roi_fitting_keeps_output_support_distinct(linear_pair_factory, model, p
         shrink_factors=(2, 1) if pyramid else (1,),
         smoothing_sigmas=(0.18, 0) if pyramid else (0,),
         max_iterations=3,
-        intensity_scaling="none",
         return_transforms=True,
         progress=False,
     )
@@ -172,7 +170,6 @@ def test_per_frame_masks_isolate_staged_motion_failures(linear_pair_factory, ter
             max_iterations=3,
             shrink_factors=(2, 1),
             smoothing_sigmas=(0.18, 0),
-            intensity_scaling="none",
             batch_size=batch,
             return_transforms=True,
             progress=False,
@@ -229,7 +226,6 @@ def test_masked_global_ncc_agrees_with_itk(linear_pair_factory, planar):
         fixed,
         fixed_mask=fixed_mask,
         moving_mask=moving_mask,
-        intensity_scaling="none",
         max_iterations=3,
         return_transforms=True,
         progress=False,
@@ -269,7 +265,6 @@ def test_masks_support_native_mixed_domains(slice_volume_pair_factory, moving_sl
         smoothing_sigmas=(0.18, 0),
         max_iterations=2,
         return_transforms=True,
-        intensity_scaling="none",
         progress=False,
     )
     assert result.forward_transforms is not None

@@ -28,7 +28,6 @@ def test_public_syn_controls(nonlinear_pair_factory, device, planar, options):
     fixed, moving, _, _ = nonlinear_pair_factory(planar)
     common: RegistrationOptions = {
         "transform": "syn",
-        "intensity_scaling": "none",
         "return_transforms": True,
         "max_iterations": 3,
         "device": device,
@@ -149,7 +148,6 @@ def test_syn_known_nonlinear_recovery(
         fixed,
         return_transforms=True,
         transform="syn",
-        intensity_scaling="none",
         device=device,
         **budget,
     )
@@ -202,7 +200,6 @@ def test_syn_cpu_cuda_point_gate(
             fixed,
             return_transforms=True,
             transform="syn",
-            intensity_scaling="none",
             device=d,
             **budget,
         )
@@ -233,7 +230,6 @@ def test_syn_complete_seed_and_original_output(
         return_transforms=True,
         transform="syn",
         initial_transform=seed,
-        intensity_scaling="none",
         device=device,
         max_iterations=1,
         learning_rate=1e-12,
@@ -295,7 +291,6 @@ def test_syn_reference_failure_isolation_and_chunks(
             recording,
             return_transforms=True,
             transform="syn",
-            intensity_scaling="none",
             device=device,
             max_iterations=60,
             convergence_window_size=1000,
@@ -347,7 +342,6 @@ def test_syn_metric_callback_ownership_and_exceptions(nonlinear_pair_factory):
         moving,
         fixed,
         transform="syn",
-        intensity_scaling="none",
         max_iterations=3,
         metric_interval=2,
         metric_callback=callback,
@@ -363,7 +357,6 @@ def test_syn_metric_callback_ownership_and_exceptions(nonlinear_pair_factory):
             moving,
             fixed,
             transform="syn",
-            intensity_scaling="none",
             max_iterations=1,
             metric_callback=fail,
         )
@@ -445,7 +438,6 @@ def test_syn_float32_working_fields_keep_double_geometry_and_original_data(
         moving,
         fixed,
         transform="syn",
-        intensity_scaling="none",
         device=device,
         max_iterations=2,
         return_transforms=True,
@@ -473,7 +465,6 @@ def test_syn_float32_fitting_is_independent_of_large_world_origin(
     affine[:3, 3] += [1e9, -2e9, 3e9]
     options: RegistrationOptions = {
         "transform": "syn",
-        "intensity_scaling": "none",
         "device": device,
         "max_iterations": 4,
         "return_transforms": True,
@@ -508,7 +499,6 @@ def test_syn_exchange_symmetry_is_not_one_way(nonlinear_pair_factory, device, pl
     fixed, moving, _, _ = nonlinear_pair_factory(planar)
     options: RegistrationOptions = {
         "transform": "syn",
-        "intensity_scaling": "none",
         "device": device,
         "max_iterations": 40,
         "convergence_window_size": 1000,

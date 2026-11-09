@@ -47,7 +47,6 @@ def test_explicit_single_level_preserves_defaults(linear_pair_factory, planar, m
     fixed, moving, _ = linear_pair_factory(planar, "rigid")
     options: RegistrationOptions = {
         "transform": model,
-        "intensity_scaling": "none",
         "max_iterations": 2,
         "return_transforms": True,
         "progress": False,
@@ -141,7 +140,6 @@ def test_pyramid_native_output_and_level_diagnostics(
         moving,
         fixed,
         transform=model,
-        intensity_scaling="none",
         device=device,
         initial_transform=truth if model != "translation" else None,
         shrink_factors=(3, 1),
@@ -204,7 +202,6 @@ def test_pyramid_reference_failure_isolation_and_batching(linear_pair_factory, m
         result = register(
             recording,
             transform=model,
-            intensity_scaling="none",
             shrink_factors=(2, 1),
             smoothing_sigmas=(0.2, 0),
             max_iterations=3,
@@ -247,7 +244,6 @@ def test_linear_pyramid_recovers_independent_truth(
         moving,
         fixed,
         transform=model,
-        intensity_scaling="none",
         shrink_factors=(2, 1),
         smoothing_sigmas=(0.18, 0),
         max_iterations=(80, 120),
@@ -275,7 +271,6 @@ def test_syn_pyramid_recovers_nonlinear_truth(nonlinear_pair_factory, device, pl
         moving,
         fixed,
         transform="syn",
-        intensity_scaling="none",
         shrink_factors=(2, 1),
         smoothing_sigmas=(0.18, 0),
         max_iterations=(60, 120),
@@ -312,7 +307,6 @@ def test_mixed_pyramid_preserves_native_domain(
         shrink_factors=(3, 1),
         smoothing_sigmas=(0.2, 0),
         max_iterations=(2, 3),
-        intensity_scaling="none",
         return_transforms=True,
         progress=False,
     )

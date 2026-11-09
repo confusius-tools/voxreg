@@ -23,7 +23,6 @@ def test_exported_forward_matches_registration(
         transform=model,
         return_transforms=True,
         max_iterations=2,
-        intensity_scaling="none",
         device=device,
         progress=False,
     )
@@ -124,7 +123,6 @@ def test_dense_field_broadcast_and_validation(linear_pair_factory, device):
         transform="syn",
         return_transforms=True,
         max_iterations=1,
-        intensity_scaling="none",
         device=device,
         progress=False,
     )
@@ -232,7 +230,6 @@ def test_mixed_support_matches_registration_and_scipy(
         reference,
         transform="translation",
         return_transforms=True,
-        intensity_scaling="none",
         resample_interpolation=interpolation,
         learning_rate=1e-20,
         max_iterations=1,

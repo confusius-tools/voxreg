@@ -36,7 +36,6 @@ def test_slice_volume_directions_use_their_own_native_fixed_grid(
     target, volume, truth = slice_volume_pair_factory(model)
     kwargs: RegistrationOptions = {
         "transform": model,
-        "intensity_scaling": "none",
         "max_iterations": 400,
         "convergence_window_size": 401,
         "device": device,
@@ -110,7 +109,6 @@ def test_slice_volume_cpu_cuda_unchanged_precision_gate(
     target, volume, _ = slice_volume_pair_factory(model)
     kwargs: RegistrationOptions = {
         "transform": model,
-        "intensity_scaling": "none",
         "max_iterations": 400,
         "convergence_window_size": 401,
         "progress": False,
@@ -197,7 +195,6 @@ def test_nonparallel_slice_planes_need_an_explicit_alignment_choice(model, mode)
             moving,
             fixed,
             return_transforms=True,
-            intensity_scaling="none",
             transform=model,
             progress=False,
         )
@@ -206,7 +203,6 @@ def test_nonparallel_slice_planes_need_an_explicit_alignment_choice(model, mode)
             moving,
             fixed,
             return_transforms=True,
-            intensity_scaling="none",
             transform=model,
             initialization="center_geometry",
             progress=False,
@@ -215,7 +211,6 @@ def test_nonparallel_slice_planes_need_an_explicit_alignment_choice(model, mode)
         moving,
         fixed,
         return_transforms=True,
-        intensity_scaling="none",
         transform=model,
         initialization="align_planes" if mode == "align_planes" else truth,
         max_iterations=1,
@@ -251,7 +246,6 @@ def test_batched_slice_targets_seeds_failures_and_chunk_independence(
     original = movie.values.copy()
     kwargs: RegistrationOptions = {
         "transform": model,
-        "intensity_scaling": "none",
         "initialization": seeds,
         "max_iterations": 3,
         "convergence_window_size": 4,
@@ -293,7 +287,6 @@ def test_mixed_no_overlap_retains_public_seed(slice_volume_pair_factory, model):
             return_transforms=True,
             transform=model,
             initialization=seed,
-            intensity_scaling="none",
             max_iterations=2,
             progress=False,
         )
@@ -316,7 +309,6 @@ def test_reversed_strided_slice_and_volume_grids(slice_volume_pair_factory, mode
         return_transforms=True,
         transform=model,
         initialization=truth,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -342,7 +334,6 @@ def test_plane_seed_can_select_the_opposite_normal_orientation(angle):
         fixed,
         return_transforms=True,
         initialization=pose,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -383,7 +374,6 @@ def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(
         return_transforms=True,
         transform=model,
         initialization=truth,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -410,7 +400,6 @@ def test_integer_mixed_output_retains_rounding_and_original_dtype(
         target,
         return_transforms=True,
         initialization=truth,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -462,7 +451,6 @@ def test_mixed_centering_seed_is_direction_consistent(
     target, volume, _ = slice_volume_pair_factory("rigid")
     kwargs: RegistrationOptions = {
         "initialization": mode,
-        "intensity_scaling": "none",
         "max_iterations": 2,
         "convergence_window_size": 3,
         "progress": False,
@@ -484,7 +472,6 @@ def test_volume_grid_centers_within_singleton_voxel_extent_are_valid(
         target,
         volume,
         return_transforms=True,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -512,7 +499,6 @@ def test_parallel_plane_centering_and_translation_model():
         return_transforms=True,
         transform="translation",
         initialization="center_geometry",
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )

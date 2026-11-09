@@ -1,222 +1,170 @@
-# Next steps
+# Roadmap
 
 Goal: a small, physically correct CPU/CUDA registration engine for ConfUSIus.
-Current model support is documented in the [README](README.md); numerical
-contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md).
+[README](README.md) owns supported behavior; [VALIDATION](VALIDATION.md) owns
+numerical contracts, evidence and accuracy limits. Work one roadmap point at a
+time, then stop for user review and a separate commit.
 
-## Current work status
+## Performance and qualification priorities
 
-Work proceeds one roadmap point at a time, stopping after each for user review
-and a separate commit. The registration-module refactor is implemented and
-reviewed. Cubic final-image interpolation is implemented and reviewed. Automatic
-device selection is implemented and reviewed.
-Broad benchmark expansion remains deferred to its roadmap point; preserve
-existing artifacts and frozen sources/settings.
+1. **Review coruscant benchmark results when available.** Establish the current
+   precision-policy baseline through [one pipeline](BENCHMARK.md). Job completion
+   is not tracked here; preserve frozen sources/settings and avoid competing heavy
+   jobs during measurement. Broad benchmark expansion remains deferred.
+2. **Profile the SyN runtime gap to FireANTs.** Preserve the shared
+   [0.30-voxel registration gate](research/syn/REFERENCE.md) and recorded errors;
+   defer further accuracy tuning while investigating runtime.
+3. **Optimize one measured bottleneck.** Compare workload/device-specific batching
+   or a source-guided change without weakening precision/safety checks. Label
+   non-passing cases, preserve timing boundaries and report memory; see
+   [PERFORMANCE](PERFORMANCE.md).
+4. **Broaden real-data qualification.** Revisit pair, motion and atlas workflows
+   with original images/native geometry and explicit quality limits. Qualify MI
+   bandwidth/convergence/runtime and useful pyramid schedules/capture range/whole-call
+   performance. Reusable workflow configurations await real-data qualification.
 
-## Planned capabilities
+## Planned capabilities and investigations
 
-### Intensity scaling and initialization
+### Figure 2 real-data motion quality: audit support before optimizer tuning
 
-Replace the shared `intensity_scaling` option with separate
-`moving_intensity_scaling` and `fixed_intensity_scaling` arguments, both defaulting
-to Python `None` for no transformation. Keep `"db"` and add `"sqrt"` plus numeric
-power exponents, following ConfUSIus semantics after inspecting its implementation.
-Different image representations may require different transforms. This API is
-alpha: remove obsolete spellings rather than adding compatibility aliases.
+Case: rat75 / 20220523 / slice32 power Doppler, frames 220–339. Paper entry script:
+`/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius-paper/paper/figures/fig2/scripts/03_plot_volumewise_motion_correction.py`.
 
-- Confirm and preserve moment initialization from original, nonnegative native
-  intensities before any fitting transform. The current single-model path already
-  computes `center_moments` before `prepare_fitting_images`; audit staged and
-  implicit-reference paths and retain regression coverage. Negative dB values
-  must not become moment weights.
-- Define valid input domains, zero/negative values, finite exponent validation,
-  overflow handling and fitting precision for each transform. Inspect ConfUSIus
-  before choosing exact dB and power conventions; do not silently reinterpret them.
-- Apply each transform consistently before metric-range preparation and image
-  pyramids, keeping final resampling on original intensities. Define how distinct
-  moving/fixed transforms affect the implicit first-frame reference and masks.
-- Replace the string `"none"` with `None`, update stages, documentation and tests,
-  and qualify the default change on representative inputs. Keep benchmark sources
-  and historical artifacts frozen; disclose changed defaults in new comparisons.
-- Design this alongside lazy recording-wide conditioning so time chunks cannot
-  silently change fitting intensities.
+[Initial reproduction](VALIDATION.md#first-real-data-motion-quality-case) is
+complete: fresh default-voxreg DVARS spikes disappear when excluding 31 unsupported
+ROI voxels. All affected default-run samples fall within half-voxel cell extents,
+exposing a center-range versus ITK cell-support difference. Audit that contract
+before optimizer tuning. The older voxreg cache was not reproduced by tested
+fresh settings; its configuration provenance remains unresolved.
 
-### First real-data motion-quality case: paper Figure 2
-
-Use the existing rat75 / 20220523 / slice32 power-Doppler window, frames 220–339,
-from the related confusius-paper repository. The entry script is
-/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius-paper/paper/figures/fig2/scripts/03_plot_volumewise_motion_correction.py.
-The user reports some voxreg-corrected DVARS above raw DVARS while ConfUSIus's
-register_volumewise performs better. Treat this as a quality investigation,
-not an established general ranking or a timing benchmark.
-
-- Preserve the paper script, original figure outputs and existing caches. Check
-  cache provenance; use separate, explicitly configured outputs for new runs.
-- Reproduce raw and corrected per-frame DVARS with the same brain mask, time
-  window and definition. Compare the raw-support region and the common valid
-  spatial support separately so padding/boundaries cannot masquerade as motion.
-- Match the reference frame, fitting intensity transform, model, interpolation,
-  initialization, pyramid schedule and iteration/convergence policy explicitly;
-  disclose optimizer differences rather than equating numeric learning rates.
-  The current script uses ConfUSIus correlation with unscaled fitting intensities
-  and learning_rate=1.0; voxreg's default fitting intensities are dB-scaled.
-- Inspect the offending adjacent frame pairs, fitted transforms, metric traces,
-  status/steps, registration residuals and anatomical alignment. DVARS is a
-  temporal QC measure, not a spatial correspondence objective or ground truth;
-  smaller DVARS alone cannot qualify a correction.
-- Identify a minimal reproducible cause before changing defaults or optimizers.
-  Retain bounded evidence and a regression case when a defect is established.
-
-Initial reproduction is recorded in [VALIDATION.md](VALIDATION.md#first-real-data-motion-quality-case).
-The fresh default-voxreg DVARS spikes disappear after excluding 31 ROI voxels
-that become unsupported. All affected default-run samples lie within half-voxel
-cell extents, exposing a center-range versus ITK cell-support difference to audit
-before further optimizer tuning. The older voxreg cache is not reproduced by
-the tested fresh settings; preserve that provenance uncertainty.
+- Preserve the paper script, original figures and caches; check provenance and
+  use separate, explicitly configured outputs for new runs.
+- Compare raw/corrected per-frame DVARS using the same brain mask, window and
+  definition, both on the raw-support region and common valid spatial support.
+  The initial restricted-ROI check lacks ConfUSIus's own support mask and is not
+  fully support-matched.
+- Explicitly match reference frame, fitting transform, model, interpolation,
+  initialization, pyramid schedule and iteration/convergence policy. The paper
+  uses ConfUSIus correlation, unscaled fitting and `learning_rate=1.0`; voxreg
+  used default dB fitting in the initial reproduction (the current default is no
+  transform). Disclose optimizer differences; equal numeric learning rates do not
+  establish equivalence.
+- Inspect offending adjacent pairs, transforms, metric traces, status/steps,
+  residuals and anatomical alignment. DVARS is temporal QC, not a correspondence
+  objective or ground truth; lower DVARS alone establishes neither better
+  correction nor a general method ranking. This is not a timing benchmark.
+- Establish a minimal reproducible cause before changing defaults/optimizers;
+  retain bounded evidence and a regression when a defect is established.
 
 ### Lazy recordings and resampling with Dask
 
-Support recordings whose time dimension is too large to fit in RAM. The intended
-workflow is register(recording) or resample(recording, ..., transforms) returning
-lazy xarray-backed results that can be computed or written incrementally with
-to_zarr. Preserve the eager NumPy path; fitting one volume to another remains
-eager, including inside each recording task. One fixed/moving spatial pair and
-its working state must fit in the worker's RAM/VRAM.
+Support `register(recording)` and `resample(recording, ..., transforms)` with lazy
+xarray-backed outputs that can be computed or written incrementally via `to_zarr`.
+Preserve eager NumPy behavior. Each spatial pair fits eagerly within its task;
+one fixed/moving volume pair and working state must fit worker RAM/VRAM.
 
-- Partition work along time into bounded eager frame batches. Load the shared
-  fixed image, or implicit first-frame reference, through shared dependencies;
-  keep every frame's complete stage/pyramid pipeline within its task. Preserve
-  time labels, reference behavior and independent frame failure handling.
-- Require or explicitly arrange complete spatial volumes within each fitting
-  task. Arbitrary spatial-block registration and distributed fitting of one
-  volume are separate work. Define how Dask time chunks and batch_size interact
-  without loading an oversized time chunk or the full recording inadvertently.
-- Keep registered intensities, validity masks, optional forward/inverse maps and
-  per-frame/stage/level diagnostics lazy along time. Dense SyN fields must not
-  accumulate across all frames in RAM. Linear matrices are smaller, but also
-  need a lazy path for sufficiently long recordings.
-- Remove whole-recording .values/np.asarray conversions and eager finite-value
-  scans from graph construction. Validate geometry, labels and options eagerly;
-  perform data-dependent checks within tasks and document deferred failures.
-- Resolve recording-wide intensity conditioning explicitly: either preserve its
-  semantics with documented lazy, bounded-memory global reductions, or introduce
-  a documented per-frame policy. Do not silently normalize independently by
-  chunk. Results must be invariant to time chunking and task execution order.
-- Share each batch's registration task across its images, maps and diagnostics.
-  Document joint computation/storage so saving several outputs does not repeat
-  fitting, and so users need not persist the entire recording in memory.
-  Progress, callbacks and timings must describe execution rather than graph
-  construction, with a defined worker/scheduler behavior.
-- Extend resampling to lazy images and lazy dense displacement fields, including
-  eager/lazy combinations. A shared transform applies to every time point;
-  time-labelled transforms select one per frame. Preserve existing geometry,
-  unit, interpolation, support and time-alignment contracts. Load only the image
-  and transform frames required by each task, then permit incremental Zarr writes.
-- Bound concurrent CPU/GPU work as well as individual task memory. A Dask
-  scheduler must not launch unbounded registration tasks on one GPU. Qualify
-  chunk-invariant numerical results, masks/stages/pyramids, shared/per-frame maps,
+- **Task boundaries:** bounded eager time batches; shared dependencies for the
+  fixed image or implicit first-frame reference; complete stage/pyramid pipeline
+  per frame within its task. Preserve time labels, reference behavior and
+  independent frame failures.
+- **Chunking:** require or arrange complete spatial volumes per fitting task.
+  Define time chunks versus `batch_size` without inadvertently loading oversized
+  chunks/full recordings. Arbitrary spatial-block or distributed single-volume
+  fitting is separate work.
+- **Lazy outputs:** intensities, validity masks, optional forward/inverse maps and
+  per-frame/stage/level diagnostics. Do not accumulate dense SyN fields across
+  frames; linear matrices also need a lazy path for long recordings.
+- **Validation:** remove whole-recording `.values`/`np.asarray` conversions and
+  eager finite scans from graph construction. Validate geometry, labels and
+  options eagerly; check data within tasks and document deferred failures.
+- **Conditioning:** preserve recording-wide semantics through documented lazy,
+  bounded-memory reductions, or introduce an explicit per-frame policy. Never
+  silently normalize per chunk; results must be invariant to time chunking and
+  execution order.
+- **Shared execution:** share each batch fit across images, maps and diagnostics.
+  Document joint computation/storage without repeated fitting or whole-recording
+  persistence. Progress, callbacks and timings must describe execution, not graph
+  construction, with defined worker/scheduler behavior.
+- **Resampling:** support lazy images and dense fields, including eager/lazy
+  combinations. Shared transforms apply to all frames; time-labelled transforms
+  select per frame. Load only required image/transform frames, allow incremental
+  Zarr writes, and retain geometry, units, interpolation, support and time alignment.
+- **Resources and proof:** bound concurrent CPU/GPU work and task memory; resolve
+  `device="auto"` within workers at execution time and prevent unbounded jobs on
+  one GPU. Qualify chunk invariance, masks/stages/pyramids, shared/per-frame maps,
   deferred failures, Zarr round trips and peak memory on recordings larger than
   RAM before claiming out-of-core support.
 
-Beamformed IQ recordings may be complex-valued, whereas voxreg currently
-requires real intensities. Track this alongside lazy execution: define a real
-fitting representation (for example amplitude or power) and phase-preserving
-resampling of the original complex data, without conflating spatial interpolation
-with temporal phase correction. Complex-data support is a separate capability;
-time chunking by itself does not provide it.
+**Complex IQ is separate:** voxreg currently requires real intensities. Define a
+real fitting representation (e.g. amplitude/power) and phase-preserving resampling
+of original complex data; spatial interpolation is not temporal phase correction.
+Time chunking alone does not provide complex-data support.
 
-## Priorities
+## Implemented — not pending features
 
-1. **Review the coruscant benchmark when complete.** Establish the current
-   precision-policy baseline using [one pipeline](BENCHMARK.md), without competing
-   heavy jobs or changing the running job's frozen sources/settings.
-2. **Profile the SyN runtime gap to FireANTs.** Keep the shared
-   [0.30-voxel registration gate](research/syn/REFERENCE.md) and recorded errors;
-   defer further accuracy tuning while investigating runtime.
-3. **Optimize one measured bottleneck.** Compare workload/device-specific
-   batching or a source-guided implementation change without weakening precision
-   or safety checks; label non-passing cases rather than hiding them.
-   Preserve timing boundaries and report memory; see [PERFORMANCE.md](PERFORMANCE.md).
-4. **Broaden real-data qualification.** Revisit pair, motion and atlas workflows
-   with original images, native geometry and explicit quality limitations.
+Details live in the linked docs rather than being duplicated here:
 
-## Implemented
+- **Separate intensity scaling:** moving/fixed controls default independently to
+  `None`; `"db"`, `"sqrt"` and positive finite powers follow ConfUSIus magnitude
+  conventions with an explicit finite dB floor. Native moments/output intensities
+  stay untouched; stages/pyramids/masks share the documented policy. Implicit
+  references use moving scaling and recording-wide reductions before batching;
+  lazy execution must preserve these reductions. Obsolete API spellings are
+  removed. Synthetic default/precision regressions pass; real-data qualification
+  of the changed defaults remains open. See [scaling](README.md#fitting-intensity-scaling)
+  and [validation](VALIDATION.md#intensity-scaling).
+- **Automatic device selection:** `register`/`resample` default to `device="auto"`;
+  explicit devices remain supported, with no CPU retry on CUDA/OOM errors. Eager
+  resolution occurs once per call and is recorded in diagnostics; benchmark
+  adapters retain explicit devices. See [quick start](README.md#quick-start) and
+  [device validation](VALIDATION.md#checks).
+- **Cubic final-image interpolation:** optional 2D/3D `"bspline"` for registration
+  (`resample_interpolation`) and offline resampling; float64 coefficients/evaluation,
+  mirror boundaries, unchanged support and linear fitting/default interpolation.
+  CPU/CUDA oracle checks pass. See [interpolation](README.md#final-image-interpolation).
+- **Registration module refactor:** entry validation/preparation, typed engine
+  inputs, immutable settings, shared results/statuses/batch policy; root imports
+  and numerical behavior preserved. See [engine boundaries](DESIGN.md#registration-entry-and-engine-boundaries).
+- **Physical length units:** m, cm, mm, um/µm and nm, including mixed inputs;
+  internal geometry/exported transforms/physical diagnostics/smoothing use mm,
+  outputs retain reference-grid units, and labelled maps normalize explicitly.
+  See [units](README.md#physical-units).
+- **Mutual information:** per-frame Gaussian-Parzen MI, explicit bins/bandwidth,
+  fixed native ranges, mask-aware histograms and bounded workspace, for all
+  models/pyramids/stages; NCC defaults unchanged. See [MI](README.md#mutual-information).
+- **Fixed/moving masks:** native boolean ROIs sampled through full physical/halfway
+  maps; local NCC excludes masked neighbours. Coverage differs from output
+  validity; interpolation/smoothing stay independent. See [masks](README.md#roi-masks).
+- **Staged registration:** model sequences/`Stage` overrides, initialization once,
+  frame failure isolation, stage/level diagnostics, one final resampling and full
+  composed maps. See [staging](README.md#staged-registration).
+- **Multi-resolution:** shrink factors, Gaussian image smoothing in mm and
+  per-level budgets for all models; physical transforms/fields carry between
+  levels with fresh optimizer/convergence state and one final resampling. No
+  default preset. See [pyramids](README.md#multi-resolution-fitting).
 
-- **Automatic device selection:** `register` and `resample` default to
-  `device="auto"`, choosing CUDA when available, otherwise CPU. Explicit CPU/CUDA
-  choices remain supported. Resolution happens once per call and shared stage
-  settings retain the concrete device, recorded in registration summary/stage
-  diagnostics. CUDA execution/OOM errors propagate without CPU retry. Benchmark
-  adapters retain explicit devices. CPU behavior is checked; actual CUDA tests
-  skip on this machine. Future lazy workers must resolve auto at execution time
-  and bound GPU concurrency; lazy execution remains unimplemented.
+**Still unqualified/deferred:** auto-device/cubic performance, a clean full CUDA
+test gate ([existing failures](VALIDATION.md#intensity-scaling)), label-aware
+resampling (use nearest for categorical labels), and real-data qualification/
+configurations listed above. CPU success alone does not qualify CUDA; eager
+batching does not provide out-of-core execution.
 
-- **Final image interpolation:** optional cubic B-spline (`"bspline"`) in 2D/3D
-  registration and offline resampling, with float64 coefficients/evaluation,
-  mirror boundaries and unchanged geometric support. Registration now exposes
-  `resample_interpolation`. Linear fitting and default final interpolation remain
-  unchanged. CPU oracle checks pass;
-  CUDA execution and performance remain unqualified on this CPU-only system.
-  See [interpolation semantics](README.md#final-image-interpolation).
-  Label-aware resampling remains deferred; retain nearest for categorical labels.
+## Candidates, not commitments or enabled defaults
 
-- **Registration module organization:** registration.py owns the public entry
-  point and common validation/preparation. Linear and SyN engines consume typed
-  prepared inputs and shared immutable settings; results/statuses and batch
-  policy have shared owners, independent of fitting engines. Public root imports
-  and numerical behavior are retained. See [engine boundaries](DESIGN.md#registration-entry-and-engine-boundaries).
+- **Metric/optimizer controls:** Gaussian-weighted local CC, MSE/custom losses,
+  optimizer choice/hyperparameters and regularization hooks. SyN already exposes
+  rectangular CC radius and update/total smoothing. Keep current optimizers and
+  SyN sigmas/defaults: image-pyramid sigmas are mm, field regularization is in
+  voxel units, and ITK field parameters are variances, not interchangeable values.
+- **Other options:** velocity-based deformation/integration, compute-dtype
+  selection and rigid-plus-scale are not parity requirements. Reimplement
+  mechanisms independently; do not transplant licensed vendor code.
+- **Multistart:** requires selection that rejects tiny-overlap or anatomically
+  wrong optima, especially for slice placement.
+- **Line search:** first measure overshoot and extra evaluation cost.
 
-- **Physical length units:** m, cm, mm, um/µm and nm for images/masks, including
-  mixed-unit inputs. Internal geometry, exported transforms, physical diagnostics
-  and physical smoothing arguments remain in mm; image outputs retain native
-  reference coordinates. Labelled matrix/field units are normalized explicitly.
-  See [unit conventions](README.md#physical-units).
-
-- **Mutual information:** a shared per-frame metric interface with Gaussian-Parzen
-  MI, explicit bins/bandwidth, fixed native-image ranges, mask-aware histograms
-  and bounded bin-weight workspace. Works with every model, pyramid and stage;
-  NCC defaults are unchanged. See [MI semantics](README.md#mutual-information).
-  Real-data bandwidth, convergence and runtime qualification remain open.
-- **Fixed and moving masks:** boolean ROIs retain native geometry and are sampled
-  through the complete physical/halfway maps at every stage and level. Local NCC
-  excludes masked neighbours. ROI coverage is distinct from output validity;
-  image interpolation and smoothing remain independent. See [mask semantics](README.md#roi-masks).
-- **Staged registration:** explicit model sequences with optional `Stage`
-  overrides, initialization once, per-frame failure isolation and separate
-  stage/pyramid diagnostics. Original intensities are resampled once; final maps
-  include every stage. See [staging](README.md#staged-registration). Reusable
-  workflow configurations remain deferred until real-data qualification.
-- **Multi-resolution:** explicit coarse-to-fine shrink factors, Gaussian image
-  smoothing sigmas in mm and per-level iteration budgets for every model.
-  Physical transforms/halfway fields carry between levels with fresh optimizer
-  and convergence state; original images are resampled once. See the
-  [API and diagnostic conventions](README.md#multi-resolution-fitting).
-  Qualifying useful schedules, capture range and whole-call performance on real
-  workflows remains future work; no multi-resolution default preset is enabled.
-
-## Candidates, not enabled defaults
-
-- **Further metric/optimizer controls:** Gaussian-weighted local-CC kernels,
-  MSE/custom losses, optimizer choice/hyperparameters and regularization hooks.
-  SyN's rectangular CC radius and update/total smoothing strengths are public
-  options already. Follow ITK's unit distinction: image-pyramid smoothing
-  sigmas in mm, deformation regularization in voxel units. Keep existing SyN
-  sigmas/defaults; ITK's field parameters are variances, not interchangeable values.
-  Keep current optimizers for now. Velocity-based deformation/integration,
-  compute-dtype selection and rigid-plus-scale are further options, not
-  requirements for parity.
-  Reimplement mechanisms independently; do not transplant licensed vendor code.
-- **Multistart:** only with a selection rule that rejects tiny-overlap or
-  anatomically wrong metric optima, especially for slice placement.
-- **Line search:** investigate measured overshoot and extra evaluation cost before
-  adding another optimizer policy.
-
-These are candidates, not implemented features or a commitment to expose every
-vendor option. Streaming/Dask execution is now planned above but remains
-unimplemented; mixed-dimensional deformation remains outside the current scope.
-Add other scope for a demonstrated need, not as a prerequisite to benchmarking
-or fixing existing accuracy failures.
-
-Keep source/settings and minimal failure evidence before cleanup. Never retune a
-truth threshold or shorten work merely to manufacture a speedup. Historical
-experiments and their original limitations remain in [research](research/README.md).
+Mixed-dimensional deformation remains out of scope. Add scope only for a
+demonstrated need, not as a prerequisite to benchmarks or accuracy fixes. Preserve
+sources/settings and minimal failure evidence before cleanup; never retune truth
+thresholds or shorten work to manufacture speedups. Historical experiments and
+limitations remain in [research](research/README.md).

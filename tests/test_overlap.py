@@ -27,7 +27,6 @@ def test_aligned_smaller_moving_image_is_not_rejected(shape, model, device):
         fixed,
         return_transforms=True,
         transform=model,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
         device=device,
@@ -82,7 +81,6 @@ def test_partial_coverage_constant_metric_is_still_invalid(model):
         moving,
         target,
         transform=model,
-        intensity_scaling="none",
         max_iterations=2,
         progress=False,
     )
@@ -103,7 +101,6 @@ def test_no_overlap_keeps_seed_and_original_fill(model):
         return_transforms=True,
         transform=model,
         initialization=seed,
-        intensity_scaling="none",
         max_iterations=2,
         progress=False,
     )

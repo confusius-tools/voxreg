@@ -25,10 +25,10 @@ def assert_mapping_close(data, actual, expected, tolerance_pixels):
 @pytest.mark.parametrize(
     "oblique,strided", [(False, False), (True, False), (True, True)]
 )
-@pytest.mark.parametrize("scaling", ["none", "db"])
+@pytest.mark.parametrize("scaling", [None, "db", "sqrt", 2.0])
 def test_known_rigid_recovery(recording_factory, oblique, strided, scaling):
     data, truth, affine = recording_factory(oblique=oblique, strided=strided)
-    result = register(data, return_transforms=True, intensity_scaling=scaling)
+    result = register(data, return_transforms=True, moving_intensity_scaling=scaling)
     assert result.transforms is not None
     validate_voxeldata(result.registered)
     validate_voxeldata(result.valid)
@@ -64,14 +64,12 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
     combined = register(
         data,
         return_transforms=True,
-        intensity_scaling="none",
         batch_size=3,
         max_iterations=140,
     )
     serial = register(
         data,
         return_transforms=True,
-        intensity_scaling="none",
         batch_size=1,
         max_iterations=140,
     )
@@ -79,9 +77,7 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
     assert_allclose(combined.registered, serial.registered, atol=2e-4)
     failed = data.copy(data=data.values.copy())
     failed.values[1] = 0
-    with_bad = register(
-        failed, return_transforms=True, intensity_scaling="none", max_iterations=140
-    )
+    with_bad = register(failed, return_transforms=True, max_iterations=140)
     assert with_bad.transforms is not None
     assert with_bad.diagnostics.status[1] == "invalid_metric"
     assert with_bad.diagnostics.n_iterations[1] == 0
@@ -104,7 +100,6 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
     long = register(
         data,
         return_transforms=True,
-        intensity_scaling="none",
         max_iterations=400,
         convergence_minimum_value=1e-6,
     )
@@ -113,7 +108,6 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
     longer = register(
         data,
         return_transforms=True,
-        intensity_scaling="none",
         max_iterations=450,
         convergence_minimum_value=1e-6,
     )
@@ -124,16 +118,13 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
 def test_explicit_fixed_and_low_overlap(recording_factory):
     data, _, _ = recording_factory()
     fixed = data.isel(time=0, drop=True)
-    explicit = register(
-        data, return_transforms=True, fixed=fixed, intensity_scaling="none"
-    )
+    explicit = register(data, return_transforms=True, fixed=fixed)
     assert explicit.transforms is not None
     assert explicit.diagnostics.status[0] != "reference"
     assert_allclose(explicit.transforms[0], np.eye(4), atol=1e-3)
     failed = register(
         data,
         return_transforms=True,
-        intensity_scaling="none",
         learning_rate=200,
         max_iterations=3,
     )
@@ -157,7 +148,7 @@ def test_explicit_fixed_and_low_overlap(recording_factory):
         {"learning_rate": 1j},
         {"learning_rate": [0.1, 0.2]},
         {"device": "invalid"},
-        {"intensity_scaling": "invalid"},
+        {"moving_intensity_scaling": "invalid"},
         {"resample_interpolation": "cubic"},
     ],
 )
@@ -167,9 +158,7 @@ def test_invalid_options(recording_factory, option):
         register(data, **option)
 
 
-@pytest.mark.parametrize(
-    "bad,match", [(np.nan, "finite"), (np.inf, "finite"), (-1, "nonnegative")]
-)
+@pytest.mark.parametrize("bad,match", [(np.nan, "finite"), (np.inf, "finite")])
 def test_invalid_intensities(recording_factory, bad, match):
     data, _, _ = recording_factory()
     data.values[2, 0, 2, 3] = bad
@@ -209,7 +198,7 @@ def test_invalid_geometry_constants_and_dtypes(recording_factory):
 def test_nonzero_constant_frame_is_not_optimized(recording_factory):
     data, _, _ = recording_factory()
     data.values[1] = 1
-    result = register(data, return_transforms=True, intensity_scaling="none")
+    result = register(data, return_transforms=True)
     assert result.transforms is not None
     assert result.diagnostics.status[1] == "invalid_metric"
     assert result.diagnostics.n_iterations[1] == 0
@@ -230,11 +219,10 @@ def test_empty_and_invalid_time_labels(recording_factory):
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_cuda_matches_cpu(recording_factory, batch_size):
     data, _, _ = recording_factory(oblique=True, strided=True)
-    cpu = register(data, return_transforms=True, intensity_scaling="none")
+    cpu = register(data, return_transforms=True)
     cuda = register(
         data,
         return_transforms=True,
-        intensity_scaling="none",
         device="cuda",
         batch_size=batch_size,
     )

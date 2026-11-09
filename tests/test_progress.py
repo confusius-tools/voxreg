@@ -184,7 +184,7 @@ def test_rich_display_is_closed_on_registration_error(
 def test_spatial_pair_progress_is_auto_quiet(shape, mode, rich_bars):
     values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape) + 1
     data = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
-    options: RegistrationOptions = {"intensity_scaling": "none", "max_iterations": 2}
+    options: RegistrationOptions = {"max_iterations": 2}
     quiet = register(data, data, return_transforms=True, progress=False, **options)
     kwargs = {} if mode == "default" else {"progress": mode}
     result = register(data, data, return_transforms=True, **kwargs, **options)

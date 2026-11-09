@@ -63,7 +63,8 @@ result = voxreg.register(
     moving,
     fixed=None,
     transform="rigid",
-    intensity_scaling="db",
+    moving_intensity_scaling=None,
+    fixed_intensity_scaling=None,
     device="auto",
     return_transforms=False,
 )
@@ -75,7 +76,7 @@ result = voxreg.register(
 | `transform` | `"translation"`, `"rigid"` (default), `"affine"`, `"syn"`, a `Stage`, or a sequence of model names/`Stage` specifications. Slices use `k=1`; volumes have at least two samples on each axis. |
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
 | `fixed_mask`, `moving_mask` | Optional boolean ROI VoxelData in their own physical grids. Fixed mask is spatial-only; moving mask can be shared or per-frame with matching time labels. Masks restrict fitting at every stage and level. |
-| `intensity_scaling` | `"db"` (default) for nonnegative power, or `"none"` for already-prepared/signed data. Affects fitting only. |
+| `moving_intensity_scaling`, `fixed_intensity_scaling` | Independent fitting-only transforms: `None` (default), `"db"`, `"sqrt"` or a positive finite power exponent. Fixed scaling applies only to an explicit fixed image. |
 | `metric` | Default `None` retains global squared NCC for linear models and local squared NCC for SyN. Explicit `"ncc"` selects global NCC, `"local_ncc"` selects SyN local NCC, and `"mi"` selects mutual information. |
 | `mi_bins`, `mi_sigma` | MI histogram bins (default `32`, range `2`–`256`) and Gaussian standard deviation in bin widths (default `0.5`, range `0.1`–`10`). |
 | `resample_interpolation` | Final resampling of original intensities: `"linear"` (default), `"nearest"` or cubic `"bspline"`. Fitting always uses linear interpolation. |
@@ -111,6 +112,39 @@ Dask-backed inputs are not supported.
 For all options, including optimizer controls and callbacks, use
 `help(voxreg.register)` or read the [API docstring](src/voxreg/registration.py).
 
+## Fitting intensity scaling
+
+Both scaling arguments default to `None`: no nonlinear transform, preserving
+signed values before numerical metric conditioning. This replaces the old shared
+`intensity_scaling="db"` default; the old argument and string `"none"` are removed.
+To request dB fitting for an explicit pair, set both arguments to `"db"`; an
+omitted fixed transform does not inherit the moving transform.
+
+Following ConfUSIus's magnitude conventions, `"db"` computes
+`10*log10(abs(x)/max(abs(x)))` and `"sqrt"`/numeric powers compute
+`abs(x)**exponent`. Exponents must be positive and finite; booleans are invalid.
+Unlike ConfUSIus's raw dB conversion, voxreg floors normalized magnitudes at
+`1e-12` (−120 dB), including zeros, so fitting stays finite. Signed inputs are
+allowed but magnitude transforms discard their signs. All-zero recordings and
+constant fixed fitting images remain invalid.
+
+Transforms are evaluated in float64 before metric-range preparation/pyramids and
+float32 fitting. Power overflow raises a descriptive error; underflow rounds to
+zero and may erase contrast. Final resampling always uses original intensities
+and dtype, and moment initialization uses original nonnegative native weights.
+Masks restrict fitting samples, not transforms or their reductions.
+
+Moving dB uses one maximum over the entire recording; explicit fixed dB uses its
+own image maximum. The implicit first-frame reference reuses the transformed
+first moving frame, including that recording-wide maximum, and its output is
+preserved exactly. Non-`None` fixed scaling without an explicit fixed image is an
+error. Stages inherit both controls and transform originals afresh, never a
+previous stage's fitting image. Conditioning precedes optimizer batching;
+changing `batch_size` does not change fitting intensities. Future lazy execution
+must preserve these global reductions, not normalize independently by time chunk.
+Historical benchmark sources/artifacts retain their original API/settings; new
+comparisons must disclose this default and dB-convention change.
+
 ## Physical units
 
 World coordinates may use ConfUSIus length units: `m`, `cm`, `mm`, `um`/`µm`
@@ -145,7 +179,8 @@ result = voxreg.register(
     moving,
     fixed,
     transform=(voxreg.Stage("rigid", metric="mi"), "syn"),
-    intensity_scaling="none",
+    moving_intensity_scaling=None,
+    fixed_intensity_scaling=None,
 )
 ```
 
@@ -156,7 +191,7 @@ available only for SyN and uses `syn_cc_radius`.
 
 MI uses Gaussian Parzen histograms with unit-sum memberships per sample. Each
 native fitting image is independently mapped from its min/max to `[0, 1]` after
-`intensity_scaling`, before any pyramid smoothing. These ranges stay fixed during
+each image's intensity transform, before any pyramid smoothing. These ranges stay fixed during
 fitting and include intensities outside ROIs; outliers can compress useful contrast.
 Only supported ROI samples contribute to the joint histogram. Both SyN halfway
 images are differentiated. Spatial chunking and recomputation during backward

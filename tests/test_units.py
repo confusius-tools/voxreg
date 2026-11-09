@@ -50,7 +50,6 @@ def test_registration_mixed_units_masks_and_pyramids(
         "max_iterations": 2,
         "shrink_factors": (2, 1),
         "smoothing_sigmas": (0.18, 0),
-        "intensity_scaling": "none",
         "return_transforms": True,
         "progress": False,
     }
@@ -113,7 +112,6 @@ def test_labelled_matrix_units_seed_and_resampling(linear_pair_factory, planar, 
     options: RegistrationOptions = {
         "transform": "affine",
         "max_iterations": 1,
-        "intensity_scaling": "none",
         "progress": False,
         "return_transforms": True,
     }
@@ -199,7 +197,6 @@ def test_unit_conversion_preserves_large_origin_fit(linear_pair_factory, planar)
     fixed, moving = relocated
     options: RegistrationOptions = {
         "max_iterations": 3,
-        "intensity_scaling": "none",
         "return_transforms": True,
         "progress": False,
     }

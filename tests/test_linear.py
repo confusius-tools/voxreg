@@ -66,7 +66,6 @@ def test_nonparallel_planes_refine_image_motion_after_geometry_alignment(
     kwargs: RegistrationOptions = {
         "transform": model,
         "initialization": "align_planes",
-        "intensity_scaling": "none",
         "max_iterations": 400,
         "convergence_window_size": 401,
         "progress": False,
@@ -107,7 +106,6 @@ def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
         return_transforms=True,
         transform=model,
         initialization=truth,
-        intensity_scaling="none",
         max_iterations=1,
     )
     assert r.transforms is not None
@@ -191,7 +189,6 @@ def test_fitting_truth_and_cpu_cuda_precision(linear_pair_factory, planar, model
             fixed,
             return_transforms=True,
             transform=model,
-            intensity_scaling="none",
             initialization="center_moments",
             max_iterations=160,
             convergence_window_size=161,
@@ -338,7 +335,6 @@ def test_affine_seed_is_refined_as_full_pose_not_frozen_prefix(
         return_transforms=True,
         transform="affine",
         initialization=seed,
-        intensity_scaling="none",
         max_iterations=160,
         convergence_window_size=161,
         progress=False,
@@ -363,7 +359,6 @@ def test_affine_final_interpolation_preserves_float64_detail(
         return_transforms=True,
         transform="affine",
         initialization=truth,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -389,7 +384,6 @@ def test_reflecting_affine_seed_is_preserved(linear_pair_factory):
         return_transforms=True,
         transform="affine",
         initialization=truth,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -441,7 +435,6 @@ def test_affine_candidate_guard_is_per_frame_and_keeps_best(
         transform="affine",
         learning_rate=100,
         max_iterations=2,
-        intensity_scaling="none",
         progress=False,
     )
     assert r.transforms is not None
@@ -479,7 +472,6 @@ def test_invalid_affine_frame_does_not_stop_companions(
         return_transforms=True,
         transform="affine",
         max_iterations=2,
-        intensity_scaling="none",
         progress=False,
     )
     assert result.transforms is not None

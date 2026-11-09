@@ -153,7 +153,7 @@ def compute_center_positions(
             raise ValueError(
                 f"{name} frame {frame}: center_moments requires original nonnegative "
                 "intensities with positive mass. Pass unscaled data and use "
-                "intensity_scaling for fitting, or choose center_geometry."
+                "moving_intensity_scaling/fixed_intensity_scaling for fitting, or choose center_geometry."
             )
         # Positive rescaling preserves moments and bounds the float64 mass sum.
         weights = values / peak

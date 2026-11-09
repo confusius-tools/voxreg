@@ -75,6 +75,46 @@ accuracy. Keep adapter diagnostics separate from full-workload performance
 and anatomical validation. Comparisons include **ANTsPy, FireANTs and voxreg**;
 analytic truth defines acceptance, not agreement between backends.
 
+## Intensity scaling
+
+Separate moving/fixed controls now default to `None`, replacing shared default
+`"db"` and removing the old argument/string `"none"`. ConfUSIus's implementation
+was inspected: real-data dB uses `10*log10(abs(x)/max(abs(x)))`, and powers use
+`abs(x)**p` with positive finite exponents. Voxreg explicitly retains a -120 dB
+floor for finite fitting, uses independent explicit-image maxima (recording-wide
+for moving), and evaluates transforms in float64 before float32 fitting. These
+are changed settings/conventions, not a claim of identical historical dB fits.
+See [the complete policy](README.md#fitting-intensity-scaling).
+
+The 98 scaling checks pass with CUDA available on an NVIDIA GeForce RTX 5080
+Laptop GPU; integration cases explicitly cover CPU and CUDA. They compare
+conditioning to independent NumPy magnitude/range calculations and fits to
+pretransformed-image runs, across NCC/MI, linear/SyN/staged pyramids, masks and
+native resampling. They check signed inputs, zeros, finite positive exponents,
+overflow/underflow, low contrast, invalid settings, input immutability,
+recording-wide dB/reference behavior and unchanged fitting images across batches.
+Independent native-centroid calculations and frozen-optimizer regressions cover
+explicit/implicit references and stages, including rejection of negative native
+moment weights despite magnitude-based fitting transforms. Expanded synthetic
+rigid recovery checks retain the 0.25-minimum-spacing-voxel gate for no transform,
+dB, square root and power 2. No anatomical or real-data default qualification is
+claimed. Future lazy execution must preserve recording-wide reductions.
+
+With CUDA hidden, the final full suite passed (956 passed, 297 skipped).
+With CUDA enabled, the final full run has 1327 passed and 13 failures.
+All 13 failing cases were reproduced on unchanged pre-scaling `HEAD`: two
+initialization batch comparisons, six auto-device availability-probe-count checks,
+three 3D batch comparisons and two per-frame seed comparisons. These existing
+CUDA/batching test failures remain unresolved; no tolerance, truth gate, optimizer
+or production device-selection behavior was changed to hide them. Prior
+CPU-only qualification notes above describe the original feature checks.
+
+The live benchmark adapter now explicitly requests no moving/fixed transform,
+preserving its fitting policy; the notebook example explicitly requests its
+previous dB policy and records the new argument names. Frozen historical sources,
+settings, paper outputs and artifacts were not migrated or rerun. New comparisons
+must disclose the default/convention changes rather than relabel old results.
+
 ## Acceptance
 
 [BENCHMARK.md](BENCHMARK.md) defines the measurement boundaries:
@@ -89,6 +129,9 @@ analytic truth defines acceptance, not agreement between backends.
 Passing unit tests or improving NCC does not establish correct correspondence.
 
 ## First real-data motion-quality case
+
+The following reproduction used the then-default shared dB fitting option;
+it does not qualify the new untransformed default or revised dB conventions.
 
 The paper Figure 2 rat75 / 20220523 / slice32 window (frames 220–339) now has a
 retained, non-timing reproduction in

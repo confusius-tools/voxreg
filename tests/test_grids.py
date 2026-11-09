@@ -259,7 +259,6 @@ def test_single_pair_output_uses_fixed_grid_and_original_dtype(
         return_transforms=True,
         transform=model,
         device=device,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -334,7 +333,6 @@ def test_3d_known_motion_recovery_on_independent_grids(device):
         fixed,
         return_transforms=True,
         device=device,
-        intensity_scaling="none",
         max_iterations=180,
         progress=False,
     )
@@ -367,7 +365,6 @@ def test_3d_batch_and_cpu_cuda_independence(linear_pair_factory, model):
     data = data.assign_coords(acquisition=("time", [70, 73]))
     options: RegistrationOptions = {
         "transform": model,
-        "intensity_scaling": "none",
         "max_iterations": 120,
         "progress": False,
     }
@@ -424,7 +421,6 @@ def test_3d_reference_and_float64_detail_along_k_are_preserved(model):
         data,
         return_transforms=True,
         transform=model,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )

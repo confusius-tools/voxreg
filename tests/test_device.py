@@ -29,7 +29,6 @@ def test_auto_registration_matches_explicit_device(
         "max_iterations": 2,
         "shrink_factors": (2, 1),
         "smoothing_sigmas": (0.1, 0),
-        "intensity_scaling": "none",
         "return_transforms": True,
         "progress": False,
     }

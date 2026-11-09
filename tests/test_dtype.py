@@ -86,14 +86,14 @@ def test_original_dtype_and_fractional_sampling(
         )
 
 
-@pytest.mark.parametrize("scaling", ["none", "db"])
+@pytest.mark.parametrize("scaling", [None, "db", "sqrt", 2.0])
 def test_float64_low_contrast_preprocessing_and_original_precision(
     recording_factory, scaling
 ):
     data, _, _ = recording_factory()
     data = data.copy(data=1 + data.values.astype(np.float64) * 1e-9)
     assert np.ptp(data.values.astype(np.float32)) == 0
-    result = register(data, intensity_scaling=scaling, max_iterations=2)
+    result = register(data, moving_intensity_scaling=scaling, max_iterations=2)
     assert result.registered.dtype == np.float64
     assert_array_equal(result.registered[0], data[0])
     assert np.all(result.diagnostics.n_iterations[1:] == 2)
@@ -107,7 +107,7 @@ def test_dtype_preserving_fit_recovers_known_motion(recording_factory, dtype):
     if np.issubdtype(dtype, np.integer):
         values = np.rint(values * 1000)
     data = data.copy(data=values.astype(dtype))
-    result = register(data, return_transforms=True, intensity_scaling="none")
+    result = register(data, return_transforms=True)
     assert result.transforms is not None
     affine = position_to_world(data)
     j, i = np.indices(data.shape[-2:])

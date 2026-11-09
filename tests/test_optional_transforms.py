@@ -25,7 +25,6 @@ def test_optional_transforms(
         "device": device,
         "max_iterations": 2,
         "batch_size": 2,
-        "intensity_scaling": "none",
         "progress": False,
     }
     target = None if recording else fixed

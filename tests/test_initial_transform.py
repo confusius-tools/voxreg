@@ -97,7 +97,6 @@ def test_inverse_parameterization_including_pi(angle):
 def test_initial_pose_enables_large_displacement_and_is_refined(device):
     fixed, moving, truth = posed_pair()
     options: RegistrationOptions = {
-        "intensity_scaling": "none",
         "progress": False,
         "max_iterations": 150,
         "device": device,
@@ -161,7 +160,6 @@ def test_failed_fit_retains_initial_not_identity(device, failure):
         fixed,
         return_transforms=True,
         initial_transform=seed,
-        intensity_scaling="none",
         max_iterations=2,
         progress=False,
         device=device,
@@ -184,7 +182,6 @@ def test_slice_per_frame_initialization_and_reference(
     seed = truth.copy()
     options: RegistrationOptions = {
         "initial_transform": seed,
-        "intensity_scaling": "none",
         "max_iterations": 100,
         "progress": False,
     }
@@ -207,7 +204,6 @@ def test_slice_per_frame_initialization_and_reference(
         data,
         return_transforms=True,
         initial_transform=labeled,
-        intensity_scaling="none",
         max_iterations=100,
         progress=False,
     )
@@ -313,9 +309,7 @@ def test_seeded_original_float64_resampling_matches_scipy(monkeypatch):
         )
 
     monkeypatch.setattr(linear, "_optimize", unchanged)
-    r = register(
-        moving, fixed, initial_transform=seed, intensity_scaling="none", progress=False
-    )
+    r = register(moving, fixed, initial_transform=seed, progress=False)
     positions = (np.linalg.inv(position_to_world(moving)) @ seed @ world_points(fixed))[
         :3
     ]
@@ -333,7 +327,6 @@ def test_3d_seed_batch_and_device_independence():
     seeds[0, :3, 3] += [0.06, -0.04, 0.05]
     seeds[1, :3, 3] += [-0.03, 0.05, -0.02]
     options: RegistrationOptions = {
-        "intensity_scaling": "none",
         "max_iterations": 110,
         "progress": False,
     }
@@ -405,7 +398,6 @@ def test_unlabeled_dataarray_seeds_follow_position(recording_factory):
         data,
         return_transforms=True,
         initial_transform=seed,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -415,7 +407,6 @@ def test_unlabeled_dataarray_seeds_follow_position(recording_factory):
     shared = r.transforms.isel(time=1)
     fixed = data.isel(time=0, drop=True)
     options: RegistrationOptions = {
-        "intensity_scaling": "none",
         "max_iterations": 1,
         "progress": False,
     }
@@ -484,7 +475,6 @@ def test_itk_initial_transform_inplaceoff_oracle():
         fixed,
         return_transforms=True,
         initial_transform=seed,
-        intensity_scaling="none",
         max_iterations=1,
         progress=False,
     )
@@ -524,7 +514,6 @@ def test_initialization_matrix_alias_matches_initial_transform(representation):
         seed = seed[None]
     untouched = np.array(seed, copy=True)
     options: RegistrationOptions = {
-        "intensity_scaling": "none",
         "max_iterations": 3,
         "progress": False,
     }
@@ -545,9 +534,7 @@ def test_initialization_matrix_does_not_discard_nonrigid_affine(kind):
     seed = np.eye(4)
     seed[0, 0 if kind == "scale" else 1] += 0.2
     with pytest.raises(ValueError, match="proper rigid"):
-        register(
-            moving, fixed, initialization=seed, intensity_scaling="none", progress=False
-        )
+        register(moving, fixed, initialization=seed, progress=False)
 
 
 def test_initialization_matrix_and_initial_transform_are_exclusive():

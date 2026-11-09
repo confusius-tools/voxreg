@@ -68,7 +68,7 @@ def native_centers(fixed, moving, mode):
 
 
 @pytest.mark.parametrize("mode", ["center_geometry", "center_moments"])
-@pytest.mark.parametrize("scaling", ["none", "db"])
+@pytest.mark.parametrize("scaling", [None, "db", "sqrt", 2.0])
 @pytest.mark.parametrize("device", DEVICES)
 def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
     fixed, moving = volume_pair()
@@ -78,7 +78,8 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
         moving,
         fixed,
         return_transforms=True,
-        intensity_scaling=scaling,
+        moving_intensity_scaling=scaling,
+        fixed_intensity_scaling=scaling,
         max_iterations=1,
         progress=False,
         device=device,
@@ -89,7 +90,8 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
         fixed,
         return_transforms=True,
         initialization=mode,
-        intensity_scaling=scaling,
+        moving_intensity_scaling=scaling,
+        fixed_intensity_scaling=scaling,
         max_iterations=1,
         progress=False,
         device=device,
@@ -156,7 +158,6 @@ def test_moments_pivot_sampling_and_scales(
         fixed,
         return_transforms=True,
         initialization="center_moments",
-        intensity_scaling="none",
         progress=False,
         device=device,
     )
@@ -234,10 +235,10 @@ def test_series_reference_batch_and_fitting_scaling(recording_factory, mode):
         )
 
     with patch("voxreg.linear._optimize", frozen):
-        linear = register(
-            data, return_transforms=True, intensity_scaling="none", **options
+        linear = register(data, return_transforms=True, **options)
+        db = register(
+            data, return_transforms=True, moving_intensity_scaling="db", **options
         )
-        db = register(data, return_transforms=True, intensity_scaling="db", **options)
     np.testing.assert_array_equal(linear.transforms, db.transforms)
     np.testing.assert_array_equal(
         linear.diagnostics.attrs["rotation_center_zyx_mm"],
@@ -255,7 +256,6 @@ def test_moments_reject_invalid_original_weights(side, value):
             bad if side == "moving" else moving,
             bad if side == "fixed" else fixed,
             initialization="center_moments",
-            intensity_scaling="none",
             progress=False,
         )
 
@@ -290,7 +290,6 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
             fixed,
             return_transforms=True,
             initialization="center_moments",
-            intensity_scaling="none",
             max_iterations=160,
             convergence_window_size=161,
             progress=False,

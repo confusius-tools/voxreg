@@ -116,7 +116,7 @@ def test_mi_backward_does_not_retain_full_bin_weights():
 def test_mi_native_ranges_are_per_image_and_keep_double_contrast():
     fixed = np.array([[1e12, 1e12 + 1, 1e12 + 4]])
     moving = np.stack((fixed * 3 + 8, fixed * 7 - 2))
-    fit, target = prepare_fitting_images(moving, fixed, "none", "mi")
+    fit, target = prepare_fitting_images(moving, fixed, metric="mi")
     assert_allclose(fit, np.broadcast_to([[0, 0.25, 1]], fit.shape), rtol=0, atol=1e-7)
     assert_allclose(target, [[0, 0.25, 1]], rtol=0, atol=1e-7)
 
@@ -126,7 +126,7 @@ def test_mi_native_range_handles_extreme_finite_values(dtype):
     scale = np.finfo(dtype).max
     values = np.array([[[-scale, 0, scale]]], dtype=dtype)
     original = values.copy()
-    fit, target = prepare_fitting_images(values, values[0], "none", "mi")
+    fit, target = prepare_fitting_images(values, values[0], metric="mi")
     assert_allclose(fit, [[[0, 0.5, 1]]], rtol=0, atol=1e-7)
     assert_allclose(target, [[0, 0.5, 1]], rtol=0, atol=1e-7)
     assert_array_equal(values, original)
@@ -150,7 +150,6 @@ def test_mi_nonlinear_contrast_recovers_independent_physical_truth(
         mi_bins=16,
         max_iterations=60,
         convergence_window_size=1000,
-        intensity_scaling="none",
         return_transforms=True,
         progress=False,
         shrink_factors=(2, 1) if model == "translation" else (1,),
@@ -190,7 +189,6 @@ def test_mi_masks_pyramids_and_original_intensity_output(
         max_iterations=2,
         shrink_factors=(2, 1),
         smoothing_sigmas=(0.18, 0),
-        intensity_scaling="none",
         return_transforms=True,
         progress=False,
         metric_callback=lambda frames, clocks, loss: reports.append(loss),
@@ -230,7 +228,6 @@ def test_mi_stages_motion_failure_isolation_and_overrides(
             device=device,
             metric="mi",
             max_iterations=2,
-            intensity_scaling="none",
             batch_size=batch,
             return_transforms=True,
             progress=False,

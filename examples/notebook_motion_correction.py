@@ -343,7 +343,11 @@ def main() -> None:
     if data.sizes["time"] != 120:
         raise ValueError("The notebook requires frames 220:340.")
     result = register(
-        data, return_transforms=True, device=args.device, batch_size=args.batch_size
+        data,
+        moving_intensity_scaling="db",
+        return_transforms=True,
+        device=args.device,
+        batch_size=args.batch_size,
     )
     args.output.mkdir(parents=True, exist_ok=True)
     reference = None
@@ -370,7 +374,8 @@ def main() -> None:
         "optimizer": {
             "max_iterations": 100,
             "learning_rate": 0.1,
-            "intensity_scaling": "db",
+            "moving_intensity_scaling": "db",
+            "fixed_intensity_scaling": None,
             "fitting_sampling_dtype": "float32",
             "geometry_and_state_dtype": "float64",
             "ncc_dtype": "float64",

@@ -253,8 +253,14 @@ stage; voxreg deliberately applies shared masks throughout its explicit pipeline
 Float32 NCC uses aligned global reductions and local pooling sums with
 roundoff-aware variance guards. SyN rejects lattices that become nonfinite or
 singular in float32 working arithmetic rather than silently corrupting fields.
-dB scaling affects fitting only; original inputs
-are never modified. Integer results are rounded nearest-even and clipped;
+Independent moving/fixed intensity transforms affect fitting only; original
+inputs are never modified. Preparation evaluates magnitude dB/power in float64
+before metric conditioning and pyramids. Moving reductions span the recording,
+not batches; an implicit target copies the first transformed moving frame.
+Explicit fixed scaling defaults independently to no transform. Initialization
+precedes conditioning and stages always start from originals; future lazy workers
+must share the same recording-wide reductions. See [scaling semantics](README.md#fitting-intensity-scaling).
+Integer results are rounded nearest-even and clipped;
 integer inputs outside `[-2**53, 2**53]` are rejected.
 
 Offline linear resampling uses native double-image/double-coordinate sampling on
@@ -285,8 +291,8 @@ range. Integer cubic samples within `32 * float64_epsilon * max(1, abs(value))`
 of a half-integer are snapped to that half-integer before nearest-even rounding
 and dtype clipping; this stabilizes exact ties against coefficient roundoff.
 Floating outputs are not snapped. Fitting and displacement-field interpolation
-remain linear. CPU correctness is qualified independently; CUDA execution and
-performance qualification remain pending.
+remain linear. CPU/CUDA interpolation oracle checks pass; performance and a clean
+full CUDA suite remain unqualified. See [current validation](VALIDATION.md#intensity-scaling).
 
 Output uses the fixed grid and moving intensity dtype/units/time labels. Spatial
 pairs acquire no synthetic time axis. Out-of-bounds output is filled with the
