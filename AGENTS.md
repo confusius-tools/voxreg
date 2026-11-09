@@ -70,6 +70,7 @@ src/voxreg/
 ├── preparation.py  # shared settings, prepared inputs, conditioning and batch policy
 ├── results.py      # result containers, shared statuses and native output assembly
 ├── linear.py       # translation/rigid/affine fitting and pyramid refinement
+├── interpolation.py # final-image cubic coefficients, evaluation, dtype restoration
 ├── sampling.py     # physical grids, interpolation, model sampling
 ├── stages.py       # staged registration specifications and orchestration
 ├── syn.py          # symmetric nonlinear registration

@@ -57,7 +57,7 @@ def test_original_dtype_and_fractional_sampling(
         original += np.linspace(0, 1e-9, original.size).reshape(original.shape)
     data = data.copy(data=original.astype(dtype))
     untouched = data.values.copy()
-    result = register(data, interpolation=interpolation, device=device)
+    result = register(data, resample_interpolation=interpolation, device=device)
     assert result.registered.dtype == dtype
     assert_array_equal(data.values, untouched)
     assert_array_equal(result.registered[0], data[0])
@@ -139,7 +139,10 @@ def test_nearest_changes_only_output_not_fitting(recording_factory):
     data, _, _ = recording_factory()
     linear = register(data, return_transforms=True, max_iterations=25)
     nearest = register(
-        data, return_transforms=True, interpolation="nearest", max_iterations=25
+        data,
+        return_transforms=True,
+        resample_interpolation="nearest",
+        max_iterations=25,
     )
     assert_array_equal(linear.transforms, nearest.transforms)
     assert_array_equal(linear.diagnostics.objective, nearest.diagnostics.objective)

@@ -16,6 +16,7 @@ from voxreg.geometry import (
     position_to_world,
     same_physical_grid,
 )
+from voxreg.interpolation import Interpolation, sample_cubic_normalized
 from voxreg.transforms import (
     build_intrinsic_linear,
     build_linear_world_matrices,
@@ -463,7 +464,7 @@ def _sample_grid(
     images: torch.Tensor,
     parameters: torch.Tensor,
     grid: SpatialGrid,
-    interpolation: Literal["linear", "nearest"],
+    interpolation: Interpolation,
     displacement: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Sample independent grids, sharing cached CPU lattices and source storage."""
@@ -496,7 +497,10 @@ def _sample_grid(
         mapped
         if native_order
         else (mapped[..., 1:] if grid.planar else mapped).flip(-1)
-    ).to(images.dtype)
+    )
+    if interpolation == "bspline":
+        return sample_cubic_normalized(images, sampler_grid, valid), valid
+    sampler_grid = sampler_grid.to(images.dtype)
     output_shape = sampler_grid.shape[:-1]
     points = prod(output_shape)
     tiles = (
@@ -591,7 +595,7 @@ def sample_prepared(
     images: torch.Tensor,
     displacement: torch.Tensor,
     prepared: tuple[torch.Tensor, torch.Tensor, Plane | SpatialGrid],
-    interpolation: Literal["linear", "nearest"] = "linear",
+    interpolation: Interpolation = "linear",
     *,
     fitting: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -605,8 +609,8 @@ def sample_prepared(
         Component-first physical residual displacement.
     prepared : tuple
         Cached seed queries, component maps and native geometry.
-    interpolation : {"linear", "nearest"}, default: "linear"
-        Source interpolation method.
+    interpolation : {"linear", "nearest", "bspline"}, default: "linear"
+        Source interpolation method. Cubic B-splines are final-image sampling only.
     fitting : bool, default: False
         Whether to use native image-precision grids for differentiable fitting.
 
@@ -632,6 +636,10 @@ def sample_prepared(
         valid = ((mapped >= -1 - tolerance) & (mapped <= 1 + tolerance)).all(dim=-1)
         query = mapped
     if fitting:
+        if interpolation == "bspline":
+            raise ValueError(
+                "Cubic B-spline interpolation is for final resampling only."
+            )
         return F.grid_sample(
             images[:, None],
             query.to(images.dtype),
@@ -639,6 +647,8 @@ def sample_prepared(
             padding_mode="border",
             align_corners=True,
         )[:, 0], valid
+    if interpolation == "bspline":
+        return sample_cubic_normalized(images, query, valid), valid
     return sample_displaced(images, query, interpolation), valid
 
 
@@ -804,7 +814,7 @@ def sample_rigid(
     parameters: torch.Tensor,
     plane: Plane | SpatialGrid,
     *,
-    interpolation: Literal["linear", "nearest"] = "linear",
+    interpolation: Interpolation = "linear",
     displacement: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Pull-sample the fixed domain under the geometry's centered physical model.
@@ -820,9 +830,11 @@ def sample_rigid(
         then d center shifts, where d=2 in the plane or 3 for volumes.
     plane : Plane or SpatialGrid
         Fixed/moving geometry, on the image device and parameter dtype.
-        The final normalized interpolation grid uses the image dtype.
-    interpolation : {"linear", "nearest"}, default: "linear"
-        Sampling rule; registration fitting always uses linear.
+        Fitting uses image-precision normalized grids. Final cubic sampling keeps
+        float64 queries and coefficients on the image device.
+    interpolation : {"linear", "nearest", "bspline"}, default: "linear"
+        Sampling rule; registration fitting always uses linear. bspline selects
+        prefiltered cubic B-splines with whole-sample mirror boundaries.
     displacement : torch.Tensor, optional
         SyN's physical midpoint-to-fixed-domain displacement, component-first.
         Uses intrinsic i/j components for planes and world z/y/x for volumes;
@@ -845,6 +857,8 @@ def sample_rigid(
         )
     tolerance = plane.support_tolerance
     valid = ((grid >= -1 - tolerance) & (grid <= 1 + tolerance)).all(dim=-1)
+    if interpolation == "bspline":
+        return sample_cubic_normalized(images, grid, valid), valid
     sampled = F.grid_sample(
         images[:, None],
         grid.to(images.dtype),

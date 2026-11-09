@@ -233,7 +233,7 @@ def test_mixed_support_matches_registration_and_scipy(
         transform="translation",
         return_transforms=True,
         intensity_scaling="none",
-        interpolation=interpolation,
+        resample_interpolation=interpolation,
         learning_rate=1e-20,
         max_iterations=1,
         progress=False,

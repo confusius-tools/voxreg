@@ -15,6 +15,12 @@ from voxreg.geometry import (
     same_physical_grid,
     validate_registration_geometry,
 )
+from voxreg.interpolation import (
+    Interpolation,
+    prepare_cubic_spline,
+    restore_image_dtype,
+    sample_cubic_spline,
+)
 from voxreg.preparation import choose_batch_size
 from voxreg.results import build_output_template
 from voxreg.sampling import sample_displaced
@@ -85,7 +91,7 @@ def resample(
     reference: xr.DataArray,
     transforms: npt.ArrayLike | xr.DataArray,
     *,
-    interpolation: Literal["linear", "nearest"] = "linear",
+    interpolation: Interpolation = "linear",
     device: Literal["cpu", "cuda"] = "cpu",
     batch_size: int | None = None,
 ) -> tuple[xr.DataArray, xr.DataArray]:
@@ -113,9 +119,13 @@ def resample(
         Spatial images/maps broadcast over time-dependent maps/images. When both
         have time labels they must match exactly. Anonymous per-frame matrices
         applied to a spatial image produce integer time labels.
-    interpolation : {"linear", "nearest"}, default="linear"
+    interpolation : {"linear", "nearest", "bspline"}, default="linear"
         Use nearest for categorical labels. Outside samples use each original
-        moving frame's minimum and are marked invalid.
+        moving frame's minimum and are marked invalid. bspline uses prefiltered
+        cubic B-splines with whole-sample mirror boundaries in 2D and 3D. Its
+        coefficients and queries use float64 on the selected device. Floating
+        overshoot is retained; integer outputs are rounded and dtype-clipped.
+        No extra support erosion is applied for the cubic kernel radius.
     device : {"cpu", "cuda"}, default="cpu"
         Sampling device. Results are NumPy-backed on CPU in either case.
     batch_size : int, optional
@@ -137,13 +147,15 @@ def resample(
         If images, transforms or their numeric types are unsupported.
     ValueError
         If geometry, labels, units, transforms or sampling options are invalid.
+        Also raised when cubic overshoot cannot be represented finitely in the
+        moving image's floating-point dtype.
     """
     validate_registration_geometry(moving)
     validate_registration_geometry(reference)
     if reference.dims != VOXEL_DIMS:
         raise ValueError("reference must be spatial VoxelData without time.")
-    if interpolation not in ("linear", "nearest"):
-        raise ValueError("interpolation must be linear or nearest.")
+    if interpolation not in ("linear", "nearest", "bspline"):
+        raise ValueError("interpolation must be linear, nearest or bspline.")
     if device not in ("cpu", "cuda") or (
         device == "cuda" and not torch.cuda.is_available()
     ):
@@ -386,18 +398,17 @@ def resample(
         )
         if native_linear:
             sampled, valid = _sample_linear(original, query, voxel_extent=mixed)
+        elif interpolation == "bspline":
+            sampled = sample_cubic_spline(prepare_cubic_spline(original), query, valid)
         else:
             sampled = sample_displaced(
-                original, torch.stack(normalized[::-1], dim=-1), interpolation
+                original, torch.stack(normalized[::-1], dim=-1), "nearest"
             )
         sampled = torch.where(
             valid, sampled, original.amin(dim=(1, 2, 3))[:, None, None, None]
         )
         output = sampled.cpu().numpy()
-        if integer:
-            limits = np.iinfo(moving.dtype)
-            output = np.clip(np.rint(output), limits.min, limits.max)
-        outputs.append(output.astype(moving.dtype, copy=False))
+        outputs.append(restore_image_dtype(output, moving.dtype, interpolation))
         masks.append(valid.cpu().numpy())
     template = build_output_template(moving, reference, False)
     resampled = template.copy(data=np.concatenate(outputs))

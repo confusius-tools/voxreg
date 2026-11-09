@@ -30,6 +30,7 @@ from voxreg.fields import (
     smooth_field as _smooth_field,
 )
 from voxreg.geometry import position_to_world
+from voxreg.interpolation import restore_image_dtype
 from voxreg.masks import MetricMasks, get_mask_source
 from voxreg.metrics import compute_global_ncc, compute_local_ncc
 from voxreg.preparation import PreparedRegistration
@@ -605,7 +606,7 @@ def run_syn(prepared: PreparedRegistration) -> RegistrationResult:
     convergence_window_size = settings.convergence_window_size
     device = settings.device
     fixed_mask = settings.fixed_mask
-    interpolation = settings.interpolation
+    interpolation = settings.resample_interpolation
     learning_rate = settings.learning_rate
     metric_callback = settings.metric_callback
     metric_interval = settings.metric_interval
@@ -752,10 +753,7 @@ def run_syn(prepared: PreparedRegistration) -> RegistrationResult:
                     sampled = torch.where(reference[index], original, sampled)
                     valid = valid | reference[index]
                 values = sampled.cpu().numpy()
-                if integer:
-                    limits = np.iinfo(raw.dtype)
-                    values = np.clip(np.rint(values), limits.min, limits.max)
-                outputs.append(values.astype(raw.dtype, copy=False))
+                outputs.append(restore_image_dtype(values, raw.dtype, interpolation))
                 masks.append(valid.cpu().numpy())
                 if return_transforms:
                     forwards.append(

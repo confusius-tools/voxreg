@@ -17,6 +17,7 @@ from voxreg.geometry import (
     position_to_world,
     validate_registration_geometry,
 )
+from voxreg.interpolation import Interpolation
 from voxreg.masks import (
     validate_masks,
 )
@@ -58,7 +59,7 @@ def register(
     metric: Literal["ncc", "local_ncc", "mi"] | None = None,
     mi_bins: int = 32,
     mi_sigma: float = 0.5,
-    interpolation: Literal["linear", "nearest"] = "linear",
+    resample_interpolation: Interpolation = "linear",
     return_transforms: bool = False,
     batch_size: int | None = None,
     max_iterations: int | Sequence[int] = 100,
@@ -178,9 +179,15 @@ def register(
         MI Gaussian standard deviation in bin widths, from 0.1 through 10.
         Bin memberships are normalized per sample. These are intensity kernels,
         independent of image-pyramid and deformation smoothing.
-    interpolation : {"linear", "nearest"}, default: "linear"
+    resample_interpolation : {"linear", "nearest", "bspline"}, default: "linear"
         Final original-image resampling only; fitting always uses linear sampling.
-        Nearest is suitable for labels, not automatically for integer intensities.
+        bspline uses prefiltered cubic B-splines with mirror boundaries in 2D and
+        3D,
+        computed on the selected device with float64 coefficients and queries.
+        Floating outputs may overshoot the input intensity range. Integer outputs
+        are rounded nearest-even and clipped to their dtype range. Unsupported
+        points keep the existing frame-minimum fill and support mask. Nearest
+        is suitable for labels, not automatically for integer intensities.
     return_transforms : bool, default: False
         Return forward/inverse linear matrices or complete SyN displacement fields.
         Otherwise forward_transforms and inverse_transforms are None; fitting, resampling
@@ -386,7 +393,7 @@ def register(
         metric=metric,
         mi_bins=mi_bins,
         mi_sigma=mi_sigma,
-        interpolation=interpolation,
+        resample_interpolation=resample_interpolation,
         return_transforms=return_transforms,
         batch_size=batch_size,
         max_iterations=max_iterations,
@@ -475,7 +482,7 @@ def run_stage(
     metric = settings.metric
     mi_bins = settings.mi_bins
     mi_sigma = settings.mi_sigma
-    interpolation = settings.interpolation
+    resample_interpolation = settings.resample_interpolation
     return_transforms = settings.return_transforms
     batch_size = settings.batch_size
     max_iterations = settings.max_iterations
@@ -607,8 +614,8 @@ def run_stage(
         raise ValueError("device must be cpu or an available cuda device.")
     if intensity_scaling not in ("none", "db"):
         raise ValueError("intensity_scaling must be none or db.")
-    if interpolation not in ("linear", "nearest"):
-        raise ValueError("interpolation must be linear or nearest.")
+    if resample_interpolation not in ("linear", "nearest", "bspline"):
+        raise ValueError("resample_interpolation must be linear, nearest or bspline.")
     if (
         progress is not None
         and not isinstance(progress, bool)

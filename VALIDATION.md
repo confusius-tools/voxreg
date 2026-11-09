@@ -41,6 +41,19 @@ Resampling is checked against independent SciPy pulls, including displacement
 component units independent of their native grid units. Native output geometry,
 input immutability and invalid/mismatched unit metadata are checked separately.
 
+Final cubic-image tests exercise public `register` and `resample` against
+independent SciPy `map_coordinates(order=3, mode="mirror", prefilter=True)` and
+native SimpleITK B-spline samples in 2D/3D. Cases include unequal/oblique and
+reversed/strided grids, physical units, short/singleton axes, float16/32/64 and
+integer intensities, large DC contrast, exact knots, integer half ties,
+overshoot/range failures, invalid queries, chunk boundaries, mixed dimensions,
+and shared/per-frame matrix and dense-field pulls. All models and a full staged
+pyramid check unchanged fitting diagnostics and exported-transform reuse.
+Float64 oracle discrepancies in the initial unequal-grid checks were below
+5e-14. CUDA cases are collected but skip on this CPU-only system; no CUDA or
+performance qualification is claimed. The existing paper-case support policy
+and artifacts are unchanged.
+
 Batch comparisons of float32 fits allow a maximum physical pull difference of
 0.001 minimum-spacing voxels over the full grid. Linear matrices are evaluated
 at world points; their raw translation entries depend on the world origin.

@@ -13,6 +13,7 @@ import xarray as xr
 from confusius._utils.progress import progress_bar
 
 from voxreg.convergence import WindowConvergence
+from voxreg.interpolation import restore_image_dtype
 from voxreg.masks import (
     MetricMasks,
     get_mask_source,
@@ -430,7 +431,7 @@ def run_linear(
     device = settings.device
     fixed_mask = settings.fixed_mask
     initialization = settings.initialization
-    interpolation = settings.interpolation
+    interpolation = settings.resample_interpolation
     learning_rate = settings.learning_rate
     metric = settings.metric
     metric_callback = settings.metric_callback
@@ -595,10 +596,9 @@ def run_linear(
                     valid = fit_valid
                 else:
                     values = sampled.cpu().numpy()
-                    if integer_output:
-                        limits = np.iinfo(raw.dtype)
-                        values = np.clip(np.rint(values), limits.min, limits.max)
-                    outputs.append(values.astype(raw.dtype, copy=False))
+                    outputs.append(
+                        restore_image_dtype(values, raw.dtype, interpolation)
+                    )
                 masks.append(valid.cpu().numpy())
                 parameters.append(physical.cpu().numpy())
                 clocks.append(steps.cpu().numpy())

@@ -8,30 +8,12 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 Work proceeds one roadmap point at a time, stopping after each for user review
 and a separate commit. The registration-module refactor is implemented and
-reviewed. No higher-order interpolation or device default has been
-enabled. Broad benchmark expansion remains deferred to its roadmap point;
-preserve existing artifacts and frozen sources/settings.
+reviewed. Cubic final-image interpolation is implemented and reviewed. Device
+defaults remain unchanged. Broad benchmark
+expansion remains deferred to its roadmap point; preserve existing artifacts and
+frozen sources/settings.
 
 ## Planned capabilities
-
-### Final image interpolation
-
-Clarify interpolation naming at the public boundary: current interpolation
-selects final original-image resampling, while fitting always uses linear
-interpolation. Consider an explicit resample_interpolation name with a backwards
-compatible alias; add fitting-interpolator choices only for a demonstrated need.
-
-Add an optional higher-order final interpolator, prioritizing cubic B-spline
-support consistently in 2D and 3D for both register and resample. Specify the
-kernel and any coefficient prefilter explicitly: PyTorch bicubic convolution is
-not interchangeable with cubic B-spline interpolation, and grid_sample does not
-offer general volumetric cubic interpolation. Keep nearest for categorical
-labels and linear as the existing default. Qualify CPU/CUDA behavior, precision,
-boundary support, overshoot and memory cost against independent interpolation
-oracles, with one final sampling of original intensities.
-
-Label-aware resampling is deferred at the user's request; retain nearest-neighbour
-resampling for categorical labels for now.
 
 ### Device selection
 
@@ -41,6 +23,32 @@ Record the resolved device in diagnostics and document execution on lazy workers
 Resolve whether auto becomes the default after CPU/CUDA quality qualification;
 benchmarks retain explicit devices. Do not silently retry on CPU after CUDA
 execution failures or out-of-memory errors.
+
+### Intensity scaling and initialization
+
+Replace the shared `intensity_scaling` option with separate
+`moving_intensity_scaling` and `fixed_intensity_scaling` arguments, both defaulting
+to Python `None` for no transformation. Keep `"db"` and add `"sqrt"` plus numeric
+power exponents, following ConfUSIus semantics after inspecting its implementation.
+Different image representations may require different transforms. This API is
+alpha: remove obsolete spellings rather than adding compatibility aliases.
+
+- Confirm and preserve moment initialization from original, nonnegative native
+  intensities before any fitting transform. The current single-model path already
+  computes `center_moments` before `prepare_fitting_images`; audit staged and
+  implicit-reference paths and retain regression coverage. Negative dB values
+  must not become moment weights.
+- Define valid input domains, zero/negative values, finite exponent validation,
+  overflow handling and fitting precision for each transform. Inspect ConfUSIus
+  before choosing exact dB and power conventions; do not silently reinterpret them.
+- Apply each transform consistently before metric-range preparation and image
+  pyramids, keeping final resampling on original intensities. Define how distinct
+  moving/fixed transforms affect the implicit first-frame reference and masks.
+- Replace the string `"none"` with `None`, update stages, documentation and tests,
+  and qualify the default change on representative inputs. Keep benchmark sources
+  and historical artifacts frozen; disclose changed defaults in new comparisons.
+- Design this alongside lazy recording-wide conditioning so time chunks cannot
+  silently change fitting intensities.
 
 ### First real-data motion-quality case: paper Figure 2
 
@@ -142,6 +150,15 @@ time chunking by itself does not provide it.
    with original images, native geometry and explicit quality limitations.
 
 ## Implemented
+
+- **Final image interpolation:** optional cubic B-spline (`"bspline"`) in 2D/3D
+  registration and offline resampling, with float64 coefficients/evaluation,
+  mirror boundaries and unchanged geometric support. Registration now exposes
+  `resample_interpolation`. Linear fitting and default final interpolation remain
+  unchanged. CPU oracle checks pass;
+  CUDA execution and performance remain unqualified on this CPU-only system.
+  See [interpolation semantics](README.md#final-image-interpolation).
+  Label-aware resampling remains deferred; retain nearest for categorical labels.
 
 - **Registration module organization:** registration.py owns the public entry
   point and common validation/preparation. Linear and SyN engines consume typed

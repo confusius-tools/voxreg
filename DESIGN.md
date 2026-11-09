@@ -248,7 +248,7 @@ stage; voxreg deliberately applies shared masks throughout its explicit pipeline
 | SyN fitting | Float32 working fields, origin-free field arithmetic and native PyTorch `grid_sample`; support checks retain float64 physical queries |
 | SyN finalization | Float64 inversion, composition, validation and world displacement export; casting does not recover fitting precision |
 | Smoothing | PyTorch in field dtype; CPU SyN regularizers use scaled float32, restoring the field dtype |
-| Final interpolation | Original images, once; float64/integer inputs retain double; outputs retain moving dtype |
+| Final interpolation | Original images, once; float64/integer inputs retain double; cubic always uses double until original-dtype restoration |
 
 Float32 NCC uses aligned global reductions and local pooling sums with
 roundoff-aware variance guards. SyN rejects lattices that become nonfinite or
@@ -261,6 +261,32 @@ Offline linear resampling uses native double-image/double-coordinate sampling on
 CPU/CUDA, without fitting-only coordinate round trips. Single CPU volumes partition
 query points over shared image storage; CUDA affine queries use separable coordinates
 instead of a dense skinny matrix product. Fitting sampling is unchanged.
+
+Optional final cubic B-spline interpolation uses a tensor-product cardinal
+basis, degree three, in both 2D and 3D. A separable tridiagonal solve recovers
+coefficients from `f[i] = (c[i-1] + 4*c[i] + c[i+1])/6`, with whole-sample mirror
+boundaries `c[-1] = c[1]`, `c[n] = c[n-2]`. Singleton axes are constant. This
+independent coefficient prefilter is neither image blurring nor an extra spatial
+resampling; the mirror convention matches the documented
+[SciPy](https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.map_coordinates.html)
+and [ITK](https://docs.itk.org/projects/doxygen/en/stable/classitk_1_1BSplineInterpolateImageFunction.html)
+B-spline boundary policy.
+
+Coefficients are prepared once per native source batch. Per-frame offsets and
+scales preserve small contrast around large DC values and protect intermediate
+solves from overflow. Preparation and evaluation stay in torch float64 on the
+selected device. Source-sized coefficient storage and bounded query chunks
+limit temporary gather storage; outputs remain eager. There is no CUDA-to-CPU
+interpolation fallback. Integer knots return original samples exactly.
+
+Cubic stencil extension does not change geometric support or outside fills.
+Floating overshoot is retained and checked against the original dtype's finite
+range. Integer cubic samples within `32 * float64_epsilon * max(1, abs(value))`
+of a half-integer are snapped to that half-integer before nearest-even rounding
+and dtype clipping; this stabilizes exact ties against coefficient roundoff.
+Floating outputs are not snapped. Fitting and displacement-field interpolation
+remain linear. CPU correctness is qualified independently; CUDA execution and
+performance qualification remain pending.
 
 Output uses the fixed grid and moving intensity dtype/units/time labels. Spatial
 pairs acquire no synthetic time axis. Out-of-bounds output is filled with the
@@ -285,8 +311,8 @@ CUDA synchronization and do not change best-valid return semantics.
 
 ## Registration entry and engine boundaries
 
-`voxreg.register` is defined in registration.py and retains the existing public
-signature. It creates an immutable internal RegistrationSettings record, dispatches
+`voxreg.register` is defined in registration.py. It creates an immutable internal
+RegistrationSettings record, dispatches
 explicit pipelines to stages.py, and validates/prepares single-model calls through
 `run_stage`. This record is an execution detail, not a public reusable preset API.
 
@@ -311,6 +337,7 @@ precision, optimizers, masks, convergence or output conventions.
 | [geometry.py](src/voxreg/geometry.py) | VoxelData validation and array-position geometry |
 | [transforms.py](src/voxreg/transforms.py) | Linear parameterization, scaling and seed constraints |
 | [resampling.py](src/voxreg/resampling.py) | Offline world-pull application on CPU/CUDA |
+| [interpolation.py](src/voxreg/interpolation.py) | Final-image cubic coefficients, evaluation and dtype restoration |
 | [sampling.py](src/voxreg/sampling.py) | Physical pull sampling and matrix conversion |
 | [registration.py](src/voxreg/registration.py) | Public API, validation, preparation and single-model/stage dispatch |
 | [preparation.py](src/voxreg/preparation.py) | Shared settings, prepared native inputs, intensity conditioning and batch policy |

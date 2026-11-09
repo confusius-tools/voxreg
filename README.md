@@ -74,7 +74,7 @@ result = voxreg.register(
 | `intensity_scaling` | `"db"` (default) for nonnegative power, or `"none"` for already-prepared/signed data. Affects fitting only. |
 | `metric` | Default `None` retains global squared NCC for linear models and local squared NCC for SyN. Explicit `"ncc"` selects global NCC, `"local_ncc"` selects SyN local NCC, and `"mi"` selects mutual information. |
 | `mi_bins`, `mi_sigma` | MI histogram bins (default `32`, range `2`–`256`) and Gaussian standard deviation in bin widths (default `0.5`, range `0.1`–`10`). |
-| `interpolation` | Final resampling of original intensities: `"linear"` (default) or `"nearest"`. Fitting always uses linear interpolation. |
+| `resample_interpolation` | Final resampling of original intensities: `"linear"` (default), `"nearest"` or cubic `"bspline"`. Fitting always uses linear interpolation. |
 | `batch_size` | Maximum frames fitted together; automatic by default. Full returned images still occupy CPU memory. |
 | `max_iterations` | Per-frame update limit at each level: an integer (default `100`) or one integer per level. Inspect diagnostics rather than assuming convergence. |
 | `shrink_factors`, `smoothing_sigmas` | Explicit coarse→fine downsampling factors and Gaussian image smoothing standard deviations in mm. Defaults `(1,)` and `(0.0,)` retain native-resolution fitting. |
@@ -302,6 +302,34 @@ losses from different levels must not be compared.
 
 Image smoothing in mm is separate from `syn_update_sigma` and `syn_total_sigma`,
 which remain field smoothing standard deviations in **current-level voxels**.
+
+## Final image interpolation
+
+Use `resample_interpolation="bspline"` in `register` for cubic B-spline
+resampling of the original intensities, in either 2D or 3D:
+
+```python
+result = voxreg.register(moving, fixed, resample_interpolation="bspline")
+```
+
+Fitting stays linear, and the default final interpolation is also linear.
+Offline `resample` uses its `interpolation` argument and accepts the same three
+methods.
+
+Cubic interpolation prepares spline coefficients once per source batch, then
+samples the original image once. This coefficient prefilter is not Gaussian
+smoothing. Coefficients and evaluation use float64 on the selected CPU/CUDA
+device. Whole-sample mirror extension supplies stencil neighbours at boundaries;
+the existing geometric validity mask and per-frame minimum outside fill remain
+unchanged. A wider stencil does not shrink valid support.
+
+Floating outputs retain spline overshoot, including negative values from
+nonnegative inputs; values outside the original floating dtype's finite range
+raise an error. Integer outputs use nearest-even rounding and dtype clipping.
+Cubic half-integer ties within float64 roundoff are stabilized before rounding.
+Outputs retain the moving image dtype. Cubic uses additional coefficient memory
+and is not performance-qualified yet. Use nearest for categorical labels;
+label-aware interpolation remains deferred.
 
 ## Apply transforms offline
 

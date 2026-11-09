@@ -11,6 +11,8 @@ import numpy.typing as npt
 import torch
 import xarray as xr
 
+from voxreg.interpolation import Interpolation
+
 if TYPE_CHECKING:
     from voxreg.metrics import Metric
     from voxreg.sampling import Plane, SpatialGrid
@@ -38,7 +40,7 @@ class RegistrationSettings:
     metric: Literal["ncc", "local_ncc", "mi"] | None = None
     mi_bins: int = 32
     mi_sigma: float = 0.5
-    interpolation: Literal["linear", "nearest"] = "linear"
+    resample_interpolation: Interpolation = "linear"
     return_transforms: bool = False
     batch_size: int | None = None
     max_iterations: int | Sequence[int] = 100
