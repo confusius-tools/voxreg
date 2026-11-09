@@ -68,7 +68,7 @@ result = voxreg.register(
 | Argument | Purpose |
 | --- | --- |
 | `moving`, `fixed` | NumPy-backed VoxelData in mm: `(k, j, i)` images or `(time, k, j, i)` recordings. `fixed` is spatial-only and required for a single image. |
-| `transform` | `"translation"`, `"rigid"` (default), `"affine"` or `"syn"`. Slices use `k=1`; volumes have at least two samples on each axis. |
+| `transform` | `"translation"`, `"rigid"` (default), `"affine"`, `"syn"`, a `Stage`, or a sequence of model names/`Stage` specifications. Slices use `k=1`; volumes have at least two samples on each axis. |
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
 | `intensity_scaling` | `"db"` (default) for nonnegative power, or `"none"` for already-prepared/signed data. Affects fitting only. |
 | `batch_size` | Maximum frames fitted together; automatic by default. Full returned images still occupy CPU memory. |
@@ -85,7 +85,8 @@ Inputs are not modified; output retains the moving dtype and time labels.
 Use `valid` to exclude out-of-bounds padding from analysis.
 
 The `syn_` options apply only to `transform="syn"`; nondefault values with linear
-models raise an error. Smoothing values are standard deviations, not ANTs field
+models raise an error. In a pipeline containing SyN, shared `syn_` options apply
+only to its SyN stage. Smoothing values are standard deviations, not ANTs field
 variances. Local CC uses a uniformly weighted rectangular window.
 
 With `return_transforms=True`, `forward_transforms` are physical pulls:
@@ -101,6 +102,65 @@ Dask-backed inputs are not supported.
 
 For all options, including optimizer controls and callbacks, use
 `help(voxreg.register)` or read the [API docstring](src/voxreg/rigid.py).
+
+## Staged registration
+
+Pass a sequence for a pipeline using the existing model defaults:
+
+```python
+result = voxreg.register(
+    recording,
+    transform=("rigid", "affine"),
+    shrink_factors=(2, 1),
+    smoothing_sigmas=(0.1, 0.0),
+)
+```
+
+Shared fitting arguments apply to each stage. Use `Stage` to override only the
+options that differ:
+
+```python
+result = voxreg.register(
+    moving, fixed,
+    transform=(
+        "rigid",
+        "affine",
+        voxreg.Stage("syn", max_iterations=(50, 25)),
+    ),
+    shrink_factors=(2, 1),
+    smoothing_sigmas=(0.1, 0.0),  # image sigma in mm, chosen for these images
+    max_iterations=(100, 50),
+    return_transforms=True,
+)
+```
+
+Settings follow **model defaults → shared arguments → explicit stage overrides**.
+`Stage` accepts iteration, pyramid, learning-rate, convergence and SyN controls;
+device, batching, intensity scaling, output interpolation and callbacks are shared.
+Unset stage options inherit the shared value. There are no named workflow presets.
+
+Stages must follow translation→rigid→affine→SyN, skipping models as needed;
+repeated/reversed stages are rejected and SyN must be last. Initialization runs
+once, and complete transforms carry forward with a fixed physical pivot. Every
+stage fits the original images. Original intensities are sampled once for final
+output; exported transforms describe the complete final mapping.
+
+Each recording frame has its own stage outcomes. Convergence and reaching an
+iteration limit permit continuation. Registration failure stops that frame's
+pipeline and retains its best valid transform; later stages mark it `skipped`.
+Other frames continue, and an implicit first-frame reference is preserved exactly.
+
+`result.stage_diagnostics` is a tuple with one dataset per stage, including that
+stage's pyramid diagnostics and zero-based `stage`/`transform` attributes.
+`result.diagnostics` describes the final model, preserves any earlier failure
+status and sums updates across all stages. Its level variables describe only the
+final stage; consult `stage_diagnostics` for earlier levels. Phase timings sum
+stage timings; `stage_overhead_seconds` records validation/orchestration overhead.
+
+Progress callbacks count completed stage/frame work units, with a total of
+`number_of_frames * number_of_stages`, including skipped frames. Metric callbacks
+retain their three arguments; update clocks reset per stage and level, and losses
+from different stages/levels must not be compared. Reports run stage by stage.
 
 ## Multi-resolution fitting
 

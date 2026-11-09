@@ -247,6 +247,7 @@ def _fit(
     metric_interval,
     initial_fields=None,
     finalize=True,
+    active_frames=None,
 ):
     """Fit independent halfway fields and finalize their best valid state in double."""
     physical_grid = grid
@@ -294,6 +295,8 @@ def _fit(
     constant = images.amax(dim=axes) == images.amin(dim=axes)
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
     status = torch.where(~seed_valid & ~reference, 6, status)
+    if active_frames is not None:
+        status = torch.where(~active_frames & ~reference, 7, status)
     fixed_parameters = parameters.new_zeros((b, len(fixed_plane.parameter_scale)))
     fixed_images = target.expand(b, *target.shape)
     moving_sampler = _prepare_displaced_sampling(images, parameters, plane)
@@ -627,6 +630,7 @@ def register_syn(
     total_sigma,
     radius,
     schedule=None,
+    active_frames=None,
 ):
     """Register prepared native images with batched compositive midpoint fields.
 
@@ -683,6 +687,9 @@ def register_syn(
     schedule : tuple, optional
         Validated shrink factors, image smoothing sigmas in mm and iteration
         budgets. None retains the native single-resolution fitting path.
+    active_frames : numpy.ndarray, optional
+        Per-frame mask for staged fitting. Inactive frames retain the complete
+        affine seed with zero residual deformation and status skipped.
 
     Returns
     -------
@@ -761,6 +768,15 @@ def register_syn(
                 radius=radius,
                 metric_callback=report if metric_callback is not None else None,
                 metric_interval=metric_interval,
+                **(
+                    {
+                        "active_frames": torch.tensor(
+                            active_frames[first:last], device=device
+                        )
+                    }
+                    if active_frames is not None
+                    else {}
+                ),
                 **pyramid_options,
             )
             if device == "cuda":

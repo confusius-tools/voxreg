@@ -29,6 +29,7 @@ from voxreg.sampling import (
     make_grid,
     sample_rigid,
 )
+from voxreg.stages import Stage
 from voxreg.transforms import (
     build_linear_diagnostics,
     check_affine_parameters,
@@ -44,6 +45,7 @@ _STATUS_LABELS = np.array(
         "reference",
         "max_iterations",
         "invalid_transform",
+        "skipped",
     ]
 )
 
@@ -53,6 +55,7 @@ class _MetricOptions(TypedDict, total=False):
 
     metric_callback: Callable[[torch.Tensor, torch.Tensor], None]
     metric_interval: int
+    active_frames: torch.Tensor
 
 
 @dataclass(frozen=True)
@@ -76,11 +79,17 @@ class RegistrationResult:
         level_objective, level_status and level_n_iterations; n_iterations sums
         the actual updates across levels, while status describes the final level
         including native-grid SyN finalization checks.
+        For staged calls, n_iterations sums all stages, while objective and
+        model-specific variables describe the final model. stage_diagnostics
+        retains the original counts and statuses of each stage separately.
     inverse_transforms : xarray.DataArray, optional
         None unless register(return_transforms=True). Linear models: inverse
         world z/y/x pull matrices. SyN: complete moving-world-to-fixed-world
         displacement in mm on the original moving grid. Sampled field inverses
         are approximate.
+    stage_diagnostics : tuple of xarray.Dataset, optional
+        One dataset per stage for an explicit pipeline, including each stage's
+        pyramid diagnostics. None for the original single-model string API.
     """
 
     registered: xr.DataArray
@@ -88,6 +97,7 @@ class RegistrationResult:
     forward_transforms: xr.DataArray | None
     diagnostics: xr.Dataset
     inverse_transforms: xr.DataArray | None = None
+    stage_diagnostics: tuple[xr.Dataset, ...] | None = None
 
     @property
     def transforms(self) -> xr.DataArray | None:
@@ -99,6 +109,15 @@ class RegistrationResult:
             The same forward pull, without copying or allocating transforms.
         """
         return self.forward_transforms
+
+
+@dataclass(frozen=True)
+class _LinearFit:
+    """Internal complete linear state without resampled original intensities."""
+
+    matrices: npt.NDArray[np.float64]
+    diagnostics: xr.Dataset
+    center: npt.NDArray[np.float64]
 
 
 def _prepare_fitting_images(raw, target_raw, intensity_scaling):
@@ -190,6 +209,7 @@ def _optimize(
     initial_parameters: torch.Tensor | None = None,
     metric_callback: Callable[[torch.Tensor, torch.Tensor], None] | None = None,
     metric_interval: int = 10,
+    active_frames: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run masked batched Adam with bounded whole-batch stopping checks.
 
@@ -242,6 +262,8 @@ def _optimize(
     )
     constant = images.amax(dim=spatial_axes) == images.amin(dim=spatial_axes)
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
+    if active_frames is not None:
+        status = torch.where(~active_frames & ~reference, 7, status)
     check_interval = 10 if images.is_cuda else 1
     orientation = (
         check_affine_parameters(u.detach() * plane.parameter_scale, plane)[1]
@@ -348,6 +370,7 @@ def _optimize_pyramid(
     initial_parameters=None,
     metric_callback=None,
     metric_interval=10,
+    active_frames=None,
 ):
     """Refine complete world matrices with fresh per-level optimizer state."""
     from voxreg.pyramid import _make_level
@@ -390,6 +413,7 @@ def _optimize_pyramid(
             initial_parameters=seed,
             metric_callback=metric_callback,
             metric_interval=metric_interval,
+            **({"active_frames": active_frames} if active_frames is not None else {}),
         )
         with torch.no_grad():
             fitted, valid = sample_rigid(level_images, physical, geometry)
@@ -444,7 +468,9 @@ def register(
     moving: xr.DataArray,
     fixed: xr.DataArray | None = None,
     *,
-    transform: Literal["translation", "rigid", "affine", "syn"] = "rigid",
+    transform: Literal["translation", "rigid", "affine", "syn"]
+    | Stage
+    | Sequence[str | Stage] = "rigid",
     initial_transform: npt.ArrayLike | xr.DataArray | None = None,
     initialization: Literal["center_geometry", "center_moments", "align_planes"]
     | npt.ArrayLike
@@ -485,7 +511,7 @@ def register(
         omission uses the first frame and preserves that reference exactly.
         Noncoplanar slice pairs require a plane-compatible seed or align_planes.
         Mixed slice/volume inputs sample the moving image on the native fixed grid.
-    transform : {"translation", "rigid", "affine", "syn"}, default: "rigid"
+    transform : str, Stage or sequence of str or Stage, default: "rigid"
         Translation/rigid/affine use 2/3/6 in-plane parameters for slice pairs,
         3/6/12 for volume pairs, and 3/6/9 for mixed slice/volume inputs.
         Euler belongs to the rigid family; the rigid model uses rotation vectors,
@@ -497,6 +523,11 @@ def register(
         deformation. Its complete forward/inverse outputs are dense displacements,
         not matrices. Working fields use float32; physical geometry, final
         inversion and exported displacements retain float64.
+        A nonempty sequence runs increasing-complexity stages (translation,
+        rigid, affine, syn), skipping models as needed. Repeated or reversed
+        stages are rejected; SyN must be last. Stage specifications override
+        shared fitting options, while strings inherit them. Shared syn_ settings
+        apply only to SyN in pipelines containing it. No preset is selected.
     initial_transform : array-like or xarray.DataArray, optional
         Model-compatible fixed-world-to-moving-world pull matrix in world z/y/x,
         with translations in mm. Shape (4, 4) broadcasts to all frames;
@@ -611,12 +642,15 @@ def register(
         reach the CPU, on either device. Counts include reference and failed frames,
         not optimizer updates. No preparation/final-assembly events are emitted.
         Callback exceptions propagate; reporting updates are outside stage timings.
+        For pipelines, progress counts completed stage/frame work units, with
+        total equal to frame count times stage count, including skipped frames.
     metric_callback : callable, optional
         Live optimizer reporting, independent of frame progress. Receives owned
         NumPy arrays ``(frame_indices, n_iterations, objective)`` for each chunk;
         indices follow moving frame order, clocks count each frame's updates.
         For pyramid fitting, reports arrive coarse to fine within each batch;
         clocks reset at each level. Losses from different levels are not comparable.
+        Pipeline reports run stage by stage; clocks also reset at stage boundaries.
         Reports the initial trial, every metric_interval optimizer rounds, and
         the final trial. Stopped rows may repeat. Objective is raw negative NCC²
         (negative mean squared local NCC between halfway images for SyN),
@@ -657,6 +691,15 @@ def register(
     use a centered axis-angle rotation vector (right-handed XYZ, stored z/y/x).
     Affine parameters are row-major deviations from identity plus physical center
     displacement; diagnostics report actual linear coefficients, not deviations.
+    Pipelines initialize once, retain the physical pivot, and pass complete world
+    matrices between linear stages and into terminal SyN. Every stage fits the
+    original images; original intensities are sampled only for the final output.
+    A failed frame stops its pipeline after that stage and retains its best valid
+    map; subsequent stage diagnostics mark it skipped. Other frames continue.
+    Converged and max_iterations statuses allow continuation. Summary status
+    preserves the original failure; stage_diagnostics contains separate datasets
+    so stages can have different pyramid schedules without padding or loss
+    comparisons between models. An implicit first-frame reference stays unchanged.
     Slice pairs optimize only their intrinsic orthonormal i/j plane, leaving its normal
     fixed. Linear models share their optimizer; SyN shares preprocessing, physical
     sampling, output contracts and independent convergence monitoring.
@@ -721,6 +764,83 @@ def register(
     rounding and range clipping. Metrics exclude invalid sample centers; outside
     output values use each original moving frame's minimum.
     """
+    options = {
+        "initial_transform": initial_transform,
+        "initialization": initialization,
+        "intensity_scaling": intensity_scaling,
+        "interpolation": interpolation,
+        "return_transforms": return_transforms,
+        "batch_size": batch_size,
+        "max_iterations": max_iterations,
+        "shrink_factors": shrink_factors,
+        "smoothing_sigmas": smoothing_sigmas,
+        "learning_rate": learning_rate,
+        "syn_cc_radius": syn_cc_radius,
+        "syn_update_sigma": syn_update_sigma,
+        "syn_total_sigma": syn_total_sigma,
+        "convergence_window_size": convergence_window_size,
+        "convergence_minimum_value": convergence_minimum_value,
+        "device": device,
+        "progress": progress,
+        "metric_callback": metric_callback,
+        "metric_interval": metric_interval,
+    }
+    if isinstance(transform, Stage) or (
+        isinstance(transform, Sequence) and not isinstance(transform, (str, bytes))
+    ):
+        from voxreg.stages import _register_stages
+
+        return _register_stages(moving, fixed, transform, options)
+    if not isinstance(transform, str) or transform not in (
+        "translation",
+        "rigid",
+        "affine",
+        "syn",
+    ):
+        raise ValueError(
+            "transform must be translation, rigid, affine or syn. Euler transforms belong to the rigid family."
+        )
+    result = _register(moving, fixed, transform=transform, **options)
+    assert isinstance(result, RegistrationResult)
+    return result
+
+
+def _register(
+    moving: xr.DataArray,
+    fixed: xr.DataArray | None = None,
+    *,
+    transform: str = "rigid",
+    initial_transform: npt.ArrayLike | xr.DataArray | None = None,
+    initialization: Literal["center_geometry", "center_moments", "align_planes"]
+    | npt.ArrayLike
+    | xr.DataArray
+    | None = None,
+    intensity_scaling: Literal["none", "db"] = "db",
+    interpolation: Literal["linear", "nearest"] = "linear",
+    return_transforms: bool = False,
+    batch_size: int | None = None,
+    max_iterations: int | Sequence[int] = 100,
+    shrink_factors: Sequence[int] = (1,),
+    smoothing_sigmas: Sequence[float] = (0.0,),
+    learning_rate: float = 0.1,
+    syn_cc_radius: int = 2,
+    syn_update_sigma: float = 1.5,
+    syn_total_sigma: float = 0.5,
+    convergence_window_size: int = 50,
+    convergence_minimum_value: float = 1e-6,
+    device: Literal["cpu", "cuda"] = "cpu",
+    progress: Literal["auto"] | bool | Callable[[int, int], None] | None = "auto",
+    metric_callback: Callable[
+        [npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[np.float64]], None
+    ]
+    | None = None,
+    metric_interval: int = 10,
+    _fit_only=False,
+    _active=None,
+    _center=None,
+    _validate_only=False,
+) -> RegistrationResult | _LinearFit | None:
+    """Fit a single model, optionally retaining only its linear state."""
     start = perf_counter()
     from voxreg.pyramid import _validate_schedule
 
@@ -843,6 +963,8 @@ def register(
         raise TypeError("metric_callback must be callable or None.")
     if type(metric_interval) is not int or metric_interval < 1:
         raise ValueError("metric_interval must be a positive integer.")
+    if _validate_only:
+        return None
     if batch_size is None:
         batch_size = _choose_batch_size(moving, fixed, transform, device)
     if isinstance(progress, str):
@@ -865,7 +987,7 @@ def register(
                     "initialization must be a model-compatible (4, 4) or (N, 4, 4) matrix, or a named mode."
                 )
             initial_transform, initialization = initialization, None
-    center = None
+    center = _center
     if initialization is not None:
         if initialization == "align_planes" and (
             fixed.sizes["k"] != 1 or moving.sizes["k"] != 1
@@ -1003,6 +1125,7 @@ def register(
             total_sigma=float(syn_total_sigma),
             radius=syn_cc_radius,
             schedule=(factors, sigmas, budgets) if multiresolution else None,
+            active_frames=_active,
         )
     outputs, masks, parameters = [], [], []
     clocks, statuses, objectives, overlaps = [], [], [], []
@@ -1028,6 +1151,10 @@ def register(
             timings["upload"] += perf_counter() - start
             start = perf_counter()
             metric_options: _MetricOptions = {}
+            if _active is not None:
+                metric_options["active_frames"] = torch.tensor(
+                    _active[first:last], device=device
+                )
             if metric_callback is not None:
 
                 def report_metrics(clocks, objective, first=first, last=last):
@@ -1038,10 +1165,12 @@ def register(
                         objective.detach().double().cpu().numpy().copy(),
                     )
 
-                metric_options = {
-                    "metric_callback": report_metrics,
-                    "metric_interval": metric_interval,
-                }
+                metric_options.update(
+                    {
+                        "metric_callback": report_metrics,
+                        "metric_interval": metric_interval,
+                    }
+                )
             optimize = _optimize_pyramid if multiresolution else _optimize
             pyramid_options = (
                 {
@@ -1071,29 +1200,35 @@ def register(
             timings["optimize"] += perf_counter() - start
             start = perf_counter()
             with torch.no_grad():
-                original = torch.tensor(
-                    np.ascontiguousarray(raw[first:last], dtype=resampling_dtype),
-                    device=device,
-                )
-                sampled, valid = sample_rigid(
-                    original, physical, plane, interpolation=interpolation
-                )
-                fills = original.amin(dim=spatial_axes)[reference_shape]
-                sampled = torch.where(valid, sampled, fills)
-                if implicit_fixed:
-                    sampled = torch.where(reference[reference_shape], original, sampled)
-                    valid = valid | reference[reference_shape]
+                if not _fit_only:
+                    original = torch.tensor(
+                        np.ascontiguousarray(raw[first:last], dtype=resampling_dtype),
+                        device=device,
+                    )
+                    sampled, valid = sample_rigid(
+                        original, physical, plane, interpolation=interpolation
+                    )
+                    fills = original.amin(dim=spatial_axes)[reference_shape]
+                    sampled = torch.where(valid, sampled, fills)
+                    if implicit_fixed:
+                        sampled = torch.where(
+                            reference[reference_shape], original, sampled
+                        )
+                        valid = valid | reference[reference_shape]
                 fitted, fit_valid = sample_rigid(images, physical, plane)
                 loss, meaningful = compute_global_ncc(fitted, target_tensor, fit_valid)
                 nonconstant = images.amax(dim=spatial_axes) > images.amin(
                     dim=spatial_axes
                 )
                 loss = torch.where(meaningful & nonconstant, loss, torch.nan)
-                values = sampled.cpu().numpy()
-                if integer_output:
-                    limits = np.iinfo(raw.dtype)
-                    values = np.clip(np.rint(values), limits.min, limits.max)
-                outputs.append(values.astype(raw.dtype, copy=False))
+                if _fit_only:
+                    valid = fit_valid
+                else:
+                    values = sampled.cpu().numpy()
+                    if integer_output:
+                        limits = np.iinfo(raw.dtype)
+                        values = np.clip(np.rint(values), limits.min, limits.max)
+                    outputs.append(values.astype(raw.dtype, copy=False))
                 masks.append(valid.cpu().numpy())
                 parameters.append(physical.cpu().numpy())
                 clocks.append(steps.cpu().numpy())
@@ -1106,12 +1241,13 @@ def register(
             elif callable(progress):
                 progress(last, len(raw))
     params = np.concatenate(parameters)
-    values, validity = np.concatenate(outputs), np.concatenate(masks)
+    validity = np.concatenate(masks)
+    values = None if _fit_only else np.concatenate(outputs)
     diagnostic_params, diagnostic_plane = params, plane
     mixed = isinstance(plane, SpatialGrid) and plane.slice_basis is not None
     matrices = (
         build_world_matrices(params, plane)
-        if return_transforms or (mixed and transform == "affine")
+        if _fit_only or return_transforms or (mixed and transform == "affine")
         else None
     )
     if mixed and transform == "affine":
@@ -1218,6 +1354,10 @@ def register(
         diagnostics.attrs["plane_alignment"] = (
             "fixed-to-moving plane geometry; only in-plane motion optimized"
         )
+    if _fit_only:
+        assert matrices is not None
+        return _LinearFit(matrices, diagnostics, plane.center.copy())
+    assert values is not None
     axes = ["z", "y", "x", "1"]
     transforms = (
         xr.DataArray(

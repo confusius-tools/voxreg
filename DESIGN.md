@@ -103,6 +103,29 @@ and anatomical benefits require separate measurements.
 
 ## Initialization and failure handling
 
+`register(transform=("rigid", "affine", "syn"))` runs explicit ordered stages;
+`Stage` supplies immutable per-stage overrides of shared fitting arguments.
+Only increasing model complexity is accepted, with optional skipped models and
+at most one terminal SyN. Single-model string calls retain the existing path.
+Workflow presets and automatic stage selection are not implemented.
+
+All effective fitting configurations are validated before optimization begins.
+Initialization runs once. Intermediate linear stages return matrices, their
+native physical pivot and diagnostics through a private fit-only path; they do
+not allocate resampled original intensities. Subsequent stages recover their own
+parameters from those complete matrices, retaining the pivot. Terminal SyN holds
+the affine seed fixed and includes it in its complete fields. Output resampling
+runs only for the final stage. All stages fit the original inputs.
+
+Per-frame stage failure freezes that frame for subsequent stages (status skipped,
+zero updates), retaining its best valid map, while companions continue. Converged
+and max_iterations outcomes permit the next stage. The final summary preserves
+the originating failure status and sums update counts and phase timings across
+stages; validation/orchestration overhead is recorded separately. Independent
+stage datasets retain model-specific variables and differing pyramid schedules
+without padding or comparing their losses. Metric callback clocks restart per
+stage/level; progress counts completed stage/frame work units.
+
 Identity is the default. Matrix-valued `initialization` aliases
 `initial_transform`; supplying both is an error. Seeds are copied and returned
 transforms describe the complete fit, not an increment. Linear fitting refines
@@ -183,6 +206,7 @@ CUDA synchronization and do not change best-valid return semantics.
 | [syn.py](src/voxreg/syn.py) | Symmetric field fitting and dense outputs |
 | [convergence.py](src/voxreg/convergence.py) | Independent window convergence |
 | [pyramid.py](src/voxreg/pyramid.py) | Physical image smoothing, pyramid lattices, field transfer and level diagnostics |
+| [stages.py](src/voxreg/stages.py) | Stage specifications, shared-option inheritance and per-frame pipeline execution |
 
 No backend registry, public precision/compiler switch or transform-object
 framework is needed. [Tests](tests/) own mathematical contracts;

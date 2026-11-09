@@ -15,6 +15,9 @@ inverse residuals, Jacobians and float32 fitting with float64 finalization.
 Pyramid checks include anisotropic/sheared/reversed physical smoothing against
 independent convolution, field interpolation in mm, linear/nonlinear truth
 recovery, per-level counts/statuses, batching and native-grid output resampling.
+Staging checks cover manual full-transform handoff, independent physical truth,
+shared/overridden settings, single output interpolation, initialization once,
+motion batching, reference preservation and failure isolation into terminal SyN.
 CUDA tests skip when unavailable; CPU success does not qualify CUDA.
 
 Benchmark workers verify staged-input hashes, output contracts and full-grid

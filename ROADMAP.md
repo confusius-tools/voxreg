@@ -21,6 +21,11 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 ## Implemented, opt-in
 
+- **Staged registration:** explicit model sequences with optional `Stage`
+  overrides, initialization once, per-frame failure isolation and separate
+  stage/pyramid diagnostics. Original intensities are resampled once; final maps
+  include every stage. See [staging](README.md#staged-registration). Reusable
+  workflow configurations remain deferred until real-data qualification.
 - **Multi-resolution:** explicit coarse-to-fine shrink factors, Gaussian image
   smoothing sigmas in mm and per-level iteration budgets for every model.
   Physical transforms/halfway fields carry between levels with fresh optimizer
@@ -51,9 +56,6 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
   anatomically wrong metric optima, especially for slice placement.
 - **Line search:** investigate measured overshoot and extra evaluation cost before
   adding another optimizer policy.
-- **Automatic staging:** manual rigid→affine and affine→SyN initialization already
-  work. Reuse full returned matrices and the original images; do not resample an
-  intermediate image or invent a separate transform chain.
 
 These are candidates, not implemented features or a commitment to expose every
 vendor option. Streaming/Dask execution and mixed-dimensional deformation also
