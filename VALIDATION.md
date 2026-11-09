@@ -21,6 +21,11 @@ motion batching, reference preservation and failure isolation into terminal SyN.
 ROI checks cover ITK physical-cell rounding and native masked global NCC,
 independent mask-grid world queries and both SyN halfway pulls, masked local
 statistics, per-frame motion masks, empty ROI failures and unchanged output support.
+MI checks include an independent NumPy density oracle, double finite-difference
+gradients through both sampled images, excluded-sample gradients, chunk and
+frame independence, native-range contrast preservation, backward activation
+storage and nonlinear-contrast physical truth in 2D/3D translation and SyN.
+Integration covers masks, stage overrides, failure isolation and pyramids.
 CUDA tests skip when unavailable; CPU success does not qualify CUDA.
 
 Batch comparisons of float32 fits allow a maximum physical pull difference of
@@ -53,6 +58,11 @@ Passing unit tests or improving NCC does not establish correct correspondence.
 - Positive sampled Jacobians do not prove global invertibility; sampled inverses
   have nonzero residuals, reported in diagnostics.
 - Float32 fitting loses precision that double export cannot recover.
+- Gaussian-Parzen MI is a distinct estimator from Mattes MI. Native min/max
+  ranges include intensities outside masks and can be affected by outliers.
+  Sparse ROIs or overly fine bins can give misleading histogram estimates.
+  MI bandwidth, convergence thresholds and performance need real-data qualification;
+  successful small synthetic fits do not qualify multimodal clinical workflows.
 - Initialization, overlap and budgets affect capture. ANTsPy convergence remains
   enabled; its API does not expose observed iteration counts.
 - Pyramid schedules are explicit, without a qualified automatic preset. Coarse

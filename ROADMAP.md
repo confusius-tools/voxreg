@@ -21,6 +21,11 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 ## Implemented, opt-in
 
+- **Mutual information:** a shared per-frame metric interface with Gaussian-Parzen
+  MI, explicit bins/bandwidth, fixed native-image ranges, mask-aware histograms
+  and bounded bin-weight workspace. Works with every model, pyramid and stage;
+  NCC defaults are unchanged. See [MI semantics](README.md#mutual-information).
+  Real-data bandwidth, convergence and runtime qualification remain open.
 - **Fixed and moving masks:** boolean ROIs retain native geometry and are sampled
   through the complete physical/halfway maps at every stage and level. Local NCC
   excludes masked neighbours. ROI coverage is distinct from output validity;
@@ -40,9 +45,6 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 ## Candidates, not enabled defaults
 
-- **Mutual information:** a differentiable, mask-aware estimator with explicit
-  bins/ranges/kernels and bounded memory. Add a small per-frame metric interface;
-  revisit NCC-specific conditioning, diagnostics and stopping calibration.
 - **Further metric/optimizer controls:** Gaussian-weighted local-CC kernels,
   MSE/custom losses, optimizer choice/hyperparameters and regularization hooks.
   SyN's rectangular CC radius and update/total smoothing strengths are public

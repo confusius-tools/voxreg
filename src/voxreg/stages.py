@@ -34,6 +34,12 @@ class Stage:
         Number of level-local objective values in the convergence window.
     convergence_minimum_value : float, optional
         Threshold for the normalized convergence trend.
+    metric : {"ncc", "local_ncc", "mi"}, optional
+        Override the shared objective. Unset inherits the shared metric setting.
+    mi_bins : int, optional
+        Number of MI histogram bins, from 2 through 256.
+    mi_sigma : float, optional
+        MI Gaussian standard deviation in bin widths, from 0.1 through 10.
     syn_cc_radius : int, optional
         SyN rectangular CC window radius in current-level voxels.
     syn_update_sigma : float, optional
@@ -50,6 +56,9 @@ class Stage:
     learning_rate: float | None = None
     convergence_window_size: int | None = None
     convergence_minimum_value: float | None = None
+    metric: Literal["ncc", "local_ncc", "mi"] | None = None
+    mi_bins: int | None = None
+    mi_sigma: float | None = None
     syn_cc_radius: int | None = None
     syn_update_sigma: float | None = None
     syn_total_sigma: float | None = None

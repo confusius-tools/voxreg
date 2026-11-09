@@ -42,7 +42,7 @@ linear matrices can be applied on any supported reference lattice.
 | Affine | 6 | 12 | 9 |
 | SyN | Two 2-component halfway fields | Two 3-component halfway fields | Unsupported |
 
-**Linear models** share preprocessing, masked squared global NCC, per-frame Adam,
+**Linear models** share preprocessing, per-frame metrics (global squared NCC by default), Adam,
 convergence and final resampling. Translations are physically scaled center shifts;
 rotations/affine coefficients use fixed-grid RMS lever arms and minimum spacing.
 Volume rotations are rotation vectors, not Euler angles. Centered parameters and
@@ -56,7 +56,7 @@ nine identifiable parameters with a unit orthogonal normal completion. Singleton
 source support has finite half-voxel extent, not zero thickness.
 
 **SyN** optimizes two compositive midpoint-to-image fields using masked squared
-local NCC (default radius 2), normalized updates and Gaussian regularization
+local NCC by default (radius 2), normalized updates and Gaussian regularization
 (default update sigma 1.5, total sigma 0.5 voxels). The public `syn_cc_radius`,
 `syn_update_sigma` and `syn_total_sigma` options control these values. CC windows
 are rectangular; field sigmas are standard deviations in voxel units, with zero
@@ -146,8 +146,44 @@ start at identity; use explicit fixed to fit every frame from a nonidentity seed
 State, optimizer clocks and stopping decisions are independent per frame. The
 returned pose is the best valid trial, or the seed if no trial was valid. Invalid
 metrics, insufficient overlap and invalid transforms are explicit statuses.
-There is no minimum coverage percentage: two supported samples only make NCC
+There is no minimum coverage percentage: two supported samples only make a metric
 mathematically possible, not a reliable registration. Coverage is not confidence.
+
+## Metric interface and mutual information
+
+The metric boundary accepts moving/fixed samples and a shared boolean support
+mask, returning a per-frame differentiable loss and usability flag. Geometry,
+ROI construction, best-state selection, callbacks and stopping remain outside it.
+Defaults retain global NCC for linear models and local NCC for SyN; explicit
+global NCC and Gaussian-Parzen MI also operate on SyN's two halfway images.
+
+MI maps each native fitting image's min/max to [0, 1] after optional dB scaling.
+These full-image ranges include values outside masks and are fixed before pyramid
+smoothing. Native offset subtraction precedes division for high-offset double
+or integer images; an overflow-safe path handles opposite extreme intensities.
+Original image values and final interpolation are independent of this conditioning.
+
+Uniform bin centers span [0, 1]. For intensity u, memberships are proportional
+to exp(-0.5 * ((u * (bins - 1) - center) / sigma)^2), normalized over bins per
+sample. The joint distribution averages membership outer products only over
+valid samples; marginals come from the same joint. The loss is negative MI in
+natural logarithms. Nonconstant supported intensities are required on both sides.
+Finite-difference checks differentiate both images, including the halfway pulls.
+
+This implementation was written independently. Gaussian Parzen estimation is
+also described in [MONAI's MI documentation](https://docs.monai.io/en/stable/losses.html#globalmutualinformationloss).
+It differs from [ITK Mattes MI](https://docs.itk.org/projects/doxygen/en/stable/classitk_1_1MattesMutualInformationImageToImageMetric.html),
+which uses distinct fixed/moving B-spline kernels; values are not interchangeable.
+
+At most 4096 samples per spatial chunk and approximately 2^20 bin memberships
+per side are formed at once (at least one sample per frame). Non-reentrant
+checkpointing recomputes memberships during backward. Workspace scales with
+batch times bins squared plus chunked memberships, rather than voxels times bins;
+images, gradients and outputs still scale with voxel count. The estimator does
+not randomly subsample the ROI. Bins and sigma are bounded public controls.
+Objective units, estimator settings and range policy are recorded in diagnostics;
+SyN endpoint NCC remains an independent quality measure. Metric-specific stopping
+calibration, outlier handling and real-data performance remain qualification work.
 
 ## ROI masks
 
@@ -188,7 +224,7 @@ stage; voxreg deliberately applies shared masks throughout its explicit pipeline
 
 | Computation | Precision/policy |
 | --- | --- |
-| Fitting images and global/local NCC | Float32; explicit double metric inputs retain double for checks |
+| Fitting images and NCC/MI metrics | Float32; explicit double metric inputs retain double for checks |
 | Physical geometry and linear pose parameters | Float64 |
 | SyN fitting | Float32 working fields, origin-free field arithmetic and native PyTorch `grid_sample`; support checks retain float64 physical queries |
 | SyN finalization | Float64 inversion, composition, validation and world displacement export; casting does not recover fitting precision |
@@ -243,6 +279,7 @@ CUDA synchronization and do not change best-valid return semantics.
 | [pyramid.py](src/voxreg/pyramid.py) | Physical image smoothing, pyramid lattices, field transfer and level diagnostics |
 | [stages.py](src/voxreg/stages.py) | Stage specifications, shared-option inheritance and per-frame pipeline execution |
 | [masks.py](src/voxreg/masks.py) | Physical binary ROI membership and metric-domain mask intersections |
+| [metrics.py](src/voxreg/metrics.py) | Per-frame objective selection and chunked differentiable MI |
 
 No backend registry, public precision/compiler switch or transform-object
 framework is needed. [Tests](tests/) own mathematical contracts;

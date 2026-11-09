@@ -25,6 +25,7 @@ from voxreg.masks import (
     _source,
     _validate_masks,
 )
+from voxreg.metrics import _Metric, _validate_metric
 from voxreg.sampling import (
     Plane,
     SpatialGrid,
@@ -62,6 +63,7 @@ class _MetricOptions(TypedDict, total=False):
     metric_interval: int
     active_frames: torch.Tensor
     metric_masks: _MetricMasks
+    metric_function: _Metric
 
 
 @dataclass(frozen=True)
@@ -126,7 +128,7 @@ class _LinearFit:
     center: npt.NDArray[np.float64]
 
 
-def _prepare_fitting_images(raw, target_raw, intensity_scaling):
+def _prepare_fitting_images(raw, target_raw, intensity_scaling, metric=None):
     """Prepare float32 fitting images while preserving float64/integer contrast."""
     spatial_axes = tuple(range(1, raw.ndim))
     preprocessing_dtype = (
@@ -148,9 +150,29 @@ def _prepare_fitting_images(raw, target_raw, intensity_scaling):
             raise ValueError("dB scaling requires nonnegative power intensities.")
         fit = 10 * np.log10(np.maximum(fit_raw / scale, 1e-12))
         target = 10 * np.log10(np.maximum(target_raw / scale, 1e-12))
+    elif metric == "mi":
+        # Subtract native offsets before dividing so double/integer contrast
+        # survives even when it is tiny relative to an image's DC intensity.
+        fit, target = fit_raw, target_raw
     else:
         fit, target = fit_raw / scale, target_raw / scale
-    if preprocessing_dtype == np.float64:
+    if metric == "mi":
+        # Native ranges stay fixed across all levels, samples and ROI changes.
+        def normalize(values, axes):
+            low = values.min(axis=axes, keepdims=True)
+            high = values.max(axis=axes, keepdims=True)
+            with np.errstate(over="ignore"):
+                overflow = ~np.isfinite(high - low)
+            if overflow.any():
+                scale = np.maximum(np.abs(low), np.abs(high))
+                values = values / np.where(overflow, scale, 1)
+                low = values.min(axis=axes, keepdims=True)
+                high = values.max(axis=axes, keepdims=True)
+            return (values - low) / np.where(high > low, high - low, 1)
+
+        fit = normalize(fit, spatial_axes)
+        target = normalize(target, tuple(range(target.ndim)))
+    elif preprocessing_dtype == np.float64:
         for values in (fit, target):
             values -= values[(...,) + (slice(0, 1),) * len(spatial_axes)]
             amplitude = np.abs(values).max(
@@ -217,6 +239,7 @@ def _optimize(
     metric_interval: int = 10,
     active_frames: torch.Tensor | None = None,
     metric_masks: _MetricMasks | None = None,
+    metric_function: _Metric | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run masked batched Adam with bounded whole-batch stopping checks.
 
@@ -251,6 +274,7 @@ def _optimize(
         1 converged, 2 insufficient overlap, 3 invalid metric, 4 reference, 5 limit,
         6 invalid affine transform.
     """
+    objective = compute_global_ncc if metric_function is None else metric_function
     b = len(images)
     u = (
         plane.parameter_scale.new_zeros((b, len(plane.parameter_scale)))
@@ -283,7 +307,7 @@ def _optimize(
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         if metric_masks is not None:
             valid = metric_masks.apply(valid, u * plane.parameter_scale)
-        loss, meaningful = compute_global_ncc(moved, fixed, valid)
+        loss, meaningful = objective(moved, fixed, valid)
         if metric_callback is not None and iteration % metric_interval == 0:
             metric_callback(
                 steps, torch.where(meaningful & ~constant, loss.detach(), torch.nan)
@@ -345,7 +369,7 @@ def _optimize(
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
         if metric_masks is not None:
             valid = metric_masks.apply(valid, u * plane.parameter_scale)
-        loss, meaningful = compute_global_ncc(moved, fixed, valid)
+        loss, meaningful = objective(moved, fixed, valid)
         if metric_callback is not None:
             metric_callback(steps, torch.where(meaningful & ~constant, loss, torch.nan))
         overlap = valid.sum(dim=spatial_axes) > 1
@@ -385,10 +409,12 @@ def _optimize_pyramid(
     metric_interval=10,
     active_frames=None,
     metric_masks=None,
+    metric_function=None,
 ):
     """Refine complete world matrices with fresh per-level optimizer state."""
     from voxreg.pyramid import _make_level
 
+    objective = compute_global_ncc if metric_function is None else metric_function
     factors, sigmas, budgets = schedule
     physical = (
         plane.parameter_scale.new_zeros((len(images), len(plane.parameter_scale)))
@@ -432,6 +458,11 @@ def _optimize_pyramid(
             initial_parameters=seed,
             metric_callback=metric_callback,
             metric_interval=metric_interval,
+            **(
+                {"metric_function": metric_function}
+                if metric_function is not None
+                else {}
+            ),
             **({"active_frames": active_frames} if active_frames is not None else {}),
             **({"metric_masks": level_masks} if level_masks is not None else {}),
         )
@@ -439,7 +470,7 @@ def _optimize_pyramid(
             fitted, valid = sample_rigid(level_images, physical, geometry)
             if level_masks is not None:
                 valid = level_masks.apply(valid, physical)
-            loss, meaningful = compute_global_ncc(fitted, level_fixed[0], valid)
+            loss, meaningful = objective(fitted, level_fixed[0], valid)
             nonconstant = level_images.flatten(1).amax(1) > level_images.flatten(
                 1
             ).amin(1)
@@ -501,6 +532,9 @@ def register(
     | xr.DataArray
     | None = None,
     intensity_scaling: Literal["none", "db"] = "db",
+    metric: Literal["ncc", "local_ncc", "mi"] | None = None,
+    mi_bins: int = 32,
+    mi_sigma: float = 0.5,
     interpolation: Literal["linear", "nearest"] = "linear",
     return_transforms: bool = False,
     batch_size: int | None = None,
@@ -601,6 +635,21 @@ def register(
         preprocessing change center_moments weights. Already-transformed data needs
         center_geometry or an explicit seed instead. Only fitting is scaled;
         initialization and original-intensity output remain unscaled.
+    metric : {"ncc", "local_ncc", "mi"}, optional
+        Fitting objective. None preserves global squared NCC for linear models
+        and rectangular local squared NCC for SyN. Explicit ncc selects global
+        squared NCC for any model. local_ncc explicitly selects SyN local NCC.
+        mi selects Gaussian-Parzen mutual information.
+        MI independently maps each native fitting image's min/max to [0, 1]
+        after intensity_scaling, before pyramid smoothing. Ranges include the
+        entire native image, including outside ROIs, and stay fixed during fitting.
+        Original intensities and final interpolation remain unchanged.
+    mi_bins : int, default: 32
+        Histogram bins for MI, from 2 through 256, uniformly covering [0, 1].
+    mi_sigma : float, default: 0.5
+        MI Gaussian standard deviation in bin widths, from 0.1 through 10.
+        Bin memberships are normalized per sample. These are intensity kernels,
+        independent of image-pyramid and deformation smoothing.
     interpolation : {"linear", "nearest"}, default: "linear"
         Final original-image resampling only; fitting always uses linear sampling.
         Nearest is suitable for labels, not automatically for integer intensities.
@@ -688,8 +737,8 @@ def register(
         clocks reset at each level. Losses from different levels are not comparable.
         Pipeline reports run stage by stage; clocks also reset at stage boundaries.
         Reports the initial trial, every metric_interval optimizer rounds, and
-        the final trial. Stopped rows may repeat. Objective is raw negative NCC²
-        (negative mean squared local NCC between halfway images for SyN),
+        the final trial. Stopped rows may repeat. Objective is the selected loss:
+        negative NCC² (mean local NCC² for default SyN) or negative MI in nats,
         NaN for unusable variance/support; lower is better. The returned best
         valid pose can differ from the final trial. No history is retained unless
         the callback stores it. Exceptions propagate. CPU copies and CUDA
@@ -791,7 +840,7 @@ def register(
     iteration on CPU and every ten iterations on CUDA, using one batch-wide scalar
     read (a CUDA stream synchronization). These checks do not alter per-frame
     decisions; frozen frames remain resident until the entire batch finishes.
-    Fitting images, NCC statistics and SyN working fields use float32 with native
+    Fitting images, NCC/MI statistics and SyN working fields use float32 with native
     grid_sample fitting interpolation. Physical geometry and linear pose parameters
     use float64, as do final SyN inversion and exported displacements. Benchmark accuracy is measured against known
     truth independently for each device, not by cross-device map agreement.
@@ -806,6 +855,9 @@ def register(
         "initial_transform": initial_transform,
         "initialization": initialization,
         "intensity_scaling": intensity_scaling,
+        "metric": metric,
+        "mi_bins": mi_bins,
+        "mi_sigma": mi_sigma,
         "interpolation": interpolation,
         "return_transforms": return_transforms,
         "batch_size": batch_size,
@@ -856,6 +908,9 @@ def _register(
     | xr.DataArray
     | None = None,
     intensity_scaling: Literal["none", "db"] = "db",
+    metric: Literal["ncc", "local_ncc", "mi"] | None = None,
+    mi_bins: int = 32,
+    mi_sigma: float = 0.5,
     interpolation: Literal["linear", "nearest"] = "linear",
     return_transforms: bool = False,
     batch_size: int | None = None,
@@ -882,6 +937,14 @@ def _register(
 ) -> RegistrationResult | _LinearFit | None:
     """Fit a single model, optionally retaining only its linear state."""
     start = perf_counter()
+    _validate_metric(metric, mi_bins, mi_sigma)
+    if metric == "local_ncc" and transform != "syn":
+        raise ValueError(
+            "metric=local_ncc requires transform=syn; its radius is syn_cc_radius."
+        )
+    metric_function = (
+        None if metric in (None, "local_ncc") else _Metric(metric, mi_bins, mi_sigma)
+    )
     from voxreg.pyramid import _validate_schedule
 
     factors, sigmas, budgets = _validate_schedule(
@@ -1129,7 +1192,7 @@ def _register(
         np.float64 if integer_output or raw.dtype.itemsize > 4 else np.float32
     )
     fit, target = _prepare_fitting_images(
-        raw, fixed.values[0] if planar else fixed.values, intensity_scaling
+        raw, fixed.values[0] if planar else fixed.values, intensity_scaling, metric
     )
     timings = {
         "prepare": perf_counter() - start,
@@ -1165,6 +1228,7 @@ def _register(
             update_sigma=float(syn_update_sigma),
             total_sigma=float(syn_total_sigma),
             radius=syn_cc_radius,
+            metric_function=metric_function,
             schedule=(factors, sigmas, budgets) if multiresolution else None,
             active_frames=_active,
             fixed_mask=fixed_mask,
@@ -1195,6 +1259,8 @@ def _register(
             timings["upload"] += perf_counter() - start
             start = perf_counter()
             metric_options: _MetricOptions = {}
+            if metric_function is not None:
+                metric_options["metric_function"] = metric_function
             metric_masks = None
             if fixed_mask is not None or moving_mask is not None:
                 metric_masks = _MetricMasks(
@@ -1274,9 +1340,10 @@ def _register(
                     if metric_masks is None
                     else metric_masks.apply(fit_valid, physical)
                 )
-                loss, meaningful = compute_global_ncc(
-                    fitted, target_tensor, metric_valid
+                objective = (
+                    compute_global_ncc if metric_function is None else metric_function
                 )
+                loss, meaningful = objective(fitted, target_tensor, metric_valid)
                 if metric_masks is not None:
                     metric_overlaps.append(
                         metric_valid.float().mean(dim=spatial_axes).cpu().numpy()
@@ -1392,6 +1459,19 @@ def _register(
         },
     )
     diagnostics.attrs["batch_size"] = batch_size
+    diagnostics.attrs["metric"] = (
+        "negative mutual information"
+        if metric == "mi"
+        else "negative squared global NCC"
+    )
+    if metric == "mi":
+        diagnostics.attrs.update(
+            mi_bins=mi_bins,
+            mi_sigma_bin_widths=mi_sigma,
+            mi_kernel="gaussian",
+            objective_units="nats",
+            mi_range="native per-image min/max mapped to [0, 1] before pyramid smoothing",
+        )
     if metric_overlaps:
         diagnostics["roi_valid_fraction"] = (
             "time",

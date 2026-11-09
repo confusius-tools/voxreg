@@ -72,6 +72,8 @@ result = voxreg.register(
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
 | `fixed_mask`, `moving_mask` | Optional boolean ROI VoxelData in their own physical grids. Fixed mask is spatial-only; moving mask can be shared or per-frame with matching time labels. Masks restrict fitting at every stage and level. |
 | `intensity_scaling` | `"db"` (default) for nonnegative power, or `"none"` for already-prepared/signed data. Affects fitting only. |
+| `metric` | Default `None` retains global squared NCC for linear models and local squared NCC for SyN. Explicit `"ncc"` selects global NCC, `"local_ncc"` selects SyN local NCC, and `"mi"` selects mutual information. |
+| `mi_bins`, `mi_sigma` | MI histogram bins (default `32`, range `2`–`256`) and Gaussian standard deviation in bin widths (default `0.5`, range `0.1`–`10`). |
 | `batch_size` | Maximum frames fitted together; automatic by default. Full returned images still occupy CPU memory. |
 | `max_iterations` | Per-frame update limit at each level: an integer (default `100`) or one integer per level. Inspect diagnostics rather than assuming convergence. |
 | `shrink_factors`, `smoothing_sigmas` | Explicit coarse→fine downsampling factors and Gaussian image smoothing standard deviations in mm. Defaults `(1,)` and `(0.0,)` retain native-resolution fitting. |
@@ -103,6 +105,40 @@ Dask-backed inputs are not supported.
 
 For all options, including optimizer controls and callbacks, use
 `help(voxreg.register)` or read the [API docstring](src/voxreg/rigid.py).
+
+## Mutual information
+
+Use MI for an explicit alternative to intensity correlation, for example when
+the images have different contrast:
+
+```python
+result = voxreg.register(
+    moving,
+    fixed,
+    transform=(voxreg.Stage("rigid", metric="mi"), "syn"),
+    intensity_scaling="none",
+)
+```
+
+This fits rigid with MI and SyN with its default local NCC. Set shared
+`metric="mi"` to use MI at every stage, or override `metric`, `mi_bins` and
+`mi_sigma` in individual `Stage` specifications. Explicit `"local_ncc"` is
+available only for SyN and uses `syn_cc_radius`.
+
+MI uses Gaussian Parzen histograms with unit-sum memberships per sample. Each
+native fitting image is independently mapped from its min/max to `[0, 1]` after
+`intensity_scaling`, before any pyramid smoothing. These ranges stay fixed during
+fitting and include intensities outside ROIs; outliers can compress useful contrast.
+Only supported ROI samples contribute to the joint histogram. Both SyN halfway
+images are differentiated. Spatial chunking and recomputation during backward
+bound bin-weight workspace; this does not bound full image/output storage.
+
+`diagnostics.objective` and metric callbacks report **negative MI in nats**;
+lower is better. The diagnostics record bins, kernel width and range policy.
+SyN's `ncc_squared` remains a separate endpoint NCC check, regardless of the
+fitting metric. MI values are not comparable to NCC or across stages/levels.
+The estimator uses Gaussian kernels; it does not reproduce ANTs' Mattes values.
+Convergence settings and useful bins/bandwidths still need real-data qualification.
 
 ## ROI masks
 

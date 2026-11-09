@@ -183,6 +183,7 @@ def _compute_midpoint_loss(
     radius,
     metric_masks=None,
     parameters=None,
+    metric_function=None,
 ):
     """Compute the differentiable halfway objective and common support."""
     moved, mv = _sample_prepared(images, um, moving_sampler, fitting=True)
@@ -190,7 +191,11 @@ def _compute_midpoint_loss(
     valid = mv & fv
     if metric_masks is not None:
         valid = metric_masks.apply(valid, parameters, um, uf)
-    loss, meaningful = compute_local_ncc(moved, stationary, valid, radius)
+    loss, meaningful = (
+        compute_local_ncc(moved, stationary, valid, radius)
+        if metric_function is None
+        else metric_function(moved, stationary, valid)
+    )
     return loss, meaningful, valid
 
 
@@ -260,6 +265,7 @@ def _fit(
     finalize=True,
     active_frames=None,
     metric_masks=None,
+    metric_function=None,
 ):
     """Fit independent halfway fields and finalize their best valid state in double."""
     physical_grid = grid
@@ -334,6 +340,7 @@ def _fit(
             radius,
             metric_masks=metric_masks,
             parameters=parameters,
+            metric_function=metric_function,
         )
         good = meaningful & torch.isfinite(loss) & ~constant
         if metric_callback is not None and (
@@ -395,6 +402,7 @@ def _fit(
                 radius,
                 metric_masks=metric_masks,
                 parameters=parameters,
+                metric_function=metric_function,
             )
             objective = torch.where(meaningful & ~constant, objective, torch.nan)
         return (
@@ -446,6 +454,7 @@ def _fit(
             radius,
             metric_masks=metric_masks,
             parameters=parameters,
+            metric_function=metric_function,
         )
         objective = torch.where(meaningful & ~constant, objective, torch.nan)
         status = torch.where(status == 0, 5, status)
@@ -665,6 +674,7 @@ def register_syn(
     active_frames=None,
     fixed_mask=None,
     moving_mask=None,
+    metric_function=None,
 ):
     """Register prepared native images with batched compositive midpoint fields.
 
@@ -727,6 +737,9 @@ def register_syn(
     fixed_mask, moving_mask : xarray.DataArray, optional
         Boolean ROI masks in their own native physical grids. A spatial moving
         mask broadcasts; per-frame moving masks follow the recording time labels.
+    metric_function : callable, optional
+        Per-frame loss and usability on the common halfway support. None uses
+        the existing local NCC; MI differentiates both halfway image pulls.
 
     Returns
     -------
@@ -812,6 +825,7 @@ def register_syn(
                 update_sigma=update_sigma,
                 total_sigma=total_sigma,
                 radius=radius,
+                metric_function=metric_function,
                 metric_callback=report if metric_callback is not None else None,
                 metric_interval=metric_interval,
                 **(
@@ -931,7 +945,13 @@ def register_syn(
         attrs={
             "transform": "syn",
             "batch_size": batch_size,
-            "metric": "negative squared local NCC",
+            "metric": (
+                "negative squared local NCC"
+                if metric_function is None
+                else "negative mutual information"
+                if metric_function.name == "mi"
+                else "negative squared global NCC"
+            ),
             "cc_radius": radius,
             "update_sigma_voxels": update_sigma,
             "total_sigma_voxels": total_sigma,
@@ -940,6 +960,14 @@ def register_syn(
             "inverse_error_note": "sampled inverse is approximate; two-sided residual is reported, not forced to zero",
         },
     )
+    if metric_function is not None and metric_function.name == "mi":
+        diagnostics.attrs.update(
+            mi_bins=metric_function.bins,
+            mi_sigma_bin_widths=metric_function.sigma,
+            mi_kernel="gaussian",
+            objective_units="nats",
+            mi_range="native per-image min/max mapped to [0, 1] before pyramid smoothing",
+        )
     if metric_overlaps:
         diagnostics["roi_valid_fraction"] = (
             "time",
