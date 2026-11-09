@@ -28,6 +28,7 @@ Batch comparisons of float32 fits allow a maximum physical pull difference of
 at world points; their raw translation entries depend on the world origin.
 Reference transforms remain exact across batch sizes; failed-frame exports allow
 only float64 finalization roundoff (1e-12 in matrix entries or mm).
+Registered intensities use a per-frame relative RMS difference below 1e-5.
 
 Benchmark workers verify staged-input hashes, output contracts and full-grid
 accuracy. Keep adapter diagnostics separate from full-workload performance

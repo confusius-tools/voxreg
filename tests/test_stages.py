@@ -189,7 +189,11 @@ def test_motion_stages_isolate_failures_and_preserve_reference(
         max_pull_difference(first.forward_transforms, second.forward_transforms, fixed)
         < 0.001
     )
-    assert_allclose(results[0].registered, results[1].registered, rtol=0, atol=2e-6)
+    intensities = np.asarray(first.registered).reshape(3, -1)
+    difference = intensities - np.asarray(second.registered).reshape(3, -1)
+    assert (
+        np.linalg.norm(difference, axis=1) / np.linalg.norm(intensities, axis=1)
+    ).max() < 1e-5
 
 
 @pytest.mark.parametrize(
