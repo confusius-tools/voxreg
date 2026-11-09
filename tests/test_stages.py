@@ -184,7 +184,7 @@ def test_motion_stages_isolate_failures_and_preserve_reference(
     )
     assert (
         max_pull_difference(first.forward_transforms, second.forward_transforms, fixed)
-        < 0.001
+        < 0.01
     )
     intensities = np.asarray(first.registered).reshape(3, -1)
     difference = intensities - np.asarray(second.registered).reshape(3, -1)

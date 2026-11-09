@@ -227,7 +227,7 @@ def test_series_reference_batch_and_fitting_scaling(recording_factory, mode, dev
             max_pull_difference(
                 combined.transforms, serial.transforms, data.isel(time=0, drop=True)
             )
-            < 0.001
+            < 0.01
         )
     np.testing.assert_array_equal(
         combined.diagnostics.n_iterations, serial.diagnostics.n_iterations

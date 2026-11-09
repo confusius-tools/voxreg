@@ -10,9 +10,9 @@ time, then stop for user review and a separate commit.
 Verify Figure 2 DVARS on valid brain support: the reproduced spikes disappear
 when 31 invalid ROI voxels are excluded. Do not change registration to fix QC
 padding effects. Intensity scaling is committed as `aafa19c`; its real-data default
-qualification remains a separate follow-up. CUDA test-only fixes pass; moment
-initialization still differs by 0.00306 voxels across batches (gate: 0.001).
-Investigate without slowing registration; the slower reduction fix was rejected.
+qualification remains a separate follow-up. Physical batch agreement now allows
+1% of the minimum voxel spacing (user-selected); registration and truth gates are
+unchanged. The observed 0.00306-voxel CUDA difference is within that tolerance.
 
 ## Performance and qualification priorities
 

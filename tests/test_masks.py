@@ -199,7 +199,7 @@ def test_per_frame_masks_isolate_staged_motion_failures(linear_pair_factory, ter
     )
     assert (
         max_pull_difference(first.forward_transforms, second.forward_transforms, fixed)
-        < 0.001
+        < 0.01
     )
 
 

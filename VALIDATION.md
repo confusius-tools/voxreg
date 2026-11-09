@@ -64,8 +64,10 @@ skip when unavailable. Selecting auto does not establish new CUDA accuracy or
 performance qualification.
 
 Batch comparisons of float32 fits allow a maximum physical pull difference of
-0.001 minimum-spacing voxels over the full grid. Linear matrices are evaluated
-at world points; their raw translation entries depend on the world origin.
+0.01 minimum-spacing voxels (1% of one voxel) over the full grid. This is a
+user-selected reproducibility tolerance, not a ground-truth accuracy threshold;
+float32 NCC rounding can select different nearly tied best iterations. Linear
+matrices are evaluated at world points; raw translations depend on world origin.
 Reference transforms remain exact across batch sizes; failed-frame exports allow
 only float64 finalization roundoff (1e-12 in matrix entries or mm).
 Registered intensities use a per-frame relative RMS difference below 1e-5.
@@ -105,18 +107,21 @@ the CUDA-enabled run had 1327 passed and 13 failures.
 All 13 failing cases were reproduced on unchanged pre-scaling `HEAD`: two
 initialization batch comparisons, six auto-device availability-probe-count checks,
 three 3D batch comparisons and two per-frame seed comparisons. These existing
-CUDA/batching test failures remain unresolved; no tolerance, truth gate, optimizer
-or production device-selection behavior was changed to hide them. Prior
+CUDA/batching failures were recorded without changing tolerances, truth gates,
+optimizers or production device-selection behavior at that point. Prior
 CPU-only qualification notes above describe the original feature checks.
 
 Test-only follow-up fixes count voxreg's resolver calls rather than Torch's
 internal probes and restore explicit CPU baselines. Centering now has separate
-strict CPU and physical CUDA batch checks. The full CUDA-enabled suite has
-1341 passed and one remaining failure: `center_moments`, at 0.00306 voxels versus
-the unchanged 0.001-voxel batch gate. Traces show nearly identical trajectories
-(parameter differences around 1e-8), but NCC rounding selects iteration 61 versus
-81. No production change is retained: passing precision/reduction candidates
-failed the unchanged-speed requirement. Pre-commit checks pass.
+strict CPU and physical CUDA batch checks. At that point 1341 tests passed and
+`center_moments` differed by 0.00306 voxels against the former 0.001-voxel gate.
+Traces show nearly identical trajectories (parameter differences around 1e-8),
+but NCC rounding selects iteration 61 versus 81. The user subsequently selected
+0.01 voxels for physical batch agreement, accepting this case without a runtime
+change. Ground-truth accuracy, strict CPU, device-equivalence and image-output
+checks are unchanged. Slower precision/reduction candidates were rejected.
+With this policy, the full CUDA-enabled suite passes: 1342 passed; pre-commit
+checks pass.
 
 The live benchmark adapter now explicitly requests no moving/fixed transform,
 preserving its fitting policy; the notebook example explicitly requests its

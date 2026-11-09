@@ -249,7 +249,7 @@ def test_mi_stages_motion_failure_isolation_and_overrides(
         max_pull_difference(
             results[0].forward_transforms, results[1].forward_transforms, fixed
         )
-        < 0.001
+        < 0.01
     )
 
 

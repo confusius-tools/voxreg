@@ -324,7 +324,7 @@ def test_syn_reference_failure_isolation_and_chunks(
             results[0].transforms.values - results[1].transforms.values, axis=-1
         ).max()
         / _ell(fixed)
-        < 0.001
+        < 0.01
     )
 
 
