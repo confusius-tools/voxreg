@@ -6,6 +6,7 @@ import torch
 import xarray as xr
 from confusius import create_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
+from oracles import max_pull_difference
 from registration_options import RegistrationOptions
 
 from voxreg import position_to_world, register, resample
@@ -189,8 +190,19 @@ def test_per_frame_masks_isolate_staged_motion_failures(linear_pair_factory, ter
     assert (
         first.forward_transforms is not None and second.forward_transforms is not None
     )
+    assert_array_equal(
+        first.forward_transforms.isel(time=0),
+        second.forward_transforms.isel(time=0),
+    )
     assert_allclose(
-        first.forward_transforms, second.forward_transforms, rtol=0, atol=1e-6
+        first.forward_transforms.isel(time=2),
+        second.forward_transforms.isel(time=2),
+        rtol=0,
+        atol=1e-12,
+    )
+    assert (
+        max_pull_difference(first.forward_transforms, second.forward_transforms, fixed)
+        < 0.001
     )
 
 

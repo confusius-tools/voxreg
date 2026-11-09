@@ -11,6 +11,21 @@ def voxel(values, affine):
     return create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=affine)
 
 
+def max_pull_difference(first, second, domain):
+    """Maximum full-grid physical pull difference in minimum-spacing voxels."""
+    affine = position_to_world(domain)
+    spacing = np.linalg.norm(affine[:3, :3], axis=0)[np.array(domain.shape) > 1].min()
+    difference = np.asarray(first) - np.asarray(second)
+    if "world_component" in first.dims:
+        distances = np.linalg.norm(difference, axis=-1)
+    else:
+        points = affine @ np.vstack(
+            (np.indices(domain.shape).reshape(3, -1), np.ones((1, domain.size)))
+        )
+        distances = np.linalg.norm((difference @ points)[..., :3, :], axis=-2)
+    return distances.max() / spacing
+
+
 def sample_mixed(data, target, matrix):
     """Float64 SciPy pull with the mixed-grid half-open finite-voxel support."""
     points = position_to_world(target) @ np.vstack(

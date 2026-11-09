@@ -23,6 +23,12 @@ independent mask-grid world queries and both SyN halfway pulls, masked local
 statistics, per-frame motion masks, empty ROI failures and unchanged output support.
 CUDA tests skip when unavailable; CPU success does not qualify CUDA.
 
+Batch comparisons of float32 fits allow a maximum physical pull difference of
+0.001 minimum-spacing voxels over the full grid. Linear matrices are evaluated
+at world points; their raw translation entries depend on the world origin.
+Reference transforms remain exact across batch sizes; failed-frame exports allow
+only float64 finalization roundoff (1e-12 in matrix entries or mm).
+
 Benchmark workers verify staged-input hashes, output contracts and full-grid
 accuracy. Keep adapter diagnostics separate from full-workload performance
 and anatomical validation. Comparisons include **ANTsPy, FireANTs and voxreg**;

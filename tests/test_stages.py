@@ -8,6 +8,7 @@ import pytest
 import torch
 import xarray as xr
 from numpy.testing import assert_allclose, assert_array_equal
+from oracles import max_pull_difference
 from registration_options import RegistrationOptions
 
 from voxreg import Stage, position_to_world, register, resample
@@ -173,8 +174,20 @@ def test_motion_stages_isolate_failures_and_preserve_reference(
     assert (
         first.forward_transforms is not None and second.forward_transforms is not None
     )
+    assert_array_equal(
+        first.forward_transforms.isel(time=0),
+        second.forward_transforms.isel(time=0),
+    )
+    # Float32 fitting can select different reduction kernels for different batches.
     assert_allclose(
-        first.forward_transforms, second.forward_transforms, rtol=0, atol=1e-7
+        first.forward_transforms.isel(time=2),
+        second.forward_transforms.isel(time=2),
+        rtol=0,
+        atol=1e-12,
+    )
+    assert (
+        max_pull_difference(first.forward_transforms, second.forward_transforms, fixed)
+        < 0.001
     )
     assert_allclose(results[0].registered, results[1].registered, rtol=0, atol=2e-6)
 
