@@ -30,6 +30,7 @@ from voxreg.fields import (
     smooth_field as _smooth_field,
 )
 from voxreg.geometry import position_to_world
+from voxreg.masks import _MetricMasks, _source
 from voxreg.sampling import (
     _prepare_displaced_sampling,
     _recover_initial_parameters,
@@ -173,12 +174,22 @@ def compute_local_ncc(moving, fixed, valid, radius):
 
 
 def _compute_midpoint_loss(
-    images, fixed_images, moving_sampler, fixed_sampler, uf, um, radius
+    images,
+    fixed_images,
+    moving_sampler,
+    fixed_sampler,
+    uf,
+    um,
+    radius,
+    metric_masks=None,
+    parameters=None,
 ):
     """Compute the differentiable halfway objective and common support."""
     moved, mv = _sample_prepared(images, um, moving_sampler, fitting=True)
     stationary, fv = _sample_prepared(fixed_images, uf, fixed_sampler, fitting=True)
     valid = mv & fv
+    if metric_masks is not None:
+        valid = metric_masks.apply(valid, parameters, um, uf)
     loss, meaningful = compute_local_ncc(moved, stationary, valid, radius)
     return loss, meaningful, valid
 
@@ -248,6 +259,7 @@ def _fit(
     initial_fields=None,
     finalize=True,
     active_frames=None,
+    metric_masks=None,
 ):
     """Fit independent halfway fields and finalize their best valid state in double."""
     physical_grid = grid
@@ -294,6 +306,8 @@ def _fit(
     axes = tuple(range(1, images.ndim))
     constant = images.amax(dim=axes) == images.amin(dim=axes)
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
+    if metric_masks is not None:
+        status = torch.where(reference, 4, 0)
     status = torch.where(~seed_valid & ~reference, 6, status)
     if active_frames is not None:
         status = torch.where(~active_frames & ~reference, 7, status)
@@ -318,6 +332,8 @@ def _fit(
             uf,
             um,
             radius,
+            metric_masks=metric_masks,
+            parameters=parameters,
         )
         good = meaningful & torch.isfinite(loss) & ~constant
         if metric_callback is not None and (
@@ -370,7 +386,15 @@ def _fit(
     if not finalize:
         with torch.no_grad():
             objective, meaningful, _ = _compute_midpoint_loss(
-                images, fixed_images, moving_sampler, fixed_sampler, bf, bm, radius
+                images,
+                fixed_images,
+                moving_sampler,
+                fixed_sampler,
+                bf,
+                bm,
+                radius,
+                metric_masks=metric_masks,
+                parameters=parameters,
             )
             objective = torch.where(meaningful & ~constant, objective, torch.nan)
         return (
@@ -420,6 +444,8 @@ def _fit(
             bf,
             bm,
             radius,
+            metric_masks=metric_masks,
+            parameters=parameters,
         )
         objective = torch.where(meaningful & ~constant, objective, torch.nan)
         status = torch.where(status == 0, 5, status)
@@ -451,6 +477,7 @@ def _fit_pyramid(
     fields = None
     previous_grid = None
     level_steps, level_status, level_objectives = [], [], []
+    metric_masks = options.get("metric_masks")
     for factor, sigma, budget in zip(factors, sigmas, budgets, strict=True):
         level_images, level_moving = _make_level(images, moving, factor, sigma)
         level_target, level_fixed = _make_level(target[None], fixed, factor, sigma)
@@ -475,6 +502,11 @@ def _fit_pyramid(
             _recover_initial_parameters(matrices, geometry, len(images)),
             device=images.device,
         )
+        level_masks = (
+            None
+            if metric_masks is None
+            else _MetricMasks(*metric_masks.sources, level_fixed, geometry)
+        )
         uf, um, steps, status, objective, _ = _fit(
             level_images,
             level_target[0],
@@ -483,7 +515,7 @@ def _fit_pyramid(
             fixed_geometry,
             seed,
             reference,
-            **{**options, "max_iterations": budget},
+            **{**options, "max_iterations": budget, "metric_masks": level_masks},
             initial_fields=fields,
             finalize=False,
         )
@@ -631,6 +663,8 @@ def register_syn(
     radius,
     schedule=None,
     active_frames=None,
+    fixed_mask=None,
+    moving_mask=None,
 ):
     """Register prepared native images with batched compositive midpoint fields.
 
@@ -690,6 +724,9 @@ def register_syn(
     active_frames : numpy.ndarray, optional
         Per-frame mask for staged fitting. Inactive frames retain the complete
         affine seed with zero residual deformation and status skipped.
+    fixed_mask, moving_mask : xarray.DataArray, optional
+        Boolean ROI masks in their own native physical grids. A spatial moving
+        mask broadcasts; per-frame moving masks follow the recording time labels.
 
     Returns
     -------
@@ -715,6 +752,7 @@ def register_syn(
     clocks, statuses, objectives = [], [], []
     inverse_errors, jacobians, nccs = [], [], []
     level_records = []
+    metric_overlaps = []
     with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
         for first in range(0, len(raw), batch_size):
             last = min(first + batch_size, len(raw))
@@ -740,6 +778,14 @@ def register_syn(
                 )
 
             start = perf_counter()
+            metric_masks = None
+            if fixed_mask is not None or moving_mask is not None:
+                metric_masks = _MetricMasks(
+                    _source(fixed_mask, device),
+                    _source(moving_mask, device, first, last),
+                    fixed,
+                    plane,
+                )
             fit_method = _fit_pyramid if schedule is not None else _fit
             pyramid_options = (
                 {
@@ -778,6 +824,7 @@ def register_syn(
                     else {}
                 ),
                 **pyramid_options,
+                **({"metric_masks": metric_masks} if metric_masks is not None else {}),
             )
             if device == "cuda":
                 torch.cuda.synchronize()
@@ -836,6 +883,9 @@ def register_syn(
                 fitted, fv = sample_rigid(
                     images, parameters, plane, displacement=forward
                 )
+                if metric_masks is not None:
+                    fv = metric_masks.apply(fv, parameters, forward)
+                    metric_overlaps.append(fv.float().flatten(1).mean(1).cpu().numpy())
                 loss, meaningful = compute_global_ncc(fitted, stationary, fv)
                 nccs.append(torch.where(meaningful, -loss, torch.nan).cpu().numpy())
                 clocks.append(steps.cpu().numpy())
@@ -890,6 +940,14 @@ def register_syn(
             "inverse_error_note": "sampled inverse is approximate; two-sided residual is reported, not forced to zero",
         },
     )
+    if metric_overlaps:
+        diagnostics["roi_valid_fraction"] = (
+            "time",
+            np.concatenate(metric_overlaps),
+            {
+                "domain": "native fixed image; endpoint ROI intersection with geometric support"
+            },
+        )
     if schedule is not None:
         from voxreg.pyramid import _add_level_diagnostics
 

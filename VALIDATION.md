@@ -18,6 +18,9 @@ recovery, per-level counts/statuses, batching and native-grid output resampling.
 Staging checks cover manual full-transform handoff, independent physical truth,
 shared/overridden settings, single output interpolation, initialization once,
 motion batching, reference preservation and failure isolation into terminal SyN.
+ROI checks cover ITK physical-cell rounding and native masked global NCC,
+independent mask-grid world queries and both SyN halfway pulls, masked local
+statistics, per-frame motion masks, empty ROI failures and unchanged output support.
 CUDA tests skip when unavailable; CPU success does not qualify CUDA.
 
 Benchmark workers verify staged-input hashes, output contracts and full-grid
@@ -49,6 +52,11 @@ Passing unit tests or improving NCC does not establish correct correspondence.
   striding can omit trailing samples; small axes retain at least two samples.
   Coarse field boundaries are fixed, and residuals outside their support are zero.
   Passing synthetic pyramid checks does not establish wider capture on real data.
+- Masks gate metric samples, without altering image interpolation or smoothing;
+  ROI boundary values can include neighbouring intensities from outside the ROI.
+  Small ROIs can vanish at coarse levels or yield unreliable local statistics.
+  Shared masks apply to all stages; soft masks and stage-specific ROI overrides
+  are not implemented. Mask support does not establish anatomical correspondence.
 - Batching does not bound full CPU inputs/outputs or optional dense exports.
 - Synthetic results do not establish anatomical accuracy. CUDA, other platforms,
   large volumes and full recordings require their own measurements.

@@ -21,6 +21,10 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 ## Implemented, opt-in
 
+- **Fixed and moving masks:** boolean ROIs retain native geometry and are sampled
+  through the complete physical/halfway maps at every stage and level. Local NCC
+  excludes masked neighbours. ROI coverage is distinct from output validity;
+  image interpolation and smoothing remain independent. See [mask semantics](README.md#roi-masks).
 - **Staged registration:** explicit model sequences with optional `Stage`
   overrides, initialization once, per-frame failure isolation and separate
   stage/pyramid diagnostics. Original intensities are resampled once; final maps
@@ -36,9 +40,6 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 ## Candidates, not enabled defaults
 
-- **Fixed and moving masks:** respect each mask's native geometry, warp moving
-  masks into the metric domain, and define mask-aware local statistics/pyramids.
-  Keep user ROIs distinct from geometric support and the output validity mask.
 - **Mutual information:** a differentiable, mask-aware estimator with explicit
   bins/ranges/kernels and bounded memory. Add a small per-frame metric interface;
   revisit NCC-specific conditioning, diagnostics and stopping calibration.

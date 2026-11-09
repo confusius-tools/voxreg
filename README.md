@@ -70,6 +70,7 @@ result = voxreg.register(
 | `moving`, `fixed` | NumPy-backed VoxelData in mm: `(k, j, i)` images or `(time, k, j, i)` recordings. `fixed` is spatial-only and required for a single image. |
 | `transform` | `"translation"`, `"rigid"` (default), `"affine"`, `"syn"`, a `Stage`, or a sequence of model names/`Stage` specifications. Slices use `k=1`; volumes have at least two samples on each axis. |
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
+| `fixed_mask`, `moving_mask` | Optional boolean ROI VoxelData in their own physical grids. Fixed mask is spatial-only; moving mask can be shared or per-frame with matching time labels. Masks restrict fitting at every stage and level. |
 | `intensity_scaling` | `"db"` (default) for nonnegative power, or `"none"` for already-prepared/signed data. Affects fitting only. |
 | `batch_size` | Maximum frames fitted together; automatic by default. Full returned images still occupy CPU memory. |
 | `max_iterations` | Per-frame update limit at each level: an integer (default `100`) or one integer per level. Inspect diagnostics rather than assuming convergence. |
@@ -102,6 +103,45 @@ Dask-backed inputs are not supported.
 
 For all options, including optimizer controls and callbacks, use
 `help(voxreg.register)` or read the [API docstring](src/voxreg/rigid.py).
+
+## ROI masks
+
+```python
+result = voxreg.register(
+    moving, fixed,
+    fixed_mask=fixed_brain_mask,
+    moving_mask=moving_brain_mask,
+    transform=("rigid", "affine", "syn"),
+)
+```
+
+Masks must be NumPy-backed boolean VoxelData with physical coordinates in mm.
+Convert binary integer masks explicitly with `mask.astype(bool)`. Their shape,
+spacing, origin and orientation may differ from the images. The fixed mask is
+spatial-only; a spatial moving mask broadcasts across recording frames, while
+per-frame masks must have exactly matching time labels. Either mask can be omitted.
+
+Following ITK's physical-mask model, each candidate pull samples the original
+mask's binary voxel cells, with half-index ties rounded upwards. Both supplied
+ROIs and geometric image support must include a point for it to contribute.
+For SyN, both masks follow their own halfway maps, including the affine seed on
+the moving side. Masks are evaluated directly at each pyramid level and are never
+Gaussian-smoothed or repeatedly resized into soft weights. Local NCC excludes
+masked neighbours from its statistics as well as excluding masked centres.
+
+Image interpolation, image-pyramid smoothing, intensity scaling and automatic
+initialization keep their existing behaviour. Pixels outside an ROI can therefore
+influence image values near its boundary through interpolation or smoothing.
+Masks do not zero or crop the input images, clip the output, or force deformation
+to vanish outside the ROI. Shared masks apply to every stage and level; this
+differs from ANTsPy's default final-stage-only mask policy.
+
+`result.valid` and `diagnostics.valid_fraction` still describe geometric output
+support. With masks, `diagnostics.roi_valid_fraction` separately reports the
+fraction of native fixed-grid centres inside both ROIs and image support at the
+returned endpoint map. For SyN this is an endpoint diagnostic, separate from its
+halfway fitting objective. Empty/tiny intersections can fail explicitly with
+insufficient overlap or invalid statistics; coverage is not registration confidence.
 
 ## Staged registration
 

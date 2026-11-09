@@ -149,6 +149,41 @@ metrics, insufficient overlap and invalid transforms are explicit statuses.
 There is no minimum coverage percentage: two supported samples only make NCC
 mathematically possible, not a reliable registration. Coverage is not confidence.
 
+## ROI masks
+
+`fixed_mask` and `moving_mask` are boolean VoxelData in independent physical grids.
+Fixed masks are spatial-only; moving masks can be spatial/shared or follow the
+recording's exact time labels. Physical queries use origin-free float64 geometry
+and binary cell membership, with ITK-style half-integer rounding upwards. Masks
+are evaluated on their original grids at each level and candidate transform;
+they are not blurred or repeatedly resampled. Fixed ROI, moving ROI and image
+support intersect before the metric calculation. Local CC uses that intersection
+for all neighbourhood sums and for eligible window centres.
+
+Linear fitting holds the fixed ROI stationary and pulls the moving ROI through
+the complete physical matrix. SyN moves both ROIs through the two halfway maps,
+including affine prealignment on the moving side. Hard ROI membership has no
+autograd derivative. Image interpolation/smoothing and intensity conditioning
+remain independent of the masks; outside-ROI intensities can influence smoothed
+or interpolated boundary values. Initialization still uses the original images.
+
+Masks apply to every stage and level. Frame isolation and skipped-stage rules
+remain unchanged. Geometric output validity is not replaced by ROI support:
+`roi_valid_fraction` reports native fixed-grid endpoint ROI/support intersection
+separately, while `valid` continues to cover the complete resampled output.
+Regularization can carry deformation outside the ROI; whole-field Jacobian
+checks still apply. Empty/coarsely vanished ROIs fail explicitly and pyramid
+fitting can retry at finer levels under its existing rules.
+
+Reference choices were checked against
+[ITK physical mask membership](https://github.com/InsightSoftwareConsortium/ITK/blob/main/Modules/Core/SpatialObjects/include/itkImageMaskSpatialObject.hxx)
+and native masked global correlation. This is not a claim of full optimizer or
+local-CC equivalence. FireANTs' inspected masked-CC path weights the loss map after
+computing neighbourhood statistics; voxreg excludes masked neighbours from those
+statistics. FireANTs also permits interpolated fractional mask channels, whereas
+voxreg uses explicit binary membership. ANTsPy defaults to masks on the final
+stage; voxreg deliberately applies shared masks throughout its explicit pipeline.
+
 ## Precision, output and execution
 
 | Computation | Precision/policy |
@@ -207,6 +242,7 @@ CUDA synchronization and do not change best-valid return semantics.
 | [convergence.py](src/voxreg/convergence.py) | Independent window convergence |
 | [pyramid.py](src/voxreg/pyramid.py) | Physical image smoothing, pyramid lattices, field transfer and level diagnostics |
 | [stages.py](src/voxreg/stages.py) | Stage specifications, shared-option inheritance and per-frame pipeline execution |
+| [masks.py](src/voxreg/masks.py) | Physical binary ROI membership and metric-domain mask intersections |
 
 No backend registry, public precision/compiler switch or transform-object
 framework is needed. [Tests](tests/) own mathematical contracts;

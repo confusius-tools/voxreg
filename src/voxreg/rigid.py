@@ -20,6 +20,11 @@ from voxreg.geometry import (
     _validate_registration_geometry,
     position_to_world,
 )
+from voxreg.masks import (
+    _MetricMasks,
+    _source,
+    _validate_masks,
+)
 from voxreg.sampling import (
     Plane,
     SpatialGrid,
@@ -56,6 +61,7 @@ class _MetricOptions(TypedDict, total=False):
     metric_callback: Callable[[torch.Tensor, torch.Tensor], None]
     metric_interval: int
     active_frames: torch.Tensor
+    metric_masks: _MetricMasks
 
 
 @dataclass(frozen=True)
@@ -210,6 +216,7 @@ def _optimize(
     metric_callback: Callable[[torch.Tensor, torch.Tensor], None] | None = None,
     metric_interval: int = 10,
     active_frames: torch.Tensor | None = None,
+    metric_masks: _MetricMasks | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run masked batched Adam with bounded whole-batch stopping checks.
 
@@ -262,6 +269,8 @@ def _optimize(
     )
     constant = images.amax(dim=spatial_axes) == images.amin(dim=spatial_axes)
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
+    if metric_masks is not None:
+        status = torch.where(reference, 4, 0)
     if active_frames is not None:
         status = torch.where(~active_frames & ~reference, 7, status)
     check_interval = 10 if images.is_cuda else 1
@@ -272,6 +281,8 @@ def _optimize(
     )
     for iteration in range(max_iterations):
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
+        if metric_masks is not None:
+            valid = metric_masks.apply(valid, u * plane.parameter_scale)
         loss, meaningful = compute_global_ncc(moved, fixed, valid)
         if metric_callback is not None and iteration % metric_interval == 0:
             metric_callback(
@@ -332,6 +343,8 @@ def _optimize(
             break
     with torch.no_grad():
         moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
+        if metric_masks is not None:
+            valid = metric_masks.apply(valid, u * plane.parameter_scale)
         loss, meaningful = compute_global_ncc(moved, fixed, valid)
         if metric_callback is not None:
             metric_callback(steps, torch.where(meaningful & ~constant, loss, torch.nan))
@@ -371,6 +384,7 @@ def _optimize_pyramid(
     metric_callback=None,
     metric_interval=10,
     active_frames=None,
+    metric_masks=None,
 ):
     """Refine complete world matrices with fresh per-level optimizer state."""
     from voxreg.pyramid import _make_level
@@ -401,6 +415,11 @@ def _optimize_pyramid(
             _recover_initial_parameters(matrices, geometry, len(images)),
             device=images.device,
         )
+        level_masks = (
+            None
+            if metric_masks is None
+            else _MetricMasks(*metric_masks.sources, level_data, geometry)
+        )
         physical, steps, status = _optimize(
             level_images,
             level_fixed[0],
@@ -414,9 +433,12 @@ def _optimize_pyramid(
             metric_callback=metric_callback,
             metric_interval=metric_interval,
             **({"active_frames": active_frames} if active_frames is not None else {}),
+            **({"metric_masks": level_masks} if level_masks is not None else {}),
         )
         with torch.no_grad():
             fitted, valid = sample_rigid(level_images, physical, geometry)
+            if level_masks is not None:
+                valid = level_masks.apply(valid, physical)
             loss, meaningful = compute_global_ncc(fitted, level_fixed[0], valid)
             nonconstant = level_images.flatten(1).amax(1) > level_images.flatten(
                 1
@@ -471,6 +493,8 @@ def register(
     transform: Literal["translation", "rigid", "affine", "syn"]
     | Stage
     | Sequence[str | Stage] = "rigid",
+    fixed_mask: xr.DataArray | None = None,
+    moving_mask: xr.DataArray | None = None,
     initial_transform: npt.ArrayLike | xr.DataArray | None = None,
     initialization: Literal["center_geometry", "center_moments", "align_planes"]
     | npt.ArrayLike
@@ -528,6 +552,18 @@ def register(
         stages are rejected; SyN must be last. Stage specifications override
         shared fitting options, while strings inherit them. Shared syn_ settings
         apply only to SyN in pipelines containing it. No preset is selected.
+    fixed_mask : xarray.DataArray, optional
+        Spatial-only boolean ROI VoxelData in its own physical grid. Only
+        included sample centers contribute to fitting statistics. Does not
+        modify output intensities, output validity or automatic initialization.
+    moving_mask : xarray.DataArray, optional
+        Boolean ROI VoxelData sampled through the complete moving pull. A
+        spatial mask broadcasts over frames; a time-dependent mask must match
+        moving time labels exactly. Its grid may differ from the moving image.
+        Both masks restrict every stage/level. Masks are evaluated in physical
+        space at each level without Gaussian smoothing. Image interpolation,
+        intensity scaling and image-pyramid smoothing retain their usual rules;
+        image values outside an ROI can influence interpolation near its boundary.
     initial_transform : array-like or xarray.DataArray, optional
         Model-compatible fixed-world-to-moving-world pull matrix in world z/y/x,
         with translations in mm. Shape (4, 4) broadcasts to all frames;
@@ -765,6 +801,8 @@ def register(
     output values use each original moving frame's minimum.
     """
     options = {
+        "fixed_mask": fixed_mask,
+        "moving_mask": moving_mask,
         "initial_transform": initial_transform,
         "initialization": initialization,
         "intensity_scaling": intensity_scaling,
@@ -810,6 +848,8 @@ def _register(
     fixed: xr.DataArray | None = None,
     *,
     transform: str = "rigid",
+    fixed_mask: xr.DataArray | None = None,
+    moving_mask: xr.DataArray | None = None,
     initial_transform: npt.ArrayLike | xr.DataArray | None = None,
     initialization: Literal["center_geometry", "center_moments", "align_planes"]
     | npt.ArrayLike
@@ -850,6 +890,7 @@ def _register(
     multiresolution = factors != (1,) or sigmas != (0.0,)
     max_iterations = budgets[0]
     _validate_registration_geometry(moving)
+    _validate_masks(fixed_mask, moving_mask, moving)
     if not isinstance(transform, str) or transform not in (
         "translation",
         "rigid",
@@ -1126,10 +1167,13 @@ def _register(
             radius=syn_cc_radius,
             schedule=(factors, sigmas, budgets) if multiresolution else None,
             active_frames=_active,
+            fixed_mask=fixed_mask,
+            moving_mask=moving_mask,
         )
     outputs, masks, parameters = [], [], []
     clocks, statuses, objectives, overlaps = [], [], [], []
     level_records = []
+    metric_overlaps = []
     with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
         for first in range(0, len(raw), batch_size):
             last = min(first + batch_size, len(raw))
@@ -1151,6 +1195,15 @@ def _register(
             timings["upload"] += perf_counter() - start
             start = perf_counter()
             metric_options: _MetricOptions = {}
+            metric_masks = None
+            if fixed_mask is not None or moving_mask is not None:
+                metric_masks = _MetricMasks(
+                    _source(fixed_mask, device),
+                    _source(moving_mask, device, first, last),
+                    fixed,
+                    plane,
+                )
+                metric_options["metric_masks"] = metric_masks
             if _active is not None:
                 metric_options["active_frames"] = torch.tensor(
                     _active[first:last], device=device
@@ -1216,7 +1269,18 @@ def _register(
                         )
                         valid = valid | reference[reference_shape]
                 fitted, fit_valid = sample_rigid(images, physical, plane)
-                loss, meaningful = compute_global_ncc(fitted, target_tensor, fit_valid)
+                metric_valid = (
+                    fit_valid
+                    if metric_masks is None
+                    else metric_masks.apply(fit_valid, physical)
+                )
+                loss, meaningful = compute_global_ncc(
+                    fitted, target_tensor, metric_valid
+                )
+                if metric_masks is not None:
+                    metric_overlaps.append(
+                        metric_valid.float().mean(dim=spatial_axes).cpu().numpy()
+                    )
                 nonconstant = images.amax(dim=spatial_axes) > images.amin(
                     dim=spatial_axes
                 )
@@ -1328,6 +1392,12 @@ def _register(
         },
     )
     diagnostics.attrs["batch_size"] = batch_size
+    if metric_overlaps:
+        diagnostics["roi_valid_fraction"] = (
+            "time",
+            np.concatenate(metric_overlaps),
+            {"domain": "native fixed image; ROI intersection with geometric support"},
+        )
     if multiresolution:
         from voxreg.pyramid import _add_level_diagnostics
 
