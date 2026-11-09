@@ -14,7 +14,7 @@ from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
-from voxreg.sampling import _recover_initial_parameters, build_world_matrices, make_grid
+from voxreg.sampling import build_world_matrices, make_grid, recover_initial_parameters
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
@@ -74,7 +74,7 @@ def test_inverse_parameterization_including_pi(angle):
         axis = np.array(axis) / np.linalg.norm(axis)
         matrix[:3, :3] = Rotation.from_rotvec(angle * axis).as_matrix()[::-1, ::-1]
         matrix[:3, 3] = [0.2, -0.3, 0.4]
-        parameters = _recover_initial_parameters(matrix, grid, 1)
+        parameters = recover_initial_parameters(matrix, grid, 1)
         np.testing.assert_allclose(
             build_world_matrices(parameters, grid)[0], matrix, atol=3e-14, rtol=0
         )
@@ -82,7 +82,7 @@ def test_inverse_parameterization_including_pi(angle):
         shifted = replace(grid, center=grid.center + shift)
         seed = build_world_matrices(parameters, shifted)[0]
         recovered = build_world_matrices(
-            _recover_initial_parameters(seed, shifted, 1), shifted
+            recover_initial_parameters(seed, shifted, 1), shifted
         )[0]
         points = world_points(fixed)
         points[:3] += shift[:, None]
@@ -298,7 +298,7 @@ def test_reference_and_labeled_seed_validation(recording_factory):
 
 
 def test_seeded_original_float64_resampling_matches_scipy(monkeypatch):
-    from voxreg import rigid
+    from voxreg import linear
 
     fixed, moving, seed = posed_pair()
     moving = moving.astype(np.float64)
@@ -312,7 +312,7 @@ def test_seeded_original_float64_resampling_matches_scipy(monkeypatch):
             torch.ones(len(images), dtype=torch.int64),
         )
 
-    monkeypatch.setattr(rigid, "_optimize", unchanged)
+    monkeypatch.setattr(linear, "_optimize", unchanged)
     r = register(
         moving, fixed, initial_transform=seed, intensity_scaling="none", progress=False
     )
@@ -433,7 +433,7 @@ def test_float32_rotation_roundoff_preserves_seed_center():
     seed = seed.astype(np.float32)
     untouched = seed.copy()
     grid = make_grid(fixed, moving)
-    matrix = build_world_matrices(_recover_initial_parameters(seed, grid, 1), grid)[0]
+    matrix = build_world_matrices(recover_initial_parameters(seed, grid, 1), grid)[0]
     center = np.r_[grid.center, 1]
     np.testing.assert_allclose(matrix @ center, seed @ center, atol=2e-14, rtol=0)
     np.testing.assert_allclose(matrix[:3, :3].T @ matrix[:3, :3], np.eye(3), atol=1e-15)

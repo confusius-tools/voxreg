@@ -10,7 +10,7 @@ from torch.utils.checkpoint import checkpoint
 
 
 @dataclass(frozen=True)
-class _Metric:
+class Metric:
     """Select a loss without changing sampling, masks or optimizer state."""
 
     name: str
@@ -23,8 +23,23 @@ class _Metric:
         return _mutual_information(moving, fixed, valid, self.bins, self.sigma)
 
 
-def _validate_metric(metric, bins, sigma):
-    """Validate shared options before any stage starts fitting."""
+def validate_metric(metric: str | None, bins: int, sigma: float) -> None:
+    """Validate shared metric options before any stage starts fitting.
+
+    Parameters
+    ----------
+    metric : str, optional
+        Explicit global NCC, local NCC or mutual information selection.
+    bins : int
+        Number of histogram bins for MI.
+    sigma : float
+        MI Gaussian standard deviation in bin widths.
+
+    Raises
+    ------
+    ValueError
+        If the metric or MI parameters are unsupported.
+    """
     if metric not in (None, "ncc", "local_ncc", "mi"):
         raise ValueError("metric must be None, ncc, local_ncc or mi.")
     if isinstance(bins, bool) or not isinstance(bins, Integral) or not 2 <= bins <= 256:

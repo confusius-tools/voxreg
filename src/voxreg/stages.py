@@ -1,12 +1,18 @@
 """Explicit registration stages and independent per-frame pipeline execution."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from dataclasses import KW_ONLY, dataclass, fields, replace
 from time import perf_counter
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
+import xarray as xr
 from confusius._utils.progress import progress_bar
+
+from voxreg.preparation import RegistrationSettings
+from voxreg.results import LinearFit, RegistrationResult
 
 
 @dataclass(frozen=True)
@@ -79,9 +85,36 @@ class Stage:
         }
 
 
-def _register_stages(moving, fixed, specification, shared):
-    """Fit original images through ordered stages and resample only at the end."""
-    from voxreg.rigid import RegistrationResult, _LinearFit, _register
+def register_stages(
+    moving: xr.DataArray,
+    fixed: xr.DataArray | None,
+    specification: Stage | Sequence[str | Stage],
+    shared: RegistrationSettings,
+) -> RegistrationResult:
+    """Fit original images through stages and resample only at the end.
+
+    Parameters
+    ----------
+    moving : xarray.DataArray
+        Original spatial image or recording.
+    fixed : xarray.DataArray, optional
+        Shared spatial reference, or the implicit first recording frame.
+    specification : Stage or sequence of str or Stage
+        Increasing-complexity transform stages and their explicit overrides.
+    shared : RegistrationSettings
+        Settings inherited by every stage unless overridden.
+
+    Returns
+    -------
+    RegistrationResult
+        Complete outputs and independent stage diagnostics, with failed frames frozen.
+
+    Raises
+    ------
+    ValueError
+        If stage order or any effective stage configuration is invalid.
+    """
+    from voxreg.registration import run_stage
 
     start = perf_counter()
     stages = (
@@ -90,7 +123,10 @@ def _register_stages(moving, fixed, specification, shared):
     if not stages:
         raise ValueError("transform stage sequence must not be empty.")
     stages = tuple(
-        Stage(stage) if isinstance(stage, str) else stage for stage in stages
+        Stage(cast(Literal["translation", "rigid", "affine", "syn"], stage))
+        if isinstance(stage, str)
+        else stage
+        for stage in stages
     )
     order = {"translation": 0, "rigid": 1, "affine": 2, "syn": 3}
     previous = -1
@@ -113,19 +149,19 @@ def _register_stages(moving, fixed, specification, shared):
                 "Stages must increase in complexity: translation, rigid, affine, syn; SyN must be last."
             )
         previous = rank
-        options = shared.copy()
+        options = shared
         if stage.transform != "syn" and has_syn:
-            options.update(syn_cc_radius=2, syn_update_sigma=1.5, syn_total_sigma=0.5)
+            options = replace(
+                options, syn_cc_radius=2, syn_update_sigma=1.5, syn_total_sigma=0.5
+            )
         overrides = stage._overrides()
         if stage.transform != "syn" and any(
             name.startswith("syn_") for name in overrides
         ):
             raise ValueError("Stage syn_ options require transform='syn'.")
-        options.update(overrides)
+        options = replace(options, **overrides)
         # Validate every effective stage configuration before fitting the first one.
-        _register(
-            moving, fixed, transform=stage.transform, _validate_only=True, **options
-        )
+        run_stage(moving, fixed, stage.transform, options, validate_only=True)
         resolved.append(options)
 
     spatial = moving.dims == ("k", "j", "i")
@@ -137,7 +173,7 @@ def _register_stages(moving, fixed, specification, shared):
     center = None
     seed = None
     totals = dict.fromkeys(("prepare", "upload", "optimize", "resample_download"), 0.0)
-    progress = shared["progress"]
+    progress = shared.progress
     if isinstance(progress, str):
         progress = count > 1
     total_work = count * len(stages)
@@ -145,11 +181,13 @@ def _register_stages(moving, fixed, specification, shared):
         "Registering stages", total_work, show=progress is True
     ) as advance:
         for index, (stage, options) in enumerate(zip(stages, resolved, strict=True)):
-            options = options.copy()
             if index:
-                options.update(initialization=None, initial_transform=seed)
-            options["return_transforms"] = (
-                shared["return_transforms"] if index == len(stages) - 1 else False
+                options = replace(options, initialization=None, initial_transform=seed)
+            options = replace(
+                options,
+                return_transforms=shared.return_transforms
+                if index == len(stages) - 1
+                else False,
             )
 
             completed_before = [0]
@@ -164,21 +202,22 @@ def _register_stages(moving, fixed, specification, shared):
                     progress(index * count + completed, total_work)
                 completed_before[0] = completed
 
-            options["progress"] = (
-                report if progress is True or callable(progress) else False
+            options = replace(
+                options,
+                progress=report if progress is True or callable(progress) else False,
             )
-            result = _register(
+            result = run_stage(
                 moving,
                 fixed,
-                transform=stage.transform,
-                _active=active,
-                _center=center,
-                _fit_only=index < len(stages) - 1,
-                **options,
+                stage.transform,
+                options,
+                active_frames=active,
+                center_override=center,
+                fit_only=index < len(stages) - 1,
             )
-            assert isinstance(result, (RegistrationResult, _LinearFit))
+            assert isinstance(result, (RegistrationResult, LinearFit))
             stage_diagnostics = result.diagnostics.copy(deep=True)
-            if isinstance(result, _LinearFit) and spatial:
+            if isinstance(result, LinearFit) and spatial:
                 stage_diagnostics = stage_diagnostics.isel(time=0, drop=True)
             stage_diagnostics.attrs.update(stage=index, transform=stage.transform)
             diagnostics.append(stage_diagnostics)
@@ -191,7 +230,7 @@ def _register_stages(moving, fixed, specification, shared):
             total_updates += np.atleast_1d(stage_diagnostics.n_iterations.values)
             for name, seconds in stage_diagnostics.attrs["timings_seconds"].items():
                 totals[name] += seconds
-            if isinstance(result, _LinearFit):
+            if isinstance(result, LinearFit):
                 seed, center = result.matrices, result.center
 
     assert isinstance(result, RegistrationResult)

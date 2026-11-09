@@ -13,8 +13,8 @@ import torch
 import torch.nn.functional as F
 import xarray as xr
 
-from voxreg.geometry import _validate_registration_geometry, position_to_world
-from voxreg.sampling import _map_displacement, make_grid
+from voxreg.geometry import position_to_world, validate_registration_geometry
+from voxreg.sampling import make_grid, map_displacement
 
 
 @dataclass(frozen=True)
@@ -47,7 +47,7 @@ def make_field_grid(data: xr.DataArray, *, device: str = "cpu") -> FieldGrid:
     FieldGrid
         Geometry for component-first physical displacement fields.
     """
-    _validate_registration_geometry(data)
+    validate_registration_geometry(data)
     geometry = make_grid(data, data, device=device)
     planar = data.sizes["k"] == 1
     shape = tuple(data.sizes[d] for d in (("j", "i") if planar else ("k", "j", "i")))
@@ -87,8 +87,21 @@ def make_field_grid(data: xr.DataArray, *, device: str = "cpu") -> FieldGrid:
     )
 
 
-def _check_field(field: torch.Tensor, grid: FieldGrid) -> None:
-    """Check component/spatial shape and the resident grid's precision and device."""
+def check_field(field: torch.Tensor, grid: FieldGrid) -> None:
+    """Check component shape, grid size, device and precision of a field.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Physical displacement with shape batch/components/spatial axes.
+    grid : FieldGrid
+        Resident geometry defining expected components and spatial shape.
+
+    Raises
+    ------
+    ValueError
+        If field shape, device or dtype is incompatible with the resident grid.
+    """
     if field.shape[1:] != (len(grid.shape), *grid.shape):
         raise ValueError("Field shape must be (batch, components, *grid.shape).")
     if field.dtype != grid.indices.dtype or field.device != grid.indices.device:
@@ -101,7 +114,7 @@ def _sample_field(
     field: torch.Tensor, displacement: torch.Tensor, grid: FieldGrid
 ) -> torch.Tensor:
     """Sample a field at physical displacements from its native voxel centers."""
-    offsets = _map_displacement(
+    offsets = map_displacement(
         grid.inverse_lattice[None], displacement, grid.voxel_axes
     )
     mapped = grid.indices + offsets
@@ -156,8 +169,8 @@ def compose_fields(
     torch.Tensor
         Component-first displacement for the complete composed pull.
     """
-    _check_field(outer, grid)
-    _check_field(inner, grid)
+    check_field(outer, grid)
+    check_field(inner, grid)
     if outer.shape != inner.shape:
         raise ValueError("Composed fields must have equal batch and spatial shapes.")
     return inner + _sample_field(outer, inner, grid)
@@ -183,7 +196,7 @@ def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch
     torch.Tensor
         Smoothed field with fixed boundaries, or the original field for sigma zero.
     """
-    _check_field(field, grid)
+    check_field(field, grid)
     if not isfinite(sigma) or sigma < 0:
         raise ValueError("sigma must be finite and nonnegative (voxel units).")
     if sigma == 0:
@@ -213,8 +226,21 @@ def smooth_field(field: torch.Tensor, grid: FieldGrid, *, sigma: float) -> torch
     return result.reshape_as(field).masked_fill(grid.boundary, 0)
 
 
-def _measure_norm(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
-    """Measure physical vectors in native voxel-coordinate units."""
+def measure_norm(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
+    """Measure physical vectors in native voxel-coordinate units.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Component-first physical vectors on the resident grid.
+    grid : FieldGrid
+        Geometry mapping physical offsets to native voxel coordinates.
+
+    Returns
+    -------
+    torch.Tensor
+        Vector norms with the component axis removed.
+    """
     if grid.voxel_scale is not None:
         values = field * grid.voxel_scale
         if field.device.type == "cpu":
@@ -222,14 +248,14 @@ def _measure_norm(field: torch.Tensor, grid: FieldGrid) -> torch.Tensor:
             return torch.linalg.vector_norm(values.movedim(1, -1).contiguous(), dim=-1)
         return torch.linalg.vector_norm(values, dim=1)
     return torch.linalg.vector_norm(
-        _map_displacement(grid.inverse_lattice[None], field), dim=-1
+        map_displacement(grid.inverse_lattice[None], field), dim=-1
     )
 
 
 def _update_inverse(field, inverse, grid, damping):
     """Apply one damped, clipped inverse update without host-side polling."""
     residual = compose_fields(field, inverse, grid)
-    norms = _measure_norm(residual, grid)
+    norms = measure_norm(residual, grid)
     maximum = norms.flatten(1).amax(dim=1).reshape(-1, *([1] * len(grid.shape)))
     fraction = (
         damping * maximum / norms.clamp_min(torch.finfo(field.dtype).tiny)
@@ -239,9 +265,28 @@ def _update_inverse(field, inverse, grid, damping):
     )
 
 
-def _compute_contracted_cpu_inverse(field, grid, iterations):
-    """Use fewer fixed-point updates only when a voxel-space bound certifies them."""
-    voxels = _map_displacement(
+def compute_contracted_cpu_inverse(
+    field: torch.Tensor, grid: FieldGrid, iterations: int
+) -> tuple[torch.Tensor, torch.Tensor] | None:
+    """Use fewer inverse updates only when a voxel-space bound certifies them.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Component-first physical forward displacement.
+    grid : FieldGrid
+        Geometry defining native voxel offsets and fixed boundary values.
+    iterations : int
+        Maximum allowed fixed-point update budget.
+
+    Returns
+    -------
+    tuple of torch.Tensor or None
+        Certified inverse candidate and two-sided residual bounds, or no candidate
+        when contraction or boundary conditions do not certify the reduced count.
+        Callers still perform the normal residual and Jacobian checks.
+    """
+    voxels = map_displacement(
         grid.inverse_lattice[None], field, grid.voxel_axes
     ).movedim(-1, 1)
     row_bound = voxels.new_zeros(field.shape[:2])
@@ -266,10 +311,10 @@ def _compute_contracted_cpu_inverse(field, grid, iterations):
     for _ in range(count):
         inverse = -_sample_field(field, inverse, grid)
     inverse = inverse.masked_fill(grid.boundary, 0)
-    left = _measure_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(1)
+    left = measure_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(1)
     if not (left <= 1e-10).all():
         return None
-    right = _measure_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(1)
+    right = measure_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(1)
     return inverse, torch.maximum(left, right)
 
 
@@ -305,7 +350,7 @@ def invert_field(
     error : torch.Tensor
         Per-frame maximum two-sided composition residual in native pixels.
     """
-    _check_field(field, grid)
+    check_field(field, grid)
     if (
         not isinstance(iterations, int)
         or isinstance(iterations, bool)
@@ -313,16 +358,16 @@ def invert_field(
     ):
         raise ValueError("iterations must be a positive integer.")
     inverse = torch.zeros_like(field) if initial is None else initial.clone()
-    _check_field(inverse, grid)
+    check_field(inverse, grid)
     if inverse.shape != field.shape:
         raise ValueError("Initial inverse must match the field shape.")
     for iteration in range(iterations):
         inverse = _update_inverse(field, inverse, grid, 0.75 if iteration == 0 else 0.5)
     left = (
-        _measure_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(dim=1)
+        measure_norm(compose_fields(field, inverse, grid), grid).flatten(1).amax(dim=1)
     )
     right = (
-        _measure_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(dim=1)
+        measure_norm(compose_fields(inverse, field, grid), grid).flatten(1).amax(dim=1)
     )
     return inverse, torch.maximum(left, right)
 
@@ -344,7 +389,7 @@ def compute_jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.
     torch.Tensor
         Determinant at each field voxel, shaped (batch, *grid.shape).
     """
-    _check_field(field, grid)
+    check_field(field, grid)
     derivatives = torch.gradient(field, dim=tuple(range(2, field.ndim)))
     voxel_axes = grid.voxel_axes
     if voxel_axes is not None:
@@ -366,7 +411,7 @@ def compute_jacobian_determinant(field: torch.Tensor, grid: FieldGrid) -> torch.
         return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
     derivative = torch.stack(derivatives, dim=2)
     physical = (
-        _map_displacement(
+        map_displacement(
             grid.inverse_lattice.T[None],
             derivative.flatten(0, 1),
         )

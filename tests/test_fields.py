@@ -253,12 +253,12 @@ def test_cpu_inverse_certificate_preserves_residual_checks(
     )
     assert np.linalg.norm(pixels, axis=1).max() < 1e-9
     left = (
-        fields._measure_norm(compose_fields(field, inverse, grid), grid)
+        fields.measure_norm(compose_fields(field, inverse, grid), grid)
         .flatten(1)
         .amax(1)
     )
     right = (
-        fields._measure_norm(compose_fields(inverse, field, grid), grid)
+        fields.measure_norm(compose_fields(inverse, field, grid), grid)
         .flatten(1)
         .amax(1)
     )
@@ -323,7 +323,7 @@ def test_field_geometry_ignores_absolute_world_origin(
 def test_tiny_geometry_maps_match_numpy(
     displacement_factory, device, planar, broadcast, field_broadcast
 ):
-    from voxreg.sampling import _map_displacement
+    from voxreg.sampling import map_displacement
 
     _, _, lattice, values = displacement_factory(planar)
     matrix = np.linalg.inv(lattice)
@@ -337,7 +337,7 @@ def test_tiny_geometry_maps_match_numpy(
     # A noncontiguous field must not change the component/batch convention.
     field = torch.tensor(values, device=device).transpose(-1, -2)
     expected = np.einsum("boc,bc...->b...o", matrices, values.swapaxes(-1, -2))
-    actual = _map_displacement(torch.tensor(matrices, device=device), field)
+    actual = map_displacement(torch.tensor(matrices, device=device), field)
     assert_allclose(actual.cpu(), expected, rtol=1e-14, atol=1e-14)
 
 
@@ -348,10 +348,10 @@ def test_prepared_seed_queries_preserve_samples_and_gradients(
 ):
     from voxreg.sampling import (
         SpatialGrid,
-        _map_displacement,
-        _prepare_displaced_sampling,
-        _sample_prepared,
         make_grid,
+        map_displacement,
+        prepare_displaced_sampling,
+        sample_prepared,
         sample_rigid,
     )
 
@@ -370,7 +370,7 @@ def test_prepared_seed_queries_preserve_samples_and_gradients(
         dtype=torch.float64,
         device=device,
     )
-    prepared = _prepare_displaced_sampling(images, parameters, geometry)
+    prepared = prepare_displaced_sampling(images, parameters, geometry)
     original = [tensor.clone() for tensor in prepared[:2]]
     for scale in (-1, 0.3, 1.5):
         field = torch.tensor(
@@ -379,13 +379,13 @@ def test_prepared_seed_queries_preserve_samples_and_gradients(
             device=device,
             requires_grad=True,
         )
-        cached, valid = _sample_prepared(images, field, prepared, fitting=fitting)
+        cached, valid = sample_prepared(images, field, prepared, fitting=fitting)
         direct, direct_valid = sample_rigid(
             images, parameters, geometry, displacement=field.double()
         )
         if fitting:
             assert images.dtype == torch.float32
-            query = prepared[0] + _map_displacement(prepared[1], field)
+            query = prepared[0] + map_displacement(prepared[1], field)
             if isinstance(geometry, SpatialGrid):
                 query = (query[..., 1:] if geometry.planar else query).flip(-1)
             direct = torch.nn.functional.grid_sample(
@@ -410,7 +410,7 @@ def test_exact_sparse_lattice_keeps_general_field_math(
     from dataclasses import replace
 
     from voxreg import position_to_world
-    from voxreg.fields import _measure_norm
+    from voxreg.fields import measure_norm
 
     data, _, _, values = displacement_factory(planar)
     affine = position_to_world(data)
@@ -423,7 +423,7 @@ def test_exact_sparse_lattice_keeps_general_field_math(
     expected_norm = np.linalg.norm(
         np.einsum("ij,bj...->bi...", grid.inverse_lattice.cpu(), values), axis=1
     )
-    norm = _measure_norm(field, grid)
+    norm = measure_norm(field, grid)
     assert_allclose(norm.detach().cpu(), expected_norm, rtol=1e-14, atol=1e-14)
     reference = torch.linalg.vector_norm(field * grid.voxel_scale, dim=1)
     derivative = torch.autograd.grad(norm.sum(), field)[0]
@@ -463,12 +463,12 @@ def test_smoothing_keeps_differentiable_tensor_path(
 
 
 def test_tiny_geometry_map_gradients(displacement_factory):
-    from voxreg.sampling import _map_displacement
+    from voxreg.sampling import map_displacement
 
     _, _, lattice, values = displacement_factory(True)
     matrix = torch.tensor(np.linalg.inv(lattice)[None], requires_grad=True)
     field = torch.tensor(values[..., :2, :3], requires_grad=True)
-    assert torch.autograd.gradcheck(_map_displacement, (matrix, field))
+    assert torch.autograd.gradcheck(map_displacement, (matrix, field))
 
 
 @pytest.mark.parametrize("planar", [False, True])

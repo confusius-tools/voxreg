@@ -8,11 +8,11 @@ from numpy.testing import assert_allclose, assert_array_equal
 from oracles import voxel
 from scipy.spatial.transform import Rotation
 
-from voxreg import position_to_world, register, rigid
+from voxreg import linear, position_to_world, register
 from voxreg.sampling import (
-    _recover_initial_parameters,
     build_world_matrices,
     make_grid,
+    recover_initial_parameters,
     sample_rigid,
 )
 from voxreg.transforms import check_affine_parameters, configure_transform
@@ -49,7 +49,7 @@ def observe_seed(monkeypatch, records):
             torch.full((len(images),), 5, dtype=torch.int64, device=images.device),
         )
 
-    monkeypatch.setattr(rigid, "_optimize", optimize)
+    monkeypatch.setattr(linear, "_optimize", optimize)
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -174,7 +174,7 @@ def test_slice_affine_constraint_is_on_recording_to_volume_map(
     assert_allclose(np.linalg.norm(mapped[:, 2]), 1, atol=1e-13, rtol=0)
     assert_allclose(mapped[:, :2].T @ mapped[:, 2], 0, atol=1e-13, rtol=0)
     assert_allclose(
-        _recover_initial_parameters(public, grid, 1),
+        recover_initial_parameters(public, grid, 1),
         p.detach().cpu().numpy(),
         atol=1e-12,
         rtol=0,
@@ -191,6 +191,6 @@ def test_slice_affine_constraint_is_on_recording_to_volume_map(
     invalid = native.copy()
     invalid[:3, :3] = mapped @ np.diag([1, 1, 0.7]) @ frame.T
     with pytest.raises(ValueError, match="normal scale/shear/reflection"):
-        _recover_initial_parameters(
+        recover_initial_parameters(
             np.linalg.inv(invalid) if moving_slice else invalid, grid, 1
         )

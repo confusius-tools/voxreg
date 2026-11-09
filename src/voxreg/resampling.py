@@ -10,13 +10,14 @@ import xarray as xr
 
 from voxreg.geometry import (
     VOXEL_DIMS,
-    _length_scale_to_mm,
-    _same_physical_grid,
-    _validate_registration_geometry,
+    length_scale_to_mm,
     position_to_world,
+    same_physical_grid,
+    validate_registration_geometry,
 )
-from voxreg.rigid import _build_output_template, _choose_batch_size
-from voxreg.sampling import _sample_displaced
+from voxreg.preparation import choose_batch_size
+from voxreg.results import build_output_template
+from voxreg.sampling import sample_displaced
 from voxreg.transforms import validate_matrices
 
 
@@ -137,8 +138,8 @@ def resample(
     ValueError
         If geometry, labels, units, transforms or sampling options are invalid.
     """
-    _validate_registration_geometry(moving)
-    _validate_registration_geometry(reference)
+    validate_registration_geometry(moving)
+    validate_registration_geometry(reference)
     if reference.dims != VOXEL_DIMS:
         raise ValueError("reference must be spatial VoxelData without time.")
     if interpolation not in ("linear", "nearest"):
@@ -169,7 +170,7 @@ def resample(
     if labeled:
         if not isinstance(transforms.data, np.ndarray):
             raise TypeError("transforms must be NumPy-backed.")
-        _length_scale_to_mm(transforms.attrs.get("spatial_units", "mm"))
+        length_scale_to_mm(transforms.attrs.get("spatial_units", "mm"))
         if "time" in transforms.dims:
             if (
                 "time" not in transforms.coords
@@ -209,8 +210,8 @@ def resample(
                 "Displacements must have dimensions [time,] k/j/i/world_component ordered z/y/x."
             )
         scalar = transforms.isel(world_component=0, drop=True)
-        _validate_registration_geometry(scalar)
-        if not _same_physical_grid(scalar, reference):
+        validate_registration_geometry(scalar)
+        if not same_physical_grid(scalar, reference):
             raise ValueError(
                 "Displacement field must match the reference grid exactly."
             )
@@ -221,10 +222,10 @@ def resample(
             raise ValueError(
                 "Fields must declare representation='displacement' and physical spatial_units (for example mm)."
             )
-        scale = _length_scale_to_mm(transforms.attrs["spatial_units"])
+        scale = length_scale_to_mm(transforms.attrs["spatial_units"])
         if (
             "units" in transforms.attrs
-            and _length_scale_to_mm(transforms.attrs["units"]) != scale
+            and length_scale_to_mm(transforms.attrs["units"]) != scale
         ):
             raise ValueError(
                 "Field units and spatial_units must describe the same length unit."
@@ -272,7 +273,7 @@ def resample(
     if not shared and count != frames:
         raise ValueError("Expected one transform per moving frame.")
     if batch_size is None:
-        batch_size = _choose_batch_size(
+        batch_size = choose_batch_size(
             moving, reference, "syn" if field else "affine", device
         )
 
@@ -386,7 +387,7 @@ def resample(
         if native_linear:
             sampled, valid = _sample_linear(original, query, voxel_extent=mixed)
         else:
-            sampled = _sample_displaced(
+            sampled = sample_displaced(
                 original, torch.stack(normalized[::-1], dim=-1), interpolation
             )
         sampled = torch.where(
@@ -398,7 +399,7 @@ def resample(
             output = np.clip(np.rint(output), limits.min, limits.max)
         outputs.append(output.astype(moving.dtype, copy=False))
         masks.append(valid.cpu().numpy())
-    template = _build_output_template(moving, reference, False)
+    template = build_output_template(moving, reference, False)
     resampled = template.copy(data=np.concatenate(outputs))
     valid_data = template.copy(data=np.concatenate(masks))
     valid_data.attrs = {"description": "Valid moving-image sample centers"}

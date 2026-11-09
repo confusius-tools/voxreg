@@ -105,7 +105,7 @@ need compatible initialization. SyN does not support mixed slice/volume inputs;
 Dask-backed inputs are not supported.
 
 For all options, including optimizer controls and callbacks, use
-`help(voxreg.register)` or read the [API docstring](src/voxreg/rigid.py).
+`help(voxreg.register)` or read the [API docstring](src/voxreg/registration.py).
 
 ## Physical units
 

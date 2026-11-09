@@ -6,7 +6,7 @@ import torch
 from confusius import create_voxeldata
 
 from voxreg import register
-from voxreg.rigid import _optimize
+from voxreg.linear import _optimize
 from voxreg.sampling import make_grid
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
@@ -49,7 +49,7 @@ def test_aligned_smaller_moving_image_is_not_rejected(shape, model, device):
 
 @pytest.mark.parametrize("valid_count", [0, 1, 2])
 def test_mathematical_sample_minimum_not_coverage_fraction(monkeypatch, valid_count):
-    from voxreg import rigid
+    from voxreg import linear
 
     values = np.arange(16, dtype=float).reshape(1, 4, 4)
     data = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
@@ -61,7 +61,7 @@ def test_mathematical_sample_minimum_not_coverage_fraction(monkeypatch, valid_co
     def sampled(images, parameters, plane):
         return images + parameters.sum(dim=1)[:, None, None] * 0, valid
 
-    monkeypatch.setattr(rigid, "sample_rigid", sampled)
+    monkeypatch.setattr(linear, "sample_rigid", sampled)
     parameters, updates, status = _optimize(
         images, images[0], grid, torch.tensor([False]), 1, 0.1
     )

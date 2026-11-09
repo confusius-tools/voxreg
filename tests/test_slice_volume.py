@@ -16,9 +16,9 @@ from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
 from voxreg.sampling import (
-    _recover_initial_parameters,
     build_world_matrices,
     make_grid,
+    recover_initial_parameters,
     sample_rigid,
 )
 from voxreg.transforms import configure_transform
@@ -136,7 +136,7 @@ def test_slice_volume_cpu_cuda_unchanged_precision_gate(
 def test_mixed_seed_roundtrip_and_sampler(slice_volume_pair_factory, model):
     target, volume, truth = slice_volume_pair_factory(model)
     grid = configure_transform(make_grid(target, volume), target, model)
-    parameters = _recover_initial_parameters(truth, grid, 1)
+    parameters = recover_initial_parameters(truth, grid, 1)
     assert_allclose(
         build_world_matrices(parameters, grid)[0], truth, atol=1e-14, rtol=0
     )
@@ -171,7 +171,7 @@ def test_affine_slice_has_nine_parameters_not_twelve(slice_volume_pair_factory):
     bad = truth.copy()
     bad[:3, 0] *= 2
     with pytest.raises(ValueError, match="unidentifiable normal"):
-        _recover_initial_parameters(bad, grid, 1)
+        recover_initial_parameters(bad, grid, 1)
     collapsed = np.zeros((1, 9))
     collapsed[0, :6] = -grid.slice_basis.reshape(-1)
     from voxreg.transforms import check_affine_parameters
@@ -365,7 +365,7 @@ def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(
     volume = voxel(volume.values, pose @ position_to_world(volume))
     truth = pose @ truth @ np.linalg.inv(pose)
     grid = configure_transform(make_grid(target, volume), target, model)
-    parameters = _recover_initial_parameters(truth, grid, 1)
+    parameters = recover_initial_parameters(truth, grid, 1)
     actual = build_world_matrices(parameters, grid)[0]
     native = getattr(itk, "AffineTransform")[itk.D, 3].New()
     native.SetMatrix(itk.matrix_from_array(actual[:3, :3]))
@@ -447,7 +447,7 @@ def test_plane_initializer_scope_and_translation_rotation_validation(
 def test_mixed_centering_seed_is_direction_consistent(
     slice_volume_pair_factory, mode, monkeypatch
 ):
-    from voxreg import rigid
+    from voxreg import linear
 
     def seed_only(
         images, target, grid, reference, *args, initial_parameters=None, **kwargs
@@ -458,7 +458,7 @@ def test_mixed_centering_seed_is_direction_consistent(
             torch.full((len(images),), 5, dtype=torch.int64, device=images.device),
         )
 
-    monkeypatch.setattr(rigid, "_optimize", seed_only)
+    monkeypatch.setattr(linear, "_optimize", seed_only)
     target, volume, _ = slice_volume_pair_factory("rigid")
     kwargs: RegistrationOptions = {
         "initialization": mode,

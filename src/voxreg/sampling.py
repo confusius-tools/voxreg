@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from itertools import product
 from math import prod
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 import numpy as np
 import numpy.typing as npt
@@ -12,11 +12,10 @@ import torch.nn.functional as F
 import xarray as xr
 
 from voxreg.geometry import (
-    _compute_plane_alignment,
-    _same_physical_grid,
+    compute_plane_alignment,
     position_to_world,
+    same_physical_grid,
 )
-from voxreg.metrics import compute_global_ncc  # noqa: F401 -- preserve the previous internal import path
 from voxreg.transforms import (
     build_intrinsic_linear,
     build_linear_world_matrices,
@@ -235,7 +234,7 @@ def make_grid(
     if (
         planar
         and not reversed_normal
-        and _same_physical_grid(fixed, moving, affines=(af, am))
+        and same_physical_grid(fixed, moving, affines=(af, am))
     ):
         # Retain the qualified same-grid 2D arithmetic and kernel exactly.
         return make_plane(fixed, device=device, dtype=dtype, center=center)
@@ -255,7 +254,7 @@ def make_grid(
                     "Noncoplanar slices need a plane-compatible initial_transform or initialization='align_planes'; centering alone cannot correct tilt."
                 )
             assert seeds is not None
-            plane_rotation, plane_shift = _compute_plane_alignment(
+            plane_rotation, plane_shift = compute_plane_alignment(
                 fixed, moving, seeds[0, :3, :3] @ normal
             )
         plane = make_plane(fixed, device=device, dtype=dtype, center=center)
@@ -399,10 +398,28 @@ def _build_model_physical_transform(
     return rotation, translation
 
 
-def _build_physical_transform(parameters, grid):
-    """Compose centered model motion with the optional seeded plane placement."""
+def build_physical_transform(
+    parameters: torch.Tensor, grid: SpatialGrid
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compose centered model motion with optional seeded plane placement.
+
+    Parameters
+    ----------
+    parameters : torch.Tensor
+        Batched physical parameters in the model's intrinsic basis.
+    grid : Plane or SpatialGrid
+        Resident geometry, pivot and optional seeded plane placement.
+
+    Returns
+    -------
+    linear : torch.Tensor
+        Complete world-space linear maps.
+    translation : torch.Tensor
+        Complete centered physical shifts in mm.
+    """
     linear, translation = _build_model_physical_transform(parameters, grid)
     if grid.resident_rotation is not None:
+        assert grid.resident_shift is not None
         linear = grid.resident_rotation @ linear
         translation = translation @ grid.resident_rotation.T + grid.resident_shift
     return linear, translation
@@ -410,7 +427,7 @@ def _build_physical_transform(parameters, grid):
 
 def _compute_grid_coordinates(parameters, grid, dimensions, *, sampler_order=False):
     """Build normalized moving queries for the native fixed sampling domain."""
-    rotation, translation = _build_physical_transform(parameters, grid)
+    rotation, translation = build_physical_transform(parameters, grid)
     identity = torch.eye(3, device=parameters.device, dtype=parameters.dtype)
     linear = (
         grid.base
@@ -446,7 +463,7 @@ def _sample_grid(
     images: torch.Tensor,
     parameters: torch.Tensor,
     grid: SpatialGrid,
-    interpolation: str,
+    interpolation: Literal["linear", "nearest"],
     displacement: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Sample independent grids, sharing cached CPU lattices and source storage."""
@@ -468,7 +485,7 @@ def _sample_grid(
     )
     if displacement is not None:
         mapping = grid.world_to_normalized @ rotation @ grid.resident_basis
-        return _sample_prepared(
+        return sample_prepared(
             images, displacement, (mapped, mapping, grid), interpolation
         )
     lower = grid.lower.flip(0) if native_order else grid.lower
@@ -540,8 +557,25 @@ def _compute_plane_coordinates(parameters, plane):
     return torch.stack((gx, gy), dim=-1), rotation
 
 
-def _prepare_displaced_sampling(images, parameters, geometry):
-    """Cache complete seed queries, never a resampled or prewarped image."""
+def prepare_displaced_sampling(
+    images: torch.Tensor, parameters: torch.Tensor, geometry: Plane | SpatialGrid
+) -> tuple[torch.Tensor, torch.Tensor, Plane | SpatialGrid]:
+    """Cache complete seed queries without resampling or prewarping an image.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        Native images used to determine the spatial dimensionality.
+    parameters : torch.Tensor
+        Batched complete affine or rigid seed parameters.
+    geometry : Plane or SpatialGrid
+        Physical geometry of the native fixed and moving grids.
+
+    Returns
+    -------
+    tuple
+        Base normalized queries, physical-to-query maps and resident geometry.
+    """
     if isinstance(geometry, SpatialGrid):
         base, rotation = _compute_grid_coordinates(
             parameters, geometry, images.ndim - 1
@@ -553,12 +587,38 @@ def _prepare_displaced_sampling(images, parameters, geometry):
     return base, mapping, geometry
 
 
-def _sample_prepared(
-    images, displacement, prepared, interpolation="linear", *, fitting=False
-):
-    """Sample cached physical queries; fitting alone uses image-precision grids."""
+def sample_prepared(
+    images: torch.Tensor,
+    displacement: torch.Tensor,
+    prepared: tuple[torch.Tensor, torch.Tensor, Plane | SpatialGrid],
+    interpolation: Literal["linear", "nearest"] = "linear",
+    *,
+    fitting: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Sample cached physical queries with image-precision fitting grids.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        Native source frames with spatial axes last.
+    displacement : torch.Tensor
+        Component-first physical residual displacement.
+    prepared : tuple
+        Cached seed queries, component maps and native geometry.
+    interpolation : {"linear", "nearest"}, default: "linear"
+        Source interpolation method.
+    fitting : bool, default: False
+        Whether to use native image-precision grids for differentiable fitting.
+
+    Returns
+    -------
+    sampled : torch.Tensor
+        Source intensities at the complete physical queries.
+    valid : torch.Tensor
+        Boolean native source support at each queried sample.
+    """
     base, mapping, geometry = prepared
-    mapped = base + _map_displacement(mapping, displacement)
+    mapped = base + map_displacement(mapping, displacement)
     if isinstance(geometry, SpatialGrid):
         upper = (
             mapped < geometry.upper
@@ -579,11 +639,28 @@ def _sample_prepared(
             padding_mode="border",
             align_corners=True,
         )[:, 0], valid
-    return _sample_displaced(images, query, interpolation), valid
+    return sample_displaced(images, query, interpolation), valid
 
 
-def _map_displacement(matrix, field, axes=None):
-    """Apply tiny geometry matrices without strided, per-voxel batched GEMMs."""
+def map_displacement(
+    matrix: torch.Tensor, field: torch.Tensor, axes: tuple[int, ...] | None = None
+) -> torch.Tensor:
+    """Apply small geometry matrices without strided per-voxel batched GEMMs.
+
+    Parameters
+    ----------
+    matrix : torch.Tensor
+        Batched component maps.
+    field : torch.Tensor
+        Component-first physical vectors with spatial axes last.
+    axes : tuple of int, optional
+        Single nonzero column in each matrix row for axis-aligned maps.
+
+    Returns
+    -------
+    torch.Tensor
+        Mapped vectors with components last and broadcasting over frames.
+    """
     if (
         field.device.type == "cpu"
         and axes is None
@@ -615,13 +692,31 @@ def _map_displacement(matrix, field, axes=None):
     return torch.stack(components, dim=-1)
 
 
-def _sample_displaced(images, normalized, interpolation):
-    """Interpolate with double geometry and image-dtype arithmetic in fixed order.
+def sample_displaced(
+    images: torch.Tensor,
+    normalized: torch.Tensor,
+    interpolation: Literal["linear", "nearest"],
+) -> torch.Tensor:
+    """Interpolate with double geometry and fixed-order image arithmetic.
 
-    Unlike float32 normalized grid_sample, voxel coordinates are not quantized
-    before selecting interpolation cells. At float32-image voxel knots, remove
-    only double roundoff and choose a consistent one-sided gradient on both devices.
-    Final float64 interpolation retains unsnapped float64 coordinates and weights.
+    Unlike float32 normalized grid_sample, voxel coordinates are not quantized before
+    selecting interpolation cells. At float32-image voxel knots, remove only double
+    roundoff and choose a consistent one-sided gradient on both devices. Final
+    float64 interpolation retains unsnapped float64 coordinates and weights.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        Source frames with spatial axes last.
+    normalized : torch.Tensor
+        Normalized source queries with coordinate components last.
+    interpolation : {"linear", "nearest"}
+        Source interpolation method.
+
+    Returns
+    -------
+    torch.Tensor
+        Source intensities sampled in image dtype; support is checked by the caller.
     """
     dimensions = images.ndim - 1
     native_cpu = (
@@ -709,7 +804,7 @@ def sample_rigid(
     parameters: torch.Tensor,
     plane: Plane | SpatialGrid,
     *,
-    interpolation: str = "linear",
+    interpolation: Literal["linear", "nearest"] = "linear",
     displacement: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Pull-sample the fixed domain under the geometry's centered physical model.
@@ -745,7 +840,7 @@ def sample_rigid(
     grid, rotation = _compute_plane_coordinates(parameters, plane)
     if displacement is not None:
         mapping = plane.plane_to_normalized @ rotation
-        return _sample_prepared(
+        return sample_prepared(
             images, displacement, (grid, mapping, plane), interpolation
         )
     tolerance = plane.support_tolerance
@@ -760,10 +855,30 @@ def sample_rigid(
     return sampled, valid
 
 
-def _recover_initial_parameters(
+def recover_initial_parameters(
     transforms: npt.ArrayLike, plane: Plane | SpatialGrid, count: int
 ) -> npt.NDArray[np.float64]:
-    """Validate world pull seeds and recover the optimized centered parameters."""
+    """Validate world pulls and recover centered physical model parameters.
+
+    Parameters
+    ----------
+    transforms : array-like or xarray.DataArray
+        Shared or per-frame homogeneous world pulls; labelled units are normalized.
+    plane : Plane or SpatialGrid
+        Native physical geometry and requested model.
+    count : int
+        Number of moving frames, including any implicit reference.
+
+    Returns
+    -------
+    numpy.ndarray
+        Batched physical parameters in the model's working basis.
+
+    Raises
+    ------
+    ValueError
+        If seed shape, geometry, homogeneous structure or model constraints fail.
+    """
     values = validate_matrices(transforms, count)
     if isinstance(plane, SpatialGrid) and plane.plane_rotation is not None:
         values = values.copy()

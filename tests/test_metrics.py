@@ -10,7 +10,7 @@ from scipy.special import softmax
 
 from voxreg import Stage, position_to_world, register, resample
 from voxreg.metrics import _mutual_information
-from voxreg.rigid import _prepare_fitting_images
+from voxreg.preparation import prepare_fitting_images
 
 
 def _mi_reference(x, y, valid, bins, sigma):
@@ -116,7 +116,7 @@ def test_mi_backward_does_not_retain_full_bin_weights():
 def test_mi_native_ranges_are_per_image_and_keep_double_contrast():
     fixed = np.array([[1e12, 1e12 + 1, 1e12 + 4]])
     moving = np.stack((fixed * 3 + 8, fixed * 7 - 2))
-    fit, target = _prepare_fitting_images(moving, fixed, "none", "mi")
+    fit, target = prepare_fitting_images(moving, fixed, "none", "mi")
     assert_allclose(fit, np.broadcast_to([[0, 0.25, 1]], fit.shape), rtol=0, atol=1e-7)
     assert_allclose(target, [[0, 0.25, 1]], rtol=0, atol=1e-7)
 
@@ -126,7 +126,7 @@ def test_mi_native_range_handles_extreme_finite_values(dtype):
     scale = np.finfo(dtype).max
     values = np.array([[[-scale, 0, scale]]], dtype=dtype)
     original = values.copy()
-    fit, target = _prepare_fitting_images(values, values[0], "none", "mi")
+    fit, target = prepare_fitting_images(values, values[0], "none", "mi")
     assert_allclose(fit, [[[0, 0.5, 1]]], rtol=0, atol=1e-7)
     assert_allclose(target, [[0, 0.5, 1]], rtol=0, atol=1e-7)
     assert_array_equal(values, original)
@@ -278,14 +278,14 @@ def test_metric_validation_before_fitting(linear_pair_factory, options):
 
 
 def test_mi_later_stage_validation_is_eager(linear_pair_factory, monkeypatch):
-    from voxreg import rigid
+    from voxreg import linear
 
     fixed, moving, _ = linear_pair_factory(True, "rigid")
 
     def unexpected(*args, **kwargs):
         pytest.fail("invalid metric reached fitting")
 
-    monkeypatch.setattr(rigid, "_optimize", unexpected)
+    monkeypatch.setattr(linear, "_optimize", unexpected)
     with pytest.raises(ValueError, match="mi_bins"):
         register(
             moving,

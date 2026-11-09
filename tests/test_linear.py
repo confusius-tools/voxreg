@@ -15,9 +15,9 @@ from scipy.spatial.transform import Rotation
 
 from voxreg import position_to_world, register
 from voxreg.sampling import (
-    _recover_initial_parameters,
     build_world_matrices,
     make_grid,
+    recover_initial_parameters,
     sample_rigid,
 )
 from voxreg.transforms import check_affine_parameters, configure_transform
@@ -86,7 +86,7 @@ def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
 
     fixed, moving, truth = linear_pair_factory(planar, model)
     grid = configure_transform(make_grid(fixed, moving), fixed, model)
-    parameters = _recover_initial_parameters(truth, grid, 1)
+    parameters = recover_initial_parameters(truth, grid, 1)
     native = getattr(itk, "AffineTransform")[itk.D, 3].New()
     native.SetCenter(tuple(grid.center))
     native.SetMatrix(itk.matrix_from_array(truth[:3, :3]))
@@ -132,7 +132,7 @@ def test_seeded_sampling_scipy_and_gradients(
     grid = configure_transform(
         make_grid(fixed, moving, device=device, center=pivot[:3]), fixed, model
     )
-    state = _recover_initial_parameters(truth, grid, 1)
+    state = recover_initial_parameters(truth, grid, 1)
     state[:, -grid.basis.shape[1] :] += np.linspace(0.013, 0.021, grid.basis.shape[1])
     p = torch.tensor(state, device=device, requires_grad=True)
     values = moving.values[0] if planar else moving.values
@@ -411,11 +411,11 @@ def test_planar_seed_cannot_change_unidentifiable_normal(linear_pair_factory, mo
 def test_affine_candidate_guard_is_per_frame_and_keeps_best(
     linear_pair_factory, monkeypatch
 ):
-    from voxreg import rigid
+    from voxreg import linear
 
     fixed, moving, _ = linear_pair_factory(False)
     series = xr.concat([moving, moving], dim=xr.IndexVariable("time", [0, 1]))
-    original = rigid.sample_rigid
+    original = linear.sample_rigid
     seen = []
 
     def sample(images, parameters, grid, **kwargs):
@@ -424,7 +424,7 @@ def test_affine_candidate_guard_is_per_frame_and_keeps_best(
         seen.append(parameters.detach().clone())
         return sampled, valid
 
-    monkeypatch.setattr(rigid, "sample_rigid", sample)
+    monkeypatch.setattr(linear, "sample_rigid", sample)
     # Test the runtime predicate directly on a batch with singular and negative maps.
     grid = configure_transform(make_grid(fixed, moving), fixed, "affine")
     p = grid.parameter_scale.new_zeros((3, 12))
@@ -457,11 +457,11 @@ def test_affine_candidate_guard_is_per_frame_and_keeps_best(
 def test_invalid_affine_frame_does_not_stop_companions(
     linear_pair_factory, monkeypatch
 ):
-    from voxreg import rigid
+    from voxreg import linear
 
     fixed, moving, _ = linear_pair_factory(False)
     series = xr.concat([moving, moving], dim=xr.IndexVariable("time", [0, 1]))
-    original = rigid.check_affine_parameters
+    original = linear.check_affine_parameters
     calls = 0
 
     def properties(parameters, grid):
@@ -472,7 +472,7 @@ def test_invalid_affine_frame_does_not_stop_companions(
         calls += 1
         return valid, sign
 
-    monkeypatch.setattr(rigid, "check_affine_parameters", properties)
+    monkeypatch.setattr(linear, "check_affine_parameters", properties)
     result = register(
         series,
         fixed,

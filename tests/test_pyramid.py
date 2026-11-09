@@ -11,7 +11,7 @@ from scipy.ndimage import convolve
 
 from voxreg import position_to_world, register, resample
 from voxreg.fields import make_field_grid
-from voxreg.pyramid import _make_level, _resize_halfway, _smooth_images
+from voxreg.pyramid import _smooth_images, make_level, resize_halfway
 
 
 @pytest.mark.parametrize(
@@ -92,7 +92,7 @@ def test_physical_smoothing_and_native_strides(device, planar, sheared):
     )
     kernel = np.exp(-np.sum((offsets @ lattice.T) ** 2, axis=-1) / (2 * sigma**2))
     expected = convolve(image, kernel / kernel.sum(), mode="nearest")
-    actual, level = _make_level(tensor, data, 4, sigma)
+    actual, level = make_level(tensor, data, 4, sigma)
     strides = tuple(min(4, max(1, n - 1)) for n in image.shape)
     slices = tuple(slice(None, None, stride) for stride in strides)
     assert_allclose(actual.cpu()[0], expected[slices], rtol=0, atol=2e-14)
@@ -109,7 +109,7 @@ def test_physical_smoothing_and_native_strides(device, planar, sheared):
 def test_halfway_prolongation_keeps_physical_units(displacement_factory, planar):
     data, _, _, _ = displacement_factory(planar, strided=True)
     shape = data.shape[1:] if planar else data.shape
-    _, coarse = _make_level(torch.zeros((1, *shape)), data, 2, 0)
+    _, coarse = make_level(torch.zeros((1, *shape)), data, 2, 0)
     source, destination = make_field_grid(coarse), make_field_grid(data)
     # An affine field has an independently known linear interpolation everywhere inside.
     indices = source.indices[0]
@@ -118,7 +118,7 @@ def test_halfway_prolongation_keeps_physical_units(displacement_factory, planar)
         .expand(1, len(shape), *source.shape)
         .clone()
     )
-    actual = _resize_halfway(field, source, destination)
+    actual = resize_halfway(field, source, destination)
     expected = (0.03 * (destination.indices[0] / 2).sum(-1))[None, None].expand_as(
         actual
     )

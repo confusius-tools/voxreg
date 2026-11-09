@@ -9,7 +9,7 @@ from confusius.validation import validate_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 
 from voxreg import position_to_world, register
-from voxreg.geometry import _check_affine, _validate_registration_geometry
+from voxreg.geometry import _check_affine, validate_registration_geometry
 
 
 def test_native_coordinates_and_world_index(recording_factory):
@@ -27,15 +27,15 @@ def test_native_coordinates_and_world_index(recording_factory):
 def test_slice_reverse_and_time_reduction(recording_factory):
     data, _, expected = recording_factory(oblique=True)
     selected = data.isel(j=slice(5, 45, 2), i=slice(60, 9, -3)).mean("time")
-    _validate_registration_geometry(selected)
+    validate_registration_geometry(selected)
     conversion = np.eye(4)
     conversion[1, 1], conversion[2, 2] = 2, -3
     conversion[:3, 3] = [0, 5, 60]
     assert_allclose(position_to_world(selected), expected @ conversion, atol=1e-12)
     assert_array_equal(selected.i, data.i[60:9:-3])
-    _validate_registration_geometry(data.isel(time=0, drop=True))
+    validate_registration_geometry(data.isel(time=0, drop=True))
     vector = data.isel(i=[2, 4, 6])
-    _validate_registration_geometry(vector)
+    validate_registration_geometry(vector)
     assert_array_equal(vector.x.values, data.x.isel(i=[2, 4, 6]).values)
 
 
@@ -48,7 +48,7 @@ def test_confusius_input_and_output_share_voxeldata(recording_factory):
         voxel_to_world=data.xindexes["z"].voxel_to_world,
         attrs=data.attrs,
     )
-    _validate_registration_geometry(external)
+    validate_registration_geometry(external)
     assert type(data.xindexes["z"]) is type(external.xindexes["z"]) is VoxelToWorldIndex
     assert np.shares_memory(data.data, external.data)
     assert_allclose(position_to_world(external), position_to_world(data), atol=1e-12)
@@ -68,11 +68,11 @@ def test_confusius_input_and_output_share_voxeldata(recording_factory):
 def test_missing_index_and_stale_coordinates_raise(recording_factory):
     data, _, _ = recording_factory()
     with pytest.raises(ValueError, match="VoxelToWorldIndex"):
-        _validate_registration_geometry(xr.DataArray(data.values, dims=data.dims))
+        validate_registration_geometry(xr.DataArray(data.values, dims=data.dims))
     with pytest.raises(ValueError, match="disagree"):
-        _validate_registration_geometry(data.assign_coords(i=data.i + 1))
+        validate_registration_geometry(data.assign_coords(i=data.i + 1))
     with pytest.raises(ValueError, match="dimensions"):
-        _validate_registration_geometry(data.isel(k=0))
+        validate_registration_geometry(data.isel(k=0))
     labels = {
         world: data[world].isel(k=0, j=12, i=21).item() for world in ["z", "y", "x"]
     }
@@ -94,13 +94,13 @@ def test_invalid_native_coordinates(coordinates):
         np.ones((1, 3, 4)), dims=("k", "j", "i"), voxel_to_world=np.eye(4)
     )
     with pytest.raises((TypeError, ValueError), match="coordinate"):
-        _validate_registration_geometry(data.assign_coords(j=coordinates))
+        validate_registration_geometry(data.assign_coords(j=coordinates))
 
 
 def test_native_indices_must_be_integers(recording_factory):
     data, _, _ = recording_factory()
     with pytest.raises(TypeError, match="integer"):
-        _validate_registration_geometry(data.assign_coords(j=data.j.astype(float)))
+        validate_registration_geometry(data.assign_coords(j=data.j.astype(float)))
 
 
 def test_unsigned_descending_native_indices():
@@ -150,21 +150,21 @@ def test_native_indices_cannot_wrap_in_confusius():
         voxel_to_world=np.eye(4),
     )
     with pytest.raises(ValueError, match="signed int64"):
-        _validate_registration_geometry(data)
+        validate_registration_geometry(data)
 
 
 def test_units_and_unsupported_dimensions():
     data = create_voxeldata(
         np.ones((1, 4, 5)), dims=("k", "j", "i"), voxel_to_world=np.eye(4), units="m"
     )
-    _validate_registration_geometry(data)
+    validate_registration_geometry(data)
     poses = create_voxeldata(
         np.ones((2, 1, 4, 5)),
         dims=("pose", "k", "j", "i"),
         voxel_to_world=np.repeat(np.eye(4)[None], 2, axis=0),
     )
     with pytest.raises(ValueError, match="dimensions"):
-        _validate_registration_geometry(poses)
+        validate_registration_geometry(poses)
 
 
 def test_valid_confusius_dask_data_is_not_supported(recording_factory):

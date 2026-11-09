@@ -4,22 +4,47 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+import xarray as xr
 
 from voxreg.geometry import (
     VOXEL_DIMS,
-    _validate_registration_geometry,
     position_to_world,
+    validate_registration_geometry,
 )
-from voxreg.sampling import Plane, _build_physical_transform, build_plane_rotations
+from voxreg.sampling import (
+    Plane,
+    SpatialGrid,
+    build_physical_transform,
+    build_plane_rotations,
+)
 from voxreg.transforms import build_intrinsic_linear
 
 
-def _validate_masks(fixed_mask, moving_mask, moving):
-    """Require boolean VoxelData and exact moving time-label correspondence."""
+def validate_masks(
+    fixed_mask: xr.DataArray | None,
+    moving_mask: xr.DataArray | None,
+    moving: xr.DataArray,
+) -> None:
+    """Require boolean VoxelData and exact moving time-label correspondence.
+
+    Parameters
+    ----------
+    fixed_mask, moving_mask : xarray.DataArray, optional
+        Native fixed and moving ROI grids.
+    moving : xarray.DataArray
+        Original moving image or recording defining frame labels.
+
+    Raises
+    ------
+    TypeError
+        If masks are not boolean VoxelData.
+    ValueError
+        If geometry, mask dimensions or moving frame labels are inconsistent.
+    """
     for name, mask in (("fixed_mask", fixed_mask), ("moving_mask", moving_mask)):
         if mask is None:
             continue
-        _validate_registration_geometry(mask)
+        validate_registration_geometry(mask)
         if mask.dtype != np.bool_:
             raise TypeError(f"{name} must be boolean VoxelData.")
         if name == "fixed_mask" and mask.dims != VOXEL_DIMS:
@@ -40,8 +65,27 @@ class _MaskSource:
     affine: np.ndarray
 
 
-def _source(mask, device, first=0, last=None):
-    """Upload only the current frame batch, or one shared spatial mask."""
+def get_mask_source(
+    mask: xr.DataArray | None, device: str, first: int = 0, last: int | None = None
+) -> _MaskSource | None:
+    """Upload a shared ROI or the current recording frame batch.
+
+    Parameters
+    ----------
+    mask : xarray.DataArray, optional
+        Boolean ROI in its own native grid.
+    device : str
+        Torch device for resident mask values.
+    first : int, default: 0
+        First requested moving frame.
+    last : int, optional
+        Exclusive final moving frame; omitted selects the remaining frames.
+
+    Returns
+    -------
+    _MaskSource or None
+        Resident ROI values and native physical affine in mm, or no source.
+    """
     if mask is None:
         return None
     if "time" in mask.dims:
@@ -124,7 +168,8 @@ class _MaskSampler:
                 )
                 translation = shift @ basis.T
             else:
-                linear, translation = _build_physical_transform(parameters, geometry)
+                assert isinstance(geometry, SpatialGrid)
+                linear, translation = build_physical_transform(parameters, geometry)
             offset = (
                 self.origin
                 + torch.einsum(
@@ -162,18 +207,55 @@ class _MaskSampler:
         return valid & sampled
 
 
-class _MetricMasks:
-    """Intersect ROI masks with image support in the current metric domain."""
+class MetricMasks:
+    """Intersect ROIs with image support in the current metric domain.
 
-    def __init__(self, fixed, moving, domain, geometry):
+    Parameters
+    ----------
+    fixed, moving : _MaskSource, optional
+        Resident mask sources, each with its own native physical grid.
+    domain : xarray.DataArray
+        Native fixed or halfway image grid where the loss is evaluated.
+    geometry : Plane or SpatialGrid
+        Complete centered moving map and physical sampling geometry.
+    """
+
+    def __init__(
+        self,
+        fixed: _MaskSource | None,
+        moving: _MaskSource | None,
+        domain: xr.DataArray,
+        geometry: Plane | SpatialGrid | None,
+    ) -> None:
         self.sources = (fixed, moving)
         self.fixed = None if fixed is None else _MaskSampler(fixed, domain, geometry)
         self.moving = None if moving is None else _MaskSampler(moving, domain, geometry)
 
     def apply(
-        self, valid, parameters, moving_displacement=None, fixed_displacement=None
-    ):
-        """Warp each ROI through its own complete pull into the metric domain."""
+        self,
+        valid: torch.Tensor,
+        parameters: torch.Tensor,
+        moving_displacement: torch.Tensor | None = None,
+        fixed_displacement: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Warp each ROI through its complete pull into the metric domain.
+
+        Parameters
+        ----------
+        valid : torch.Tensor
+            Existing common image support, with a leading frame axis.
+        parameters : torch.Tensor
+            Centered physical parameters of the complete moving affine seed.
+        moving_displacement : torch.Tensor, optional
+            Midpoint-to-moving residual field in physical working components.
+        fixed_displacement : torch.Tensor, optional
+            Midpoint-to-fixed residual field in physical working components.
+
+        Returns
+        -------
+        torch.Tensor
+            Boolean intersection of image support and both transformed ROIs.
+        """
         if self.fixed is not None:
             valid = valid & self.fixed.sample(
                 len(valid), displacement=fixed_displacement

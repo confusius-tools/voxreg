@@ -12,7 +12,7 @@ from numpy.testing import assert_array_equal
 from registration_options import RegistrationOptions
 from rich.console import Console
 
-from voxreg import register, rigid
+from voxreg import linear, register
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
@@ -171,7 +171,7 @@ def test_rich_display_is_closed_on_registration_error(
     def fail(*args, **kwargs):
         raise RuntimeError("optimizer failed")
 
-    monkeypatch.setattr(rigid, "_optimize", fail)
+    monkeypatch.setattr(linear, "_optimize", fail)
     with pytest.raises(RuntimeError, match="optimizer failed"):
         register(data)
     assert len(rich_bars) == 1

@@ -7,6 +7,12 @@ uv run pytest
 uv run prek run --all-files
 ```
 
+The registration-module refactor was checked against ten saved pre-refactor
+public calls spanning all models and full staged pipelines in 2D and 3D with
+pyramids. Images, support, forward/inverse maps and stage/level diagnostics were
+identical, excluding runtime timing metadata. The existing full suite remains
+the numerical regression gate; no precision or quality threshold was changed.
+
 The suite checks physical geometry, unequal/oblique/cropped/strided grids,
 large origins, interpolation against SciPy/native-library oracles, dtype
 preservation, failure isolation, convergence, transform export and offline

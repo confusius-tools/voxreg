@@ -13,8 +13,24 @@ WORLD_DIMS = ("z", "y", "x")
 """World coordinate and affine component order."""
 
 
-def _length_scale_to_mm(units):
-    """Use ConfUSIus's supported physical length units, without guessing a scale."""
+def length_scale_to_mm(units: str) -> float:
+    """Return the supported physical length-unit scale to millimetres.
+
+    Parameters
+    ----------
+    units : str
+        ConfUSIus length unit to convert.
+
+    Returns
+    -------
+    float
+        Number of millimetres per input unit.
+
+    Raises
+    ------
+    ValueError
+        If the unit is unknown or does not represent length.
+    """
     return float(convert_length_units(1, units, "mm"))
 
 
@@ -31,7 +47,7 @@ def _check_affine(affine: npt.ArrayLike) -> npt.NDArray[np.float64]:
     return matrix
 
 
-def _validate_registration_geometry(data: xr.DataArray) -> None:
+def validate_registration_geometry(data: xr.DataArray) -> None:
     """Check the ConfUSIus geometry subset supported by registration.
 
     Parameters
@@ -63,7 +79,7 @@ def _validate_registration_geometry(data: xr.DataArray) -> None:
     ):
         raise ValueError("VoxelData requires ConfUSIus's VoxelToWorldIndex on z/y/x.")
     matrix = _check_affine(index.voxel_to_world)
-    _length_scale_to_mm(index.units)
+    length_scale_to_mm(index.units)
     for world in WORLD_DIMS:
         if data.coords[world].attrs.get("units") != index.units:
             raise ValueError(
@@ -101,10 +117,30 @@ def _validate_registration_geometry(data: xr.DataArray) -> None:
         )
 
 
-def _compute_center_positions(
+def compute_center_positions(
     data: xr.DataArray, mode: str, name: str
 ) -> npt.NDArray[np.float64]:
-    """Return geometric or original-intensity centroids in array-position k/j/i."""
+    """Return geometric or original-intensity centroids in array-position k/j/i.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        Spatial image or recording on its native lattice.
+    mode : str
+        Geometric midpoint or original-intensity center of mass.
+    name : str
+        Input name used in errors.
+
+    Returns
+    -------
+    numpy.ndarray
+        Per-frame array-position centroids, with three components.
+
+    Raises
+    ------
+    ValueError
+        If moment initialization encounters negative intensities or zero mass.
+    """
     midpoint = (np.array([data.sizes[d] for d in VOXEL_DIMS]) - 1) / 2
     images = data.values if "time" in data.dims else data.values[None]
     if mode == "center_geometry":
@@ -130,10 +166,27 @@ def _compute_center_positions(
     return np.asarray(centers)
 
 
-def _compute_plane_alignment(
-    fixed: xr.DataArray, moving: xr.DataArray, mapped_normal=None
-):
-    """Align normals (unoriented unless seeded), with normal-only center shift."""
+def compute_plane_alignment(
+    fixed: xr.DataArray,
+    moving: xr.DataArray,
+    mapped_normal: npt.NDArray[np.float64] | None = None,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    """Align unoriented normals with a normal-only center shift.
+
+    Parameters
+    ----------
+    fixed, moving : xarray.DataArray
+        Native slice grids, with geometry normalized to mm.
+    mapped_normal : numpy.ndarray, optional
+        Seed-mapped fixed normal used to choose the moving normal orientation.
+
+    Returns
+    -------
+    rotation : numpy.ndarray
+        World z/y/x rotation aligning the normals.
+    shift : numpy.ndarray
+        Normal component of the center displacement in mm.
+    """
     affines = [position_to_world(data) for data in (fixed, moving)]
     normals, centers = [], []
     for data, affine in zip((fixed, moving), affines, strict=True):
@@ -179,7 +232,7 @@ def position_to_world(
         Array-position k/j/i to world z/y/x map in units, accounting for crop
         and stride. Both lattice coefficients and world origins are converted.
     """
-    _validate_registration_geometry(data)
+    validate_registration_geometry(data)
     conversion = np.eye(4)
     for axis, dim in enumerate(VOXEL_DIMS):
         values = data.coords[dim].values
@@ -197,8 +250,26 @@ def position_to_world(
     return matrix
 
 
-def _same_physical_grid(first, second, *, affines=None):
-    """Compare array-position lattices in mm, allowing only unit-conversion roundoff."""
+def same_physical_grid(
+    first: xr.DataArray,
+    second: xr.DataArray,
+    *,
+    affines: tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]] | None = None,
+) -> bool:
+    """Compare position lattices in mm, allowing unit-conversion roundoff.
+
+    Parameters
+    ----------
+    first, second : xarray.DataArray
+        Native image grids to compare, ignoring time and intensity values.
+    affines : tuple of numpy.ndarray, optional
+        Precomputed array-position affines in mm for the two images.
+
+    Returns
+    -------
+    bool
+        Whether spatial shapes and physical position lattices match.
+    """
     if any(first.sizes[d] != second.sizes[d] for d in VOXEL_DIMS):
         return False
     a, b = (

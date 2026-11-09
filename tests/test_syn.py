@@ -10,7 +10,7 @@ from scipy.ndimage import map_coordinates
 
 from voxreg import position_to_world, register
 from voxreg.metrics import compute_local_ncc
-from voxreg.sampling import _sample_displaced
+from voxreg.sampling import sample_displaced
 
 
 @pytest.mark.parametrize("planar", [True, False])
@@ -399,11 +399,11 @@ def test_displaced_interpolation_identity_and_gradients(
         ),
         dim=-1,
     ).flip(-1)[None]
-    assert_array_equal(_sample_displaced(image, identity, "linear").cpu(), data[None])
+    assert_array_equal(sample_displaced(image, identity, "linear").cpu(), data[None])
     # Double output keeps fractional detail; no float32 interpolation hidden inside.
     query = (identity * 0.8 + 0.013).requires_grad_(True)
     assert torch.autograd.gradcheck(
-        lambda p: _sample_displaced(image.double(), p, "linear"),
+        lambda p: sample_displaced(image.double(), p, "linear"),
         (query,),
         fast_mode=True,
         eps=1e-6,
@@ -532,7 +532,7 @@ def test_displaced_nearest_uses_even_ties():
     query = torch.tensor(
         [[[[-0.75, 0], [-0.25, 0], [0.25, 0], [0.75, 0]]]], dtype=torch.float64
     )
-    assert_array_equal(_sample_displaced(image, query, "nearest"), [[[0, 2, 2, 4]]])
+    assert_array_equal(sample_displaced(image, query, "nearest"), [[[0, 2, 2, 4]]])
 
 
 @pytest.mark.parametrize("shape", [(6, 7), (4, 5, 6)])

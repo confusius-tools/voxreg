@@ -5,7 +5,7 @@ from dataclasses import replace
 import numpy as np
 import torch
 
-from voxreg.geometry import _length_scale_to_mm, position_to_world
+from voxreg.geometry import length_scale_to_mm, position_to_world
 
 
 def configure_transform(grid, fixed, transform):
@@ -158,7 +158,7 @@ def validate_matrices(transforms, count):
         raise TypeError("initial_transform must contain real numeric matrices.")
     values = np.array(values, dtype=np.float64, copy=True)
     try:
-        scale = _length_scale_to_mm(
+        scale = length_scale_to_mm(
             getattr(transforms, "attrs", {}).get("spatial_units", "mm")
         )
     except ValueError as error:

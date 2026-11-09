@@ -6,24 +6,13 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 ## Current work status
 
-Physical length-unit support was resumed at the user's request, followed by a
-targeted real-data motion-quality investigation. Broader implementation and
-benchmark expansion remain paused. Preserve existing benchmark artifacts and
-frozen sources/settings.
+Work proceeds one roadmap point at a time, stopping after each for user review
+and a separate commit. The registration-module refactor is implemented and
+reviewed. No higher-order interpolation or device default has been
+enabled. Broad benchmark expansion remains deferred to its roadmap point;
+preserve existing artifacts and frozen sources/settings.
 
 ## Planned capabilities
-
-### Registration module organization
-
-Move the public registration entry point, common validation/preparation and
-result assembly out of rigid.py into a registration entry module analogous to
-resampling.py. Keep linear and SyN fitting as private engines and stage
-orchestration separate, with shared metrics/geometry utilities. The public
-voxreg.register/RegistrationResult/Stage imports must remain stable. Clarify the
-roles of public register, the current single-model _register path and the SyN
-worker; reduce duplicated signatures and option plumbing without introducing a
-backend registry or changing numerical behavior. Refactor in isolated steps
-with existing stage/failure/precision contracts retained.
 
 ### Final image interpolation
 
@@ -40,6 +29,9 @@ offer general volumetric cubic interpolation. Keep nearest for categorical
 labels and linear as the existing default. Qualify CPU/CUDA behavior, precision,
 boundary support, overshoot and memory cost against independent interpolation
 oracles, with one final sampling of original intensities.
+
+Label-aware resampling is deferred at the user's request; retain nearest-neighbour
+resampling for categorical labels for now.
 
 ### Device selection
 
@@ -149,7 +141,13 @@ time chunking by itself does not provide it.
 4. **Broaden real-data qualification.** Revisit pair, motion and atlas workflows
    with original images, native geometry and explicit quality limitations.
 
-## Implemented, opt-in
+## Implemented
+
+- **Registration module organization:** registration.py owns the public entry
+  point and common validation/preparation. Linear and SyN engines consume typed
+  prepared inputs and shared immutable settings; results/statuses and batch
+  policy have shared owners, independent of fitting engines. Public root imports
+  and numerical behavior are retained. See [engine boundaries](DESIGN.md#registration-entry-and-engine-boundaries).
 
 - **Physical length units:** m, cm, mm, um/µm and nm for images/masks, including
   mixed-unit inputs. Internal geometry, exported transforms, physical diagnostics

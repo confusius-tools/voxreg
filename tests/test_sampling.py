@@ -20,7 +20,7 @@ from voxreg.sampling import (
 def test_fitting_sampler_values_and_right_knot_derivatives(
     nonlinear_pair_factory, device, planar
 ):
-    from voxreg.sampling import _sample_displaced
+    from voxreg.sampling import sample_displaced
 
     shape = (5, 6) if planar else (4, 5, 6)
     _, moving, *_ = nonlinear_pair_factory(planar, shape=shape, amplitude=0.1)
@@ -41,9 +41,7 @@ def test_fitting_sampler_values_and_right_knot_derivatives(
     query = torch.tensor(
         normalized.reshape(query_shape), device=device, requires_grad=True
     )
-    actual = _sample_displaced(
-        torch.tensor(image[None], device=device), query, "linear"
-    )
+    actual = sample_displaced(torch.tensor(image[None], device=device), query, "linear")
     expected = map_coordinates(
         image.astype(float), points.T, order=1, mode="nearest", prefilter=False
     )

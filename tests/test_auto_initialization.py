@@ -113,7 +113,7 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
 def test_moments_pivot_sampling_and_scales(
     recording_factory, monkeypatch, kind, device
 ):
-    from voxreg import rigid
+    from voxreg import linear
 
     if kind == "volume":
         fixed, moving = volume_pair()
@@ -150,7 +150,7 @@ def test_moments_pivot_sampling_and_scales(
             torch.ones(len(images), dtype=torch.int64, device=images.device),
         )
 
-    monkeypatch.setattr(rigid, "_optimize", rotated)
+    monkeypatch.setattr(linear, "_optimize", rotated)
     r = register(
         moving,
         fixed,
@@ -233,7 +233,7 @@ def test_series_reference_batch_and_fitting_scaling(recording_factory, mode):
             torch.ones(len(images), dtype=torch.int64),
         )
 
-    with patch("voxreg.rigid._optimize", frozen):
+    with patch("voxreg.linear._optimize", frozen):
         linear = register(
             data, return_transforms=True, intensity_scaling="none", **options
         )

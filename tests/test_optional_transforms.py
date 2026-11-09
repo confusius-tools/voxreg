@@ -5,7 +5,7 @@ import pytest
 import xarray as xr
 from registration_options import RegistrationOptions
 
-from voxreg import register, rigid, syn
+from voxreg import linear, register, syn
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine", "syn"])
@@ -55,7 +55,7 @@ def test_optional_transforms(
     ):
         monkeypatch.setattr(syn, name, unexpected)
     if model != "syn":
-        monkeypatch.setattr(rigid, "build_world_matrices", unexpected)
+        monkeypatch.setattr(linear, "build_world_matrices", unexpected)
     omitted = register(moving, target, **options)
     assert omitted.forward_transforms is None and omitted.inverse_transforms is None
     xr.testing.assert_identical(omitted.registered, exported.registered)

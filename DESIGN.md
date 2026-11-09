@@ -3,7 +3,7 @@
 `voxreg.register` fits physical fixed→moving pulls with PyTorch. ConfUSIus
 provides the xarray-based VoxelData model and progress display—not the fitter.
 See the [public API](README.md#voxregregister) for usage and the function's
-[docstring](src/voxreg/rigid.py) for all options.
+[docstring](src/voxreg/registration.py) for all options.
 
 ## Geometry and inputs
 
@@ -283,6 +283,27 @@ Frame progress reports completed batches. Optional metric callbacks report owned
 NumPy arrays of frame indices, update counts and trial objectives; they can add
 CUDA synchronization and do not change best-valid return semantics.
 
+## Registration entry and engine boundaries
+
+`voxreg.register` is defined in registration.py and retains the existing public
+signature. It creates an immutable internal RegistrationSettings record, dispatches
+explicit pipelines to stages.py, and validates/prepares single-model calls through
+`run_stage`. This record is an execution detail, not a public reusable preset API.
+
+Preparation hands a typed PreparedRegistration to `linear.run_linear` or
+`syn.run_syn`. These workers consume resolved native images, geometry, seeds,
+metrics and settings; they do not invoke the public registration API. The linear
+optimizer remains module-private. Stage overrides use dataclasses.replace and
+per-frame eligibility and the physical pivot pass explicitly between stages.
+Results and shared status labels live in results.py; resampling reuses result
+assembly and the batch policy without depending on an optimizer or public dispatcher.
+
+Shared geometry, metric, ROI, sampling, field and pyramid helpers have explicit
+module interfaces in their owning modules. Leading-underscore helpers remain
+owned by the module implementing them; top-level public exports remain minimal.
+This structural change does not alter interpolation, boundary support, physical
+precision, optimizers, masks, convergence or output conventions.
+
 ## Code ownership
 
 | Module | Responsibility |
@@ -291,7 +312,10 @@ CUDA synchronization and do not change best-valid return semantics.
 | [transforms.py](src/voxreg/transforms.py) | Linear parameterization, scaling and seed constraints |
 | [resampling.py](src/voxreg/resampling.py) | Offline world-pull application on CPU/CUDA |
 | [sampling.py](src/voxreg/sampling.py) | Physical pull sampling and matrix conversion |
-| [rigid.py](src/voxreg/rigid.py) | Public API, shared linear fitting and result assembly |
+| [registration.py](src/voxreg/registration.py) | Public API, validation, preparation and single-model/stage dispatch |
+| [preparation.py](src/voxreg/preparation.py) | Shared settings, prepared native inputs, intensity conditioning and batch policy |
+| [results.py](src/voxreg/results.py) | Registration results, shared status labels and native-grid output assembly |
+| [linear.py](src/voxreg/linear.py) | Translation/rigid/affine optimizer, pyramid refinement and output diagnostics |
 | [fields.py](src/voxreg/fields.py) | Field interpolation, composition, smoothing, inversion and Jacobians |
 | [syn.py](src/voxreg/syn.py) | Symmetric field fitting and dense outputs |
 | [convergence.py](src/voxreg/convergence.py) | Independent window convergence |

@@ -6,7 +6,7 @@ import torch
 from numpy.testing import assert_allclose, assert_array_equal
 from scipy.ndimage import map_coordinates
 
-from voxreg import position_to_world, register, rigid
+from voxreg import linear, position_to_world, register
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def prescribed_translation(monkeypatch):
         parameters[reference] = 0
         return parameters, torch.where(reference, 0, 1), torch.where(reference, 4, 5)
 
-    monkeypatch.setattr(rigid, "_optimize", optimize)
+    monkeypatch.setattr(linear, "_optimize", optimize)
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
@@ -150,7 +150,7 @@ def test_nearest_changes_only_output_not_fitting(recording_factory):
 def test_integer_rounding_ties_and_saturation(recording_factory, monkeypatch):
     data, _, _ = recording_factory()
     data = data.copy(data=np.rint(data.values * 20).astype(np.int8))
-    sample = rigid.sample_rigid
+    sample = linear.sample_rigid
 
     def half_values(images, parameters, plane, **kwargs):
         if kwargs:
@@ -159,7 +159,7 @@ def test_integer_rounding_ties_and_saturation(recording_factory, monkeypatch):
             return values, torch.ones_like(images, dtype=torch.bool)
         return sample(images, parameters, plane)
 
-    monkeypatch.setattr(rigid, "sample_rigid", half_values)
+    monkeypatch.setattr(linear, "sample_rigid", half_values)
     result = register(data, max_iterations=1)
     assert result.registered.values[1, 0, 0, 0] == -128
     assert result.registered.values[1, 0, 1, 1] == 126

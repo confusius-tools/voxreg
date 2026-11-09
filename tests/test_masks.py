@@ -10,9 +10,9 @@ from oracles import max_pull_difference
 from registration_options import RegistrationOptions
 
 from voxreg import position_to_world, register, resample
-from voxreg.masks import _MaskSampler, _MetricMasks, _source
+from voxreg.masks import MetricMasks, _MaskSampler, get_mask_source
 from voxreg.metrics import compute_local_ncc
-from voxreg.sampling import _recover_initial_parameters, make_grid
+from voxreg.sampling import make_grid, recover_initial_parameters
 from voxreg.transforms import configure_transform
 
 
@@ -39,9 +39,9 @@ def test_mask_sampler_matches_world_cell_oracle(linear_pair_factory, device, pla
         make_grid(fixed, moving, device=device), fixed, "affine"
     )
     parameters = torch.tensor(
-        _recover_initial_parameters(truth, geometry, 1), device=device
+        recover_initial_parameters(truth, geometry, 1), device=device
     )
-    source = _source(mask, device)
+    source = get_mask_source(mask, device)
     actual = (
         _MaskSampler(source, fixed, geometry).sample(1, parameters).cpu().numpy()[0]
     )
@@ -143,7 +143,7 @@ def test_mask_cell_rounding_follows_itk():
     domain = create_voxeldata(
         np.ones((1, 3, 4)), dims=("k", "j", "i"), voxel_to_world=affine
     )
-    actual = _MaskSampler(_source(mask, "cpu"), domain).sample(1).numpy()[0]
+    actual = _MaskSampler(get_mask_source(mask, "cpu"), domain).sample(1).numpy()[0]
     image = itk.image_from_array(values.astype(np.uint8))
     spatial = getattr(itk, "ImageMaskSpatialObject")[3].New(Image=image)  # noqa: B009 -- generated ITK type
     spatial.Update()
@@ -304,10 +304,13 @@ def test_local_ncc_excludes_masked_neighbours_from_statistics():
 def test_syn_masks_follow_both_halfway_maps(linear_pair_factory, planar):
     fixed, moving, seed = linear_pair_factory(planar, "affine")
     geometry = configure_transform(make_grid(fixed, moving), fixed, "affine")
-    parameters = torch.tensor(_recover_initial_parameters(seed, geometry, 1))
+    parameters = torch.tensor(recover_initial_parameters(seed, geometry, 1))
     fixed_mask, moving_mask = _roi(fixed), _roi(moving)
-    masks = _MetricMasks(
-        _source(fixed_mask, "cpu"), _source(moving_mask, "cpu"), fixed, geometry
+    masks = MetricMasks(
+        get_mask_source(fixed_mask, "cpu"),
+        get_mask_source(moving_mask, "cpu"),
+        fixed,
+        geometry,
     )
     shape = fixed.shape[1:] if planar else fixed.shape
     components = len(shape)

@@ -1,17 +1,53 @@
 """Physical image pyramids and per-level registration diagnostics."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from itertools import pairwise
+from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 import torch
 import torch.nn.functional as F
+import xarray as xr
 
 from voxreg.geometry import VOXEL_DIMS, position_to_world
 
+if TYPE_CHECKING:
+    from voxreg.fields import FieldGrid
 
-def _validate_schedule(shrink_factors, smoothing_sigmas, max_iterations):
-    """Normalize explicit coarse-to-fine schedules without choosing a preset."""
+
+def validate_schedule(
+    shrink_factors: Sequence[int],
+    smoothing_sigmas: Sequence[float],
+    max_iterations: int | Sequence[int],
+) -> tuple[tuple[int, ...], tuple[float, ...], tuple[int, ...]]:
+    """Normalize coarse-to-fine schedules without choosing a preset.
+
+    Parameters
+    ----------
+    shrink_factors : sequence of int
+        Nonincreasing positive spatial strides.
+    smoothing_sigmas : sequence of float
+        Nonnegative image-smoothing standard deviations in mm.
+    max_iterations : int or sequence of int
+        Positive update budget shared across levels or explicitly specified per level.
+
+    Returns
+    -------
+    factors : tuple of int
+        Validated spatial strides.
+    sigmas : tuple of float
+        Validated physical Gaussian standard deviations.
+    budgets : tuple of int
+        Validated per-level update limits.
+
+    Raises
+    ------
+    ValueError
+        If values, order or sequence lengths are invalid.
+    """
     for name, values in (
         ("shrink_factors", shrink_factors),
         ("smoothing_sigmas", smoothing_sigmas),
@@ -125,8 +161,29 @@ def _smooth_images(images, data, sigma):
     return values[:, 0]
 
 
-def _make_level(images, data, factor, sigma):
-    """Smooth native fitting images and stride their original physical lattice."""
+def make_level(
+    images: torch.Tensor, data: xr.DataArray, factor: int, sigma: float
+) -> tuple[torch.Tensor, xr.DataArray]:
+    """Smooth fitting images and stride their original physical lattice.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        Native conditioned images with a leading frame axis.
+    data : xarray.DataArray
+        Corresponding original native image grid.
+    factor : int
+        Spatial stride, retaining at least two samples on nonsingleton axes.
+    sigma : float
+        Image Gaussian standard deviation in mm.
+
+    Returns
+    -------
+    torch.Tensor
+        Smoothed and subsampled fitting images.
+    xarray.DataArray
+        Strided original grid retaining native coordinates and world units.
+    """
     strides = {dim: min(factor, max(1, data.sizes[dim] - 1)) for dim in VOXEL_DIMS}
     selectors = {dim: slice(None, None, stride) for dim, stride in strides.items()}
     level = data.isel(selectors)
@@ -135,8 +192,23 @@ def _make_level(images, data, factor, sigma):
     return _smooth_images(images, data, sigma)[(slice(None), *samples)], level
 
 
-def _resize_halfway(field, source, destination):
-    """Interpolate physical field components between same-origin pyramid grids."""
+def resize_halfway(
+    field: torch.Tensor, source: FieldGrid, destination: FieldGrid
+) -> torch.Tensor:
+    """Interpolate physical components between same-origin pyramid grids.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Component-first physical midpoint displacement on the source grid.
+    source, destination : FieldGrid
+        Physical field lattices from the same original fixed image.
+
+    Returns
+    -------
+    torch.Tensor
+        Float32 displacement on the destination lattice with fixed zero boundaries.
+    """
     from voxreg.fields import sample_field_at
 
     if source is destination:
@@ -154,8 +226,28 @@ def _resize_halfway(field, source, destination):
     return result.masked_fill(destination.boundary, 0).float()
 
 
-def _add_level_diagnostics(diagnostics, records, factors, sigmas, budgets):
-    """Expose level-local outcomes and cumulative frame update counts."""
+def add_level_diagnostics(
+    diagnostics: xr.Dataset,
+    records: list[dict[str, npt.NDArray]],
+    factors: tuple[int, ...],
+    sigmas: tuple[float, ...],
+    budgets: tuple[int, ...],
+) -> None:
+    """Attach level outcomes and cumulative update counts to diagnostics.
+
+    Parameters
+    ----------
+    diagnostics : xarray.Dataset
+        Per-frame dataset modified in place.
+    records : list of dict
+        Batch-local level update counts, statuses and objectives.
+    factors : tuple of int
+        Validated shrink schedule.
+    sigmas : tuple of float
+        Validated image-smoothing standard deviations in mm.
+    budgets : tuple of int
+        Per-level maximum update counts.
+    """
     diagnostics.coords["level"] = np.arange(len(factors))
     diagnostics["shrink_factor"] = ("level", np.asarray(factors))
     diagnostics["smoothing_sigma"] = ("level", np.asarray(sigmas), {"units": "mm"})

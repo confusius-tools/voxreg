@@ -91,20 +91,20 @@ def test_stage_overrides_and_manual_handoff(linear_pair_factory, device, planar)
 def test_pipeline_samples_original_only_once(
     linear_pair_factory, monkeypatch, terminal
 ):
-    from voxreg import rigid, syn
+    from voxreg import linear, syn
 
     fixed, moving, _ = linear_pair_factory(True, "rigid")
     moving = moving.copy(data=moving.values.astype(np.float64))
     source = moving.copy(deep=True)
     samples = []
-    original_sample = rigid.sample_rigid
+    original_sample = linear.sample_rigid
 
     def observe(images, *args, **kwargs):
         if images.dtype == torch.float64:
             samples.append(images.detach().cpu().numpy().copy())
         return original_sample(images, *args, **kwargs)
 
-    monkeypatch.setattr(rigid, "sample_rigid", observe)
+    monkeypatch.setattr(linear, "sample_rigid", observe)
     monkeypatch.setattr(syn, "sample_rigid", observe)
     models = (
         ("translation", "rigid", "affine")
@@ -213,14 +213,14 @@ def test_motion_stages_isolate_failures_and_preserve_reference(
 def test_invalid_pipeline_rejected_before_fitting(
     linear_pair_factory, monkeypatch, specification
 ):
-    from voxreg import rigid
+    from voxreg import linear
 
     fixed, moving, _ = linear_pair_factory(True, "rigid")
 
     def unexpected(*args, **kwargs):
         pytest.fail("Invalid stage configuration reached the optimizer")
 
-    monkeypatch.setattr(rigid, "_optimize", unexpected)
+    monkeypatch.setattr(linear, "_optimize", unexpected)
     with pytest.raises(ValueError):
         register(moving, fixed, transform=specification, progress=False)
 

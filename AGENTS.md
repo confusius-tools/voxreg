@@ -28,8 +28,9 @@ VoxelData and `create_voxeldata` to construct it. Do not add plain-coordinate fa
 or code that silently accepts a spatial DataArray without its `VoxelToWorldIndex`.
 Invalid spatial inputs should raise a descriptive exception.
 
-VoxelData images passed to registration must be NumPy-backed and have physical
-coordinates in mm. Registration supports spatial images `(k, j, i)` and recordings
+VoxelData images passed to registration must be NumPy-backed and have supported
+physical length units (m, cm, mm, um/µm or nm). Internal geometry is normalized to
+mm while spatial outputs retain reference-grid coordinate units. Registration supports spatial images `(k, j, i)` and recordings
 `(time, k, j, i)`; masks follow the shapes and time-label rules documented by
 `voxreg.register`. Output images and masks remain VoxelData on their documented output
 grids. Keep geometry conversions at explicit boundaries and preserve coordinate, affine,
@@ -65,7 +66,10 @@ src/voxreg/
 ├── metrics.py      # global/local NCC and mutual information
 ├── pyramid.py      # physical multi-resolution image and field levels
 ├── resampling.py   # public physical-space resampling
-├── rigid.py        # registration API, linear fitting, result and diagnostics assembly
+├── registration.py # public registration API, validation, preparation and dispatch
+├── preparation.py  # shared settings, prepared inputs, conditioning and batch policy
+├── results.py      # result containers, shared statuses and native output assembly
+├── linear.py       # translation/rigid/affine fitting and pyramid refinement
 ├── sampling.py     # physical grids, interpolation, model sampling
 ├── stages.py       # staged registration specifications and orchestration
 ├── syn.py          # symmetric nonlinear registration

@@ -17,27 +17,34 @@ from confusius._utils.progress import progress_bar
 
 from voxreg.convergence import WindowConvergence
 from voxreg.fields import (
-    _check_field,
-    _compute_contracted_cpu_inverse,
-    _measure_norm,
+    check_field,
     compose_fields,
+    compute_contracted_cpu_inverse,
     compute_jacobian_determinant,
     invert_field,
     make_field_grid,
+    measure_norm,
     sample_field_at,
 )
 from voxreg.fields import (
     smooth_field as _smooth_field,
 )
 from voxreg.geometry import position_to_world
-from voxreg.masks import _MetricMasks, _source
+from voxreg.masks import MetricMasks, get_mask_source
 from voxreg.metrics import compute_global_ncc, compute_local_ncc
+from voxreg.preparation import PreparedRegistration
+from voxreg.results import (
+    STATUS_LABELS,
+    RegistrationResult,
+    build_output_template,
+    build_result,
+)
 from voxreg.sampling import (
-    _prepare_displaced_sampling,
-    _recover_initial_parameters,
-    _sample_prepared,
     build_world_matrices,
     make_grid,
+    prepare_displaced_sampling,
+    recover_initial_parameters,
+    sample_prepared,
     sample_rigid,
 )
 
@@ -83,7 +90,7 @@ def smooth_field(field, grid, *, sigma):
         or sigma not in (0.5, 1.5)
     ):
         return _smooth_field(field, grid, sigma=sigma)
-    _check_field(field, grid)
+    check_field(field, grid)
     dimensions = len(grid.shape)
     radius, weights = _build_cpu_smoothing_weights(sigma, dimensions)
     scale = field.abs().flatten(1).amax(1).reshape(-1, 1, *([1] * dimensions))
@@ -116,8 +123,8 @@ def _compute_midpoint_loss(
     metric_function=None,
 ):
     """Compute the differentiable halfway objective and common support."""
-    moved, mv = _sample_prepared(images, um, moving_sampler, fitting=True)
-    stationary, fv = _sample_prepared(fixed_images, uf, fixed_sampler, fitting=True)
+    moved, mv = sample_prepared(images, um, moving_sampler, fitting=True)
+    stationary, fv = sample_prepared(fixed_images, uf, fixed_sampler, fitting=True)
     valid = mv & fv
     if metric_masks is not None:
         valid = metric_masks.apply(valid, parameters, um, uf)
@@ -137,7 +144,7 @@ def _build_candidate_fields(
     candidates = []
     for old, gradient in ((uf, gf), (um, gm)):
         gradient = smooth_field(torch.nan_to_num(gradient), grid, sigma=update_sigma)
-        maximum = _measure_norm(gradient, grid).flatten(1).amax(dim=1)
+        maximum = measure_norm(gradient, grid).flatten(1).amax(dim=1)
         scale = torch.where(
             maximum > 0,
             learning_rate / maximum.clamp_min(torch.finfo(uf.dtype).tiny),
@@ -167,7 +174,7 @@ def _compute_final_inverse(field, grid):
         and not field.requires_grad
         and not torch.compiler.is_compiling()
     ):
-        contracted = _compute_contracted_cpu_inverse(field, grid, 80)
+        contracted = compute_contracted_cpu_inverse(field, grid, 80)
         if contracted is not None:
             return contracted
     return invert_field(field, grid, iterations=80)
@@ -249,8 +256,8 @@ def _fit(
         status = torch.where(~active_frames & ~reference, 7, status)
     fixed_parameters = parameters.new_zeros((b, len(fixed_plane.parameter_scale)))
     fixed_images = target.expand(b, *target.shape)
-    moving_sampler = _prepare_displaced_sampling(images, parameters, plane)
-    fixed_sampler = _prepare_displaced_sampling(
+    moving_sampler = prepare_displaced_sampling(images, parameters, plane)
+    fixed_sampler = prepare_displaced_sampling(
         fixed_images, fixed_parameters, fixed_plane
     )
     monitor = (
@@ -365,12 +372,12 @@ def _fit(
         bf = torch.where(admissible[broadcast], bf, 0)
         bm = torch.where(admissible[broadcast], bm, 0)
         left = (
-            _measure_norm(compose_fields(forward, inverse, grid), grid)
+            measure_norm(compose_fields(forward, inverse, grid), grid)
             .flatten(1)
             .amax(dim=1)
         )
         right = (
-            _measure_norm(compose_fields(inverse, forward, grid), grid)
+            measure_norm(compose_fields(inverse, forward, grid), grid)
             .flatten(1)
             .amax(dim=1)
         )
@@ -407,8 +414,7 @@ def _fit_pyramid(
     **options,
 ):
     """Carry both physical halfway maps between levels, then finalize natively."""
-    from voxreg.pyramid import _make_level, _resize_halfway
-    from voxreg.rigid import _STATUS_LABELS
+    from voxreg.pyramid import make_level, resize_halfway
     from voxreg.transforms import configure_transform
 
     factors, sigmas, budgets = schedule
@@ -418,8 +424,8 @@ def _fit_pyramid(
     level_steps, level_status, level_objectives = [], [], []
     metric_masks = options.get("metric_masks")
     for factor, sigma, budget in zip(factors, sigmas, budgets, strict=True):
-        level_images, level_moving = _make_level(images, moving, factor, sigma)
-        level_target, level_fixed = _make_level(target[None], fixed, factor, sigma)
+        level_images, level_moving = make_level(images, moving, factor, sigma)
+        level_target, level_fixed = make_level(target[None], fixed, factor, sigma)
         geometry = configure_transform(
             make_grid(
                 level_fixed,
@@ -434,17 +440,18 @@ def _fit_pyramid(
         level_grid = make_field_grid(level_fixed, device=str(images.device))
         fixed_geometry = make_grid(level_fixed, level_fixed, device=str(images.device))
         if fields is not None:
+            assert previous_grid is not None
             fields = tuple(
-                _resize_halfway(field, previous_grid, level_grid) for field in fields
+                resize_halfway(field, previous_grid, level_grid) for field in fields
             )
         seed = torch.tensor(
-            _recover_initial_parameters(matrices, geometry, len(images)),
+            recover_initial_parameters(matrices, geometry, len(images)),
             device=images.device,
         )
         level_masks = (
             None
             if metric_masks is None
-            else _MetricMasks(*metric_masks.sources, level_fixed, geometry)
+            else MetricMasks(*metric_masks.sources, level_fixed, geometry)
         )
         uf, um, steps, status, objective, _ = _fit(
             level_images,
@@ -460,7 +467,7 @@ def _fit_pyramid(
         )
         fields, previous_grid = (uf, um), level_grid
         level_steps.append(steps.cpu().numpy())
-        level_status.append(_STATUS_LABELS[status.cpu().numpy()])
+        level_status.append(STATUS_LABELS[status.cpu().numpy()])
         level_objectives.append(objective.cpu().numpy())
     records.append(
         {
@@ -469,8 +476,8 @@ def _fit_pyramid(
             "objective": np.stack(level_objectives, axis=1),
         }
     )
-    assert fields is not None
-    fields = tuple(_resize_halfway(field, previous_grid, grid) for field in fields)
+    assert fields is not None and previous_grid is not None
+    fields = tuple(resize_halfway(field, previous_grid, grid) for field in fields)
     # Only finalization uses the native lattice; no additional optimizer update.
     final_options = {**options, "max_iterations": 0, "metric_callback": None}
     forward, inverse, _, native_status, _, error = _fit(
@@ -574,109 +581,59 @@ def _build_labeled_field(values, template, convention):
     return result
 
 
-def register_syn(
-    moving,
-    fixed,
-    fit,
-    target,
-    plane,
-    initial,
-    *,
-    implicit_fixed,
-    return_transforms,
-    spatial_input,
-    same_grid,
-    timings,
-    batch_size,
-    max_iterations,
-    learning_rate,
-    convergence_window_size,
-    convergence_minimum_value,
-    device,
-    progress,
-    metric_callback,
-    metric_interval,
-    interpolation,
-    update_sigma,
-    total_sigma,
-    radius,
-    schedule=None,
-    active_frames=None,
-    fixed_mask=None,
-    moving_mask=None,
-    metric_function=None,
-):
-    """Register prepared native images with batched compositive midpoint fields.
+def run_syn(prepared: PreparedRegistration) -> RegistrationResult:
+    """Fit a prepared SyN model and assemble complete native-grid world fields.
 
     Parameters
     ----------
-    moving : xarray.DataArray
-        Original moving VoxelData with a leading frame dimension.
-    fixed : xarray.DataArray
-        Spatial-only fixed VoxelData defining the output grid.
-    fit : numpy.ndarray
-        Normalized float32 moving fitting images.
-    target : numpy.ndarray
-        Normalized float32 fixed fitting image.
-    plane : Plane or SpatialGrid
-        Prepared independent-grid sampling geometry and seed parameterization.
-    initial : numpy.ndarray, optional
-        Physical parameters for the fixed affine prealignment.
-    implicit_fixed : bool
-        Whether the first moving frame is the exact reference.
-    return_transforms : bool
-        Whether to export complete forward and inverse displacement fields.
-    spatial_input : bool
-        Whether the caller supplied a volume without a time dimension.
-    same_grid : bool
-        Whether moving and fixed use the same native spatial lattice.
-    timings : dict
-        Accumulated upload, optimization and resampling times; updated in place.
-    batch_size : int
-        Number of resident moving frames per fitting batch.
-    max_iterations : int
-        Maximum number of field updates per frame.
-    learning_rate : float
-        Maximum normalized update magnitude in native pixels.
-    convergence_window_size : int
-        Number of active objective samples in the convergence window.
-    convergence_minimum_value : float
-        Minimum convergence value before a frame stops.
-    device : str
-        Torch execution device.
-    progress : bool or callable or None
-        Whether to display progress, or a frame-completion callback.
-    metric_callback : callable, optional
-        Callback receiving frame indices, update counts and objective values.
-    metric_interval : int
-        Number of updates between metric callback reports.
-    interpolation : {"linear", "nearest"}
-        Final original-intensity sampling rule; fitting remains linear.
-    update_sigma : float
-        Update-gradient Gaussian standard deviation in voxels.
-    total_sigma : float
-        Accumulated-field Gaussian standard deviation in voxels.
-    radius : int
-        Local correlation neighborhood radius in active voxel axes.
-    schedule : tuple, optional
-        Validated shrink factors, image smoothing sigmas in mm and iteration
-        budgets. None retains the native single-resolution fitting path.
-    active_frames : numpy.ndarray, optional
-        Per-frame mask for staged fitting. Inactive frames retain the complete
-        affine seed with zero residual deformation and status skipped.
-    fixed_mask, moving_mask : xarray.DataArray, optional
-        Boolean ROI masks in their own native physical grids. A spatial moving
-        mask broadcasts; per-frame moving masks follow the recording time labels.
-    metric_function : callable, optional
-        Per-frame loss and usability on the common halfway support. None uses
-        the existing local NCC; MI differentiates both halfway image pulls.
+    prepared : PreparedRegistration
+        Validated native images, physical geometry, seed and resolved settings.
 
     Returns
     -------
     RegistrationResult
-        Calibrated original intensities, validity, diagnostics and optional fields.
+        Original intensities, support, optional complete displacements and diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If the affine seed does not preserve orientation.
     """
-    from voxreg.rigid import _STATUS_LABELS, _build_output_template, _build_result
+    settings = prepared.settings
+    batch_size = settings.batch_size
+    convergence_minimum_value = settings.convergence_minimum_value
+    convergence_window_size = settings.convergence_window_size
+    device = settings.device
+    fixed_mask = settings.fixed_mask
+    interpolation = settings.interpolation
+    learning_rate = settings.learning_rate
+    metric_callback = settings.metric_callback
+    metric_interval = settings.metric_interval
+    moving_mask = settings.moving_mask
+    progress = settings.progress
+    return_transforms = settings.return_transforms
+    active_frames = prepared.active_frames
+    fit = prepared.fit
+    fixed = prepared.fixed
+    implicit_fixed = prepared.implicit_fixed
+    initial = prepared.initial
+    metric_function = prepared.metric_function
+    moving = prepared.moving
+    plane = prepared.plane
+    same_grid = prepared.same_grid
+    spatial_input = prepared.spatial_input
+    target = prepared.target
+    timings = prepared.timings
+    assert batch_size is not None
+    max_iterations = prepared.budgets[0]
+    update_sigma = float(settings.syn_update_sigma)
+    total_sigma = float(settings.syn_total_sigma)
+    radius = settings.syn_cc_radius
+    schedule = (
+        (prepared.factors, prepared.sigmas, prepared.budgets)
+        if prepared.multiresolution
+        else None
+    )
 
     grid = make_field_grid(fixed, device=device)
     fixed_plane = make_grid(fixed, fixed, device=device)
@@ -714,6 +671,7 @@ def register_syn(
 
             def report(steps, loss, first=first, last=last):
                 """Report owned CPU arrays with recording-wide frame indices."""
+                assert metric_callback is not None
                 metric_callback(
                     np.arange(first, last, dtype=np.int64),
                     steps.cpu().numpy().copy(),
@@ -723,9 +681,9 @@ def register_syn(
             start = perf_counter()
             metric_masks = None
             if fixed_mask is not None or moving_mask is not None:
-                metric_masks = _MetricMasks(
-                    _source(fixed_mask, device),
-                    _source(moving_mask, device, first, last),
+                metric_masks = MetricMasks(
+                    get_mask_source(fixed_mask, device),
+                    get_mask_source(moving_mask, device, first, last),
                     fixed,
                     plane,
                 )
@@ -841,7 +799,7 @@ def register_syn(
                 advance(last - first)
             elif callable(progress):
                 progress(last, len(raw))
-    template = _build_output_template(moving, fixed, same_grid)
+    template = build_output_template(moving, fixed, same_grid)
     values, validity = np.concatenate(outputs), np.concatenate(masks)
     transforms = inverse_transforms = None
     if return_transforms:
@@ -859,7 +817,7 @@ def register_syn(
             "objective": ("time", np.concatenate(objectives)),
             "ncc_squared": ("time", np.concatenate(nccs)),
             "n_iterations": ("time", np.concatenate(clocks)),
-            "status": ("time", _STATUS_LABELS[np.concatenate(statuses)]),
+            "status": ("time", STATUS_LABELS[np.concatenate(statuses)]),
             "valid_fraction": ("time", validity.reshape(len(raw), -1).mean(axis=1)),
             "min_jacobian": ("time", np.concatenate(jacobians)),
             "inverse_error": (
@@ -907,10 +865,10 @@ def register_syn(
             },
         )
     if schedule is not None:
-        from voxreg.pyramid import _add_level_diagnostics
+        from voxreg.pyramid import add_level_diagnostics
 
-        _add_level_diagnostics(diagnostics, level_records, *schedule)
-    return _build_result(
+        add_level_diagnostics(diagnostics, level_records, *schedule)
+    return build_result(
         template,
         values,
         validity,

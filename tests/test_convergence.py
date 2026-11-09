@@ -71,14 +71,14 @@ def test_inactive_histories_are_frozen_and_frames_are_independent(device):
 def test_stops_before_next_update_and_disabled_window_reaches_limit(
     recording_factory, monkeypatch, device
 ):
-    from voxreg import rigid
+    from voxreg import linear
 
     def flat_metric(moved, fixed, valid):
         return moved.to(torch.float64).sum(dim=(1, 2)) * 0 - 0.9, torch.ones(
             len(moved), dtype=torch.bool, device=moved.device
         )
 
-    monkeypatch.setattr(rigid, "compute_global_ncc", flat_metric)
+    monkeypatch.setattr(linear, "compute_global_ncc", flat_metric)
     data, _, _ = recording_factory()
     options: RegistrationOptions = {
         "device": device,
@@ -127,19 +127,19 @@ def test_rejects_invalid_convergence_options(recording_factory, options):
 def test_terminal_check_preserves_frozen_full_budget_results(
     recording_factory, monkeypatch, device, failed_frame
 ):
-    from voxreg import rigid
+    from voxreg import linear
 
     data, _, _ = recording_factory(oblique=True, strided=True)
     if failed_frame:
         data.values[1] = 0
-    sample = rigid.sample_rigid
+    sample = linear.sample_rigid
     calls = []
 
     def counted_sample(*args, **kwargs):
         calls.append(None)
         return sample(*args, **kwargs)
 
-    monkeypatch.setattr(rigid, "sample_rigid", counted_sample)
+    monkeypatch.setattr(linear, "sample_rigid", counted_sample)
     options: RegistrationOptions = {
         "device": device,
         "max_iterations": 400,
@@ -148,7 +148,7 @@ def test_terminal_check_preserves_frozen_full_budget_results(
     stopped = register(data, return_transforms=True, **options)
     stopped_calls = len(calls)
     calls.clear()
-    monkeypatch.setattr(rigid, "_check_all_frames_stopped", lambda status: False)
+    monkeypatch.setattr(linear, "_check_all_frames_stopped", lambda status: False)
     full_budget = register(data, return_transforms=True, **options)
     assert stopped_calls < len(calls)
     for field in ["registered", "valid", "transforms", "diagnostics"]:
@@ -159,7 +159,7 @@ def test_terminal_check_preserves_frozen_full_budget_results(
 def test_polling_is_batch_wide_bounded_and_absent_in_fixed_budget_controls(
     recording_factory, monkeypatch, device
 ):
-    from voxreg import rigid
+    from voxreg import linear
 
     evaluations, polls = [], []
 
@@ -174,8 +174,8 @@ def test_polling_is_batch_wide_bounded_and_absent_in_fixed_budget_controls(
         polls.append(len(evaluations))
         return False
 
-    monkeypatch.setattr(rigid, "compute_global_ncc", metric)
-    monkeypatch.setattr(rigid, "_check_all_frames_stopped", not_finished)
+    monkeypatch.setattr(linear, "compute_global_ncc", metric)
+    monkeypatch.setattr(linear, "_check_all_frames_stopped", not_finished)
     data, _, _ = recording_factory()
     options: RegistrationOptions = {
         "device": device,
