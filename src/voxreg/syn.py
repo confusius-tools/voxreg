@@ -32,6 +32,7 @@ from voxreg.fields import (
 from voxreg.geometry import position_to_world
 from voxreg.sampling import (
     _prepare_displaced_sampling,
+    _recover_initial_parameters,
     _sample_prepared,
     build_world_matrices,
     compute_global_ncc,
@@ -244,6 +245,8 @@ def _fit(
     radius,
     metric_callback,
     metric_interval,
+    initial_fields=None,
+    finalize=True,
 ):
     """Fit independent halfway fields and finalize their best valid state in double."""
     physical_grid = grid
@@ -264,16 +267,33 @@ def _fit(
         )
     b = len(images)
     shape = (b, len(grid.shape), *grid.shape)
-    uf = torch.zeros(
-        shape, dtype=torch.float32, device=images.device, requires_grad=True
-    )
-    um = torch.zeros_like(uf, requires_grad=True)
+    if initial_fields is None:
+        uf = torch.zeros(
+            shape, dtype=torch.float32, device=images.device, requires_grad=True
+        )
+        um = torch.zeros_like(uf, requires_grad=True)
+        seed_valid = torch.ones(b, dtype=torch.bool, device=images.device)
+    else:
+        seed_valid = torch.ones(b, dtype=torch.bool, device=images.device)
+        for field in initial_fields:
+            determinant = compute_jacobian_determinant(field.double(), physical_grid)
+            seed_valid &= (
+                torch.isfinite(field).flatten(1).all(1)
+                & torch.isfinite(determinant).flatten(1).all(1)
+                & (determinant.flatten(1).amin(1) > 0)
+            )
+        mask = (seed_valid & ~reference).reshape(b, *([1] * (len(grid.shape) + 1)))
+        uf, um = (
+            torch.where(mask, field.float(), 0).detach().requires_grad_(True)
+            for field in initial_fields
+        )
     bf, bm = uf.detach().clone(), um.detach().clone()
     best_loss = uf.new_full((b,), torch.inf)
     steps = torch.zeros(b, dtype=torch.int64, device=images.device)
     axes = tuple(range(1, images.ndim))
     constant = images.amax(dim=axes) == images.amin(dim=axes)
     status = torch.where(reference, 4, torch.where(constant, 3, 0))
+    status = torch.where(~seed_valid & ~reference, 6, status)
     fixed_parameters = parameters.new_zeros((b, len(fixed_plane.parameter_scale)))
     fixed_images = target.expand(b, *target.shape)
     moving_sampler = _prepare_displaced_sampling(images, parameters, plane)
@@ -344,6 +364,20 @@ def _fit(
             break
     if metric_callback is not None and iteration < max_iterations:
         metric_callback(steps, torch.where(good, loss.detach(), torch.nan))
+    if not finalize:
+        with torch.no_grad():
+            objective, meaningful, _ = _compute_midpoint_loss(
+                images, fixed_images, moving_sampler, fixed_sampler, bf, bm, radius
+            )
+            objective = torch.where(meaningful & ~constant, objective, torch.nan)
+        return (
+            bf.detach(),
+            bm.detach(),
+            steps,
+            torch.where(status == 0, 5, status),
+            objective,
+            steps.new_zeros(b),
+        )
     with torch.no_grad():
         # Final inversion, validation and exported displacements retain double arithmetic.
         grid = physical_grid
@@ -387,6 +421,104 @@ def _fit(
         objective = torch.where(meaningful & ~constant, objective, torch.nan)
         status = torch.where(status == 0, 5, status)
     return forward, inverse, steps, status, objective, torch.maximum(left, right)
+
+
+def _fit_pyramid(
+    images,
+    target,
+    plane,
+    grid,
+    fixed_plane,
+    parameters,
+    reference,
+    *,
+    moving,
+    fixed,
+    schedule,
+    records,
+    **options,
+):
+    """Carry both physical halfway maps between levels, then finalize natively."""
+    from voxreg.pyramid import _make_level, _resize_halfway
+    from voxreg.rigid import _STATUS_LABELS
+    from voxreg.transforms import configure_transform
+
+    factors, sigmas, budgets = schedule
+    matrices = build_world_matrices(parameters.cpu().numpy(), plane)
+    fields = None
+    previous_grid = None
+    level_steps, level_status, level_objectives = [], [], []
+    for factor, sigma, budget in zip(factors, sigmas, budgets, strict=True):
+        level_images, level_moving = _make_level(images, moving, factor, sigma)
+        level_target, level_fixed = _make_level(target[None], fixed, factor, sigma)
+        geometry = configure_transform(
+            make_grid(
+                level_fixed,
+                level_moving,
+                device=str(images.device),
+                center=plane.center,
+                plane_seed=matrices,
+            ),
+            level_fixed,
+            "affine",
+        )
+        level_grid = make_field_grid(level_fixed, device=str(images.device))
+        fixed_geometry = make_grid(level_fixed, level_fixed, device=str(images.device))
+        if fields is not None:
+            fields = tuple(
+                _resize_halfway(field, previous_grid, level_grid) for field in fields
+            )
+        seed = torch.tensor(
+            _recover_initial_parameters(matrices, geometry, len(images)),
+            device=images.device,
+        )
+        uf, um, steps, status, objective, _ = _fit(
+            level_images,
+            level_target[0],
+            geometry,
+            level_grid,
+            fixed_geometry,
+            seed,
+            reference,
+            **{**options, "max_iterations": budget},
+            initial_fields=fields,
+            finalize=False,
+        )
+        fields, previous_grid = (uf, um), level_grid
+        level_steps.append(steps.cpu().numpy())
+        level_status.append(_STATUS_LABELS[status.cpu().numpy()])
+        level_objectives.append(objective.cpu().numpy())
+    records.append(
+        {
+            "n_iterations": np.stack(level_steps, axis=1),
+            "status": np.stack(level_status, axis=1),
+            "objective": np.stack(level_objectives, axis=1),
+        }
+    )
+    assert fields is not None
+    fields = tuple(_resize_halfway(field, previous_grid, grid) for field in fields)
+    # Only finalization uses the native lattice; no additional optimizer update.
+    final_options = {**options, "max_iterations": 0, "metric_callback": None}
+    forward, inverse, _, native_status, _, error = _fit(
+        images,
+        target,
+        plane,
+        grid,
+        fixed_plane,
+        parameters,
+        reference,
+        **final_options,
+        initial_fields=fields,
+    )
+    status = torch.where(native_status == 6, native_status, status)
+    return (
+        forward,
+        inverse,
+        torch.as_tensor(np.sum(level_steps, axis=0), device=images.device),
+        status,
+        objective,
+        error,
+    )
 
 
 def _build_world_field(residual, grid, matrices, data):
@@ -494,6 +626,7 @@ def register_syn(
     update_sigma,
     total_sigma,
     radius,
+    schedule=None,
 ):
     """Register prepared native images with batched compositive midpoint fields.
 
@@ -547,6 +680,9 @@ def register_syn(
         Accumulated-field Gaussian standard deviation in voxels.
     radius : int
         Local correlation neighborhood radius in active voxel axes.
+    schedule : tuple, optional
+        Validated shrink factors, image smoothing sigmas in mm and iteration
+        budgets. None retains the native single-resolution fitting path.
 
     Returns
     -------
@@ -571,6 +707,7 @@ def register_syn(
     outputs, masks, forwards, inverses = [], [], [], []
     clocks, statuses, objectives = [], [], []
     inverse_errors, jacobians, nccs = [], [], []
+    level_records = []
     with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
         for first in range(0, len(raw), batch_size):
             last = min(first + batch_size, len(raw))
@@ -596,7 +733,18 @@ def register_syn(
                 )
 
             start = perf_counter()
-            forward, inverse, steps, status, objective, error = _fit(
+            fit_method = _fit_pyramid if schedule is not None else _fit
+            pyramid_options = (
+                {
+                    "moving": moving.isel(time=slice(first, last)),
+                    "fixed": fixed,
+                    "schedule": schedule,
+                    "records": level_records,
+                }
+                if schedule is not None
+                else {}
+            )
+            forward, inverse, steps, status, objective, error = fit_method(
                 images,
                 stationary,
                 plane,
@@ -613,6 +761,7 @@ def register_syn(
                 radius=radius,
                 metric_callback=report if metric_callback is not None else None,
                 metric_interval=metric_interval,
+                **pyramid_options,
             )
             if device == "cuda":
                 torch.cuda.synchronize()
@@ -725,6 +874,10 @@ def register_syn(
             "inverse_error_note": "sampled inverse is approximate; two-sided residual is reported, not forced to zero",
         },
     )
+    if schedule is not None:
+        from voxreg.pyramid import _add_level_diagnostics
+
+        _add_level_diagnostics(diagnostics, level_records, *schedule)
     return _build_result(
         template,
         values,

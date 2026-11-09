@@ -64,7 +64,7 @@ disabling the corresponding smoothing. Complete pulls compose one halfway map
 with the numerical inverse of the other. An orientation-preserving affine seed is fixed
 during field fitting and included in the returned displacements.
 
-SyN is single-resolution. Sampled halfway and final residual Jacobians must be
+Sampled halfway and final residual Jacobians must be
 finite and positive; inversion is approximate. These checks do not prove global
 invertibility or anatomical correctness. The guard rejects sampled collapse
 (det = 0), orientation reversal (det < 0), and nonfinite derivatives; it is a
@@ -72,6 +72,34 @@ voxreg safety policy, not a required FireANTs optimizer step. It was introduced
 with native SyN (`2a65a6d`) from the local orientation-preserving requirement
 for diffeomorphisms, not copied from a vendor acceptance rule.
 See [validation limits](VALIDATION.md).
+
+## Image pyramids
+
+All models support explicit `shrink_factors`, `smoothing_sigmas` in mm, and scalar
+or per-level `max_iterations`. The default `(1,)` / `(0.0,)` schedule retains the
+original native fitting path and diagnostics. Each nondefault level derives
+directly from normalized native fitting images, without cumulative image
+interpolation. Physical Gaussian smoothing precedes striding; orthogonal grids
+use separable kernels, sheared grids use a full physical-distance kernel and FFT
+convolution. Edges are replicated. Singleton axes remain singleton; strides are
+capped to retain at least two samples on active axes. All levels share index zero
+and preserve the original coordinate offsets, orientation and native strides.
+
+Linear fitting transfers complete world matrices and retains the native physical
+pivot while recalculating level-specific parameter scaling. SyN transfers both
+halfway fields in mm through physical interpolation, without voxel-size magnitude
+scaling. Interpolation uses zero residual outside coarse field support and fixes
+the destination boundary. Interpolated fields must pass finite/positive sampled
+Jacobian checks; invalid seeds are marked and replaced by zero residuals. Fresh
+optimizer, convergence and best-loss state starts at every level, including a
+retry for frames stopped at coarser levels. Losses are never compared across
+levels. Per-level status, objective and actual update counts remain in diagnostics.
+
+SyN inversion/composition and safety checks run once on the native fixed grid
+after the final level. Final original-intensity sampling and optional world-field
+export use the original fixed/moving grids, even with a coarse final level.
+Pyramid preparation and transfer are included in optimization timings; runtime
+and anatomical benefits require separate measurements.
 
 ## Initialization and failure handling
 
@@ -133,8 +161,8 @@ and optional dense exports are not bounded by the batch size. Two equal-grid
 float64 SyN world fields alone cost 12× float32 image storage.
 
 Convergence uses a device-resident ITK-style window calculation, defaulting to
-50 values and threshold `1e-6`. A window greater than `max_iterations` disables
-convergence checks. Stopped rows freeze while companions continue; whole-batch
+50 values and threshold `1e-6`. A window greater than a level's iteration budget
+disables convergence checks there. Stopped rows freeze while companions continue; whole-batch
 completion is polled every CPU iteration or every ten eligible CUDA iterations.
 Matching ITK's monitor does not mean matching its optimizer or final pose.
 
@@ -154,6 +182,7 @@ CUDA synchronization and do not change best-valid return semantics.
 | [fields.py](src/voxreg/fields.py) | Field interpolation, composition, smoothing, inversion and Jacobians |
 | [syn.py](src/voxreg/syn.py) | Symmetric field fitting and dense outputs |
 | [convergence.py](src/voxreg/convergence.py) | Independent window convergence |
+| [pyramid.py](src/voxreg/pyramid.py) | Physical image smoothing, pyramid lattices, field transfer and level diagnostics |
 
 No backend registry, public precision/compiler switch or transform-object
 framework is needed. [Tests](tests/) own mathematical contracts;

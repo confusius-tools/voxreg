@@ -72,7 +72,8 @@ result = voxreg.register(
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
 | `intensity_scaling` | `"db"` (default) for nonnegative power, or `"none"` for already-prepared/signed data. Affects fitting only. |
 | `batch_size` | Maximum frames fitted together; automatic by default. Full returned images still occupy CPU memory. |
-| `max_iterations` | Per-frame update limit; default `100`. Inspect diagnostics rather than assuming convergence. |
+| `max_iterations` | Per-frame update limit at each level: an integer (default `100`) or one integer per level. Inspect diagnostics rather than assuming convergence. |
+| `shrink_factors`, `smoothing_sigmas` | Explicit coarse→fine downsampling factors and Gaussian image smoothing standard deviations in mm. Defaults `(1,)` and `(0.0,)` retain native-resolution fitting. |
 | `syn_cc_radius` | SyN local NCC radius in voxels; default `2` gives a rectangular window of width `5`. |
 | `syn_update_sigma`, `syn_total_sigma` | SyN Gaussian smoothing standard deviations in voxels, before update composition and on the accumulated field respectively; defaults `1.5` and `0.5`. Zero disables the corresponding smoothing. |
 | `device`, `progress` | `"cpu"` or `"cuda"`; progress defaults to `"auto"`, or use `False` to silence it. |
@@ -96,10 +97,47 @@ fixed grid and inverse displacements on the moving grid. Both attributes are
 Pass original linear intensities when using `center_moments`; logarithms and other
 nonlinear preprocessing change its centroid weights. Noncoplanar slice pairs
 need compatible initialization. SyN does not support mixed slice/volume inputs;
-Dask-backed inputs and multiresolution fitting are not supported.
+Dask-backed inputs are not supported.
 
 For all options, including optimizer controls and callbacks, use
 `help(voxreg.register)` or read the [API docstring](src/voxreg/rigid.py).
+
+## Multi-resolution fitting
+
+All models accept explicit coarse-to-fine schedules:
+
+```python
+result = voxreg.register(
+    moving, fixed,
+    transform="syn",
+    shrink_factors=(4, 2, 1),
+    smoothing_sigmas=(2.0, 1.0, 0.0),  # Gaussian standard deviations in mm
+    max_iterations=(100, 50, 25),
+)
+```
+
+Choose smoothing for your physical voxel spacing and image content; this example
+is not a recommended preset. A scalar `max_iterations` applies at every level.
+Both schedules must have the same length. Shrink factors are positive integers
+in nonincreasing order; sigmas are finite and nonnegative.
+
+Each level smooths the prepared native fitting images before striding their
+original grids. Singleton axes remain singleton, and active axes retain at least
+two samples. Trailing samples can be omitted by striding. Linear world matrices
+and both SyN halfway fields carry between levels, with fresh optimizer and
+convergence state. Original intensities are sampled once for the final output
+on the original fixed grid, even if the final shrink factor exceeds one.
+
+`diagnostics.level_n_iterations`, `level_status` and `level_objective` describe
+each level; `shrink_factor`, `smoothing_sigma` (mm) and `iteration_budget` describe
+the schedule. The usual `n_iterations` sums actual updates across levels;
+`objective` describes the final level, and `status` includes final safety checks.
+Failed or converged frames are retried at the next level. Metric callback clocks
+restart at each level, with reports ordered coarse to fine within each batch;
+losses from different levels must not be compared.
+
+Image smoothing in mm is separate from `syn_update_sigma` and `syn_total_sigma`,
+which remain field smoothing standard deviations in **current-level voxels**.
 
 ## Apply transforms offline
 

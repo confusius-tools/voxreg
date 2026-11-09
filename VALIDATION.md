@@ -12,6 +12,9 @@ large origins, interpolation against SciPy/native-library oracles, dtype
 preservation, failure isolation, convergence, transform export and offline
 resampling. SyN checks include nonlinear truth recovery, field composition,
 inverse residuals, Jacobians and float32 fitting with float64 finalization.
+Pyramid checks include anisotropic/sheared/reversed physical smoothing against
+independent convolution, field interpolation in mm, linear/nonlinear truth
+recovery, per-level counts/statuses, batching and native-grid output resampling.
 CUDA tests skip when unavailable; CPU success does not qualify CUDA.
 
 Benchmark workers verify staged-input hashes, output contracts and full-grid
@@ -39,6 +42,10 @@ Passing unit tests or improving NCC does not establish correct correspondence.
 - Float32 fitting loses precision that double export cannot recover.
 - Initialization, overlap and budgets affect capture. ANTsPy convergence remains
   enabled; its API does not expose observed iteration counts.
+- Pyramid schedules are explicit, without a qualified automatic preset. Coarse
+  striding can omit trailing samples; small axes retain at least two samples.
+  Coarse field boundaries are fixed, and residuals outside their support are zero.
+  Passing synthetic pyramid checks does not establish wider capture on real data.
 - Batching does not bound full CPU inputs/outputs or optional dense exports.
 - Synthetic results do not establish anatomical accuracy. CUDA, other platforms,
   large volumes and full recordings require their own measurements.

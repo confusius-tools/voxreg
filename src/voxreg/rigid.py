@@ -1,7 +1,7 @@
 """VoxelData registration and shared input/output contracts."""
 
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Literal, TypedDict
@@ -72,7 +72,10 @@ class RegistrationResult:
         a final world_component axis labeled z/y/x. Recordings retain time.
     diagnostics : xarray.Dataset
         Objective, update count and status, plus linear motion parameters or
-        SyN regularity/inverse-consistency diagnostics.
+        SyN regularity/inverse-consistency diagnostics. Pyramid fitting adds
+        level_objective, level_status and level_n_iterations; n_iterations sums
+        the actual updates across levels, while status describes the final level
+        including native-grid SyN finalization checks.
     inverse_transforms : xarray.DataArray, optional
         None unless register(return_transforms=True). Linear models: inverse
         world z/y/x pull matrices. SyN: complete moving-world-to-fixed-world
@@ -328,6 +331,97 @@ def _optimize(
     return best * plane.parameter_scale, steps, status
 
 
+def _optimize_pyramid(
+    images,
+    fixed,
+    plane,
+    reference,
+    max_iterations,
+    learning_rate,
+    *,
+    moving,
+    fixed_data,
+    schedule,
+    records,
+    convergence_window_size=50,
+    convergence_minimum_value=1e-6,
+    initial_parameters=None,
+    metric_callback=None,
+    metric_interval=10,
+):
+    """Refine complete world matrices with fresh per-level optimizer state."""
+    from voxreg.pyramid import _make_level
+
+    factors, sigmas, budgets = schedule
+    physical = (
+        plane.parameter_scale.new_zeros((len(images), len(plane.parameter_scale)))
+        if initial_parameters is None
+        else initial_parameters
+    )
+    matrices = build_world_matrices(physical.cpu().numpy(), plane)
+    level_steps, level_status, level_objectives = [], [], []
+    for factor, sigma, budget in zip(factors, sigmas, budgets, strict=True):
+        level_images, level_moving = _make_level(images, moving, factor, sigma)
+        level_fixed, level_data = _make_level(fixed[None], fixed_data, factor, sigma)
+        geometry = configure_transform(
+            make_grid(
+                level_data,
+                level_moving,
+                device=str(images.device),
+                center=plane.center,
+                plane_seed=matrices,
+            ),
+            level_data,
+            plane.transform,
+        )
+        seed = torch.tensor(
+            _recover_initial_parameters(matrices, geometry, len(images)),
+            device=images.device,
+        )
+        physical, steps, status = _optimize(
+            level_images,
+            level_fixed[0],
+            geometry,
+            reference,
+            budget,
+            learning_rate,
+            convergence_window_size=convergence_window_size,
+            convergence_minimum_value=convergence_minimum_value,
+            initial_parameters=seed,
+            metric_callback=metric_callback,
+            metric_interval=metric_interval,
+        )
+        with torch.no_grad():
+            fitted, valid = sample_rigid(level_images, physical, geometry)
+            loss, meaningful = compute_global_ncc(fitted, level_fixed[0], valid)
+            nonconstant = level_images.flatten(1).amax(1) > level_images.flatten(
+                1
+            ).amin(1)
+            level_objectives.append(
+                torch.where(meaningful & nonconstant, loss, torch.nan).cpu().numpy()
+            )
+        level_steps.append(steps.cpu().numpy())
+        level_status.append(_STATUS_LABELS[status.cpu().numpy()])
+        matrices = build_world_matrices(physical.cpu().numpy(), geometry)
+    records.append(
+        {
+            "n_iterations": np.stack(level_steps, axis=1),
+            "status": np.stack(level_status, axis=1),
+            "objective": np.stack(level_objectives, axis=1),
+        }
+    )
+    physical = torch.tensor(
+        _recover_initial_parameters(matrices, plane, len(images)), device=images.device
+    )
+    # Preserve an implicit reference exactly despite matrix reparameterization roundoff.
+    physical = torch.where(reference[:, None], 0, physical)
+    return (
+        physical,
+        torch.as_tensor(np.sum(level_steps, axis=0), device=images.device),
+        status,
+    )
+
+
 def _choose_batch_size(moving, fixed, transform, device):
     """Choose a frame batch from a conservative working-set estimate."""
     frames = moving.sizes["time"]
@@ -360,7 +454,9 @@ def register(
     interpolation: Literal["linear", "nearest"] = "linear",
     return_transforms: bool = False,
     batch_size: int | None = None,
-    max_iterations: int = 100,
+    max_iterations: int | Sequence[int] = 100,
+    shrink_factors: Sequence[int] = (1,),
+    smoothing_sigmas: Sequence[float] = (0.0,),
     learning_rate: float = 0.1,
     syn_cc_radius: int = 2,
     syn_update_sigma: float = 1.5,
@@ -395,8 +491,8 @@ def register(
         Euler belongs to the rigid family; the rigid model uses rotation vectors,
         not ITK's Euler optimizer parameterization. Affine refines the full linear
         map, including scale and shear, rather than freezing an affine prefix.
-        SyN uses two smoothed compositive midpoint-to-image fields on one native
-        resolution, with configurable local NCC and Gaussian field smoothing.
+        SyN uses two smoothed compositive midpoint-to-image fields, with
+        configurable local NCC and Gaussian field smoothing.
         It supports two k=1 planes or two volumes, not mixed-dimensional
         deformation. Its complete forward/inverse outputs are dense displacements,
         not matrices. Working fields use float32; physical geometry, final
@@ -461,9 +557,22 @@ def register(
         guarantee against OOM under concurrent allocations; one frame must fit.
         An explicit positive integer overrides this policy. Returned images/masks
         and opt-in transforms still require full-recording CPU storage.
-    max_iterations : int, default: 100
-        Maximum optimizer updates per frame (Adam for linear models, smoothed
-        compositive gradient descent for SyN).
+    max_iterations : int or sequence of int, default: 100
+        Maximum optimizer updates per frame at each pyramid level (Adam for
+        linear models, smoothed compositive gradient descent for SyN). An integer
+        repeats at every level; a sequence must match shrink_factors in length.
+    shrink_factors : sequence of int, default: (1,)
+        Positive integer downsampling factors, ordered coarse to fine
+        (nonincreasing). Each axis retains at least two samples, except singleton
+        slice axes, which remain singleton. Levels stride the original grids
+        starting at index zero; trailing samples may be omitted. The final factor
+        need not be one: output always uses the original fixed grid.
+    smoothing_sigmas : sequence of float, default: (0.0,)
+        Finite, nonnegative Gaussian image smoothing standard deviations in mm,
+        one per shrink factor. Each level is smoothed directly from the native
+        prepared fitting images before downsampling, with replicated edges.
+        Zero disables image smoothing. Schedules must be supplied explicitly;
+        no multi-resolution preset or automatic antialiasing is selected.
     learning_rate : float, default: 0.1
         Step size in physically scaled parameters. Affine coefficients use
         minimum spacing divided by the fixed-domain RMS input-axis lever arm.
@@ -477,15 +586,16 @@ def register(
         Finite, nonnegative Gaussian standard deviation in voxel units for
         smoothing each SyN gradient before update normalization and composition.
         Zero disables this smoothing. Applies only to SyN; other models require
-        the default value. This is a standard deviation, not an ANTs variance.
+        the default value. Units are current-level voxels, not mm. This is a
+        standard deviation, not an ANTs variance.
     syn_total_sigma : float, default: 0.5
         Finite, nonnegative Gaussian standard deviation in voxel units for
         smoothing each accumulated SyN halfway field after composition.
         Zero disables this smoothing. Applies only to SyN; other models require
-        the default value. Image-pyramid smoothing is a separate operation.
+        the default value. Units are current-level voxels, not mm.
     convergence_window_size : int, default: 50
         ITK-style metric-history window, at least two values. A window larger
-        than max_iterations disables convergence checks for a fixed-budget run.
+        than a level's iteration budget disables convergence checks at that level.
     convergence_minimum_value : float, default: 1e-6
         Stop when ITK's normalized B-spline improvement trend is at or below this
         nonnegative threshold. This is not a raw NCC difference or parameter step.
@@ -505,6 +615,8 @@ def register(
         Live optimizer reporting, independent of frame progress. Receives owned
         NumPy arrays ``(frame_indices, n_iterations, objective)`` for each chunk;
         indices follow moving frame order, clocks count each frame's updates.
+        For pyramid fitting, reports arrive coarse to fine within each batch;
+        clocks reset at each level. Losses from different levels are not comparable.
         Reports the initial trial, every metric_interval optimizer rounds, and
         the final trial. Stopped rows may repeat. Objective is raw negative NCC²
         (negative mean squared local NCC between halfway images for SyN),
@@ -564,6 +676,15 @@ def register(
     describe the same fixed-grid domain, not confidence or anatomical correctness.
     Swapping inputs changes the fitting problem and need not return inverse poses.
     Exported transforms retain the fixed-world-to-moving-world pull convention.
+    Pyramid levels derive directly from the prepared native fitting images.
+    Linear world matrices and both SyN halfway fields carry between levels;
+    physical pivots remain fixed. Each level starts fresh optimizer and
+    convergence state, with a new best-loss baseline. Failed/coarsely converged
+    frames are retried at the next level. SyN field interpolation uses physical
+    components without voxel-size scaling, zeros outside coarse field support
+    and fixed native boundaries. Invalid interpolated fields are rejected with
+    invalid_transform and zero residual fields before any finer-level retry.
+    Native images are resampled only for final output, regardless of final shrink.
     SyN operates on two independent halfway fields and composes them through
     numerically estimated inverses. It returns the best usable halfway-metric
     state, not necessarily its last trial; endpoint ncc_squared is a separate
@@ -601,6 +722,13 @@ def register(
     output values use each original moving frame's minimum.
     """
     start = perf_counter()
+    from voxreg.pyramid import _validate_schedule
+
+    factors, sigmas, budgets = _validate_schedule(
+        shrink_factors, smoothing_sigmas, max_iterations
+    )
+    multiresolution = factors != (1,) or sigmas != (0.0,)
+    max_iterations = budgets[0]
     _validate_registration_geometry(moving)
     if not isinstance(transform, str) or transform not in (
         "translation",
@@ -874,9 +1002,11 @@ def register(
             update_sigma=float(syn_update_sigma),
             total_sigma=float(syn_total_sigma),
             radius=syn_cc_radius,
+            schedule=(factors, sigmas, budgets) if multiresolution else None,
         )
     outputs, masks, parameters = [], [], []
     clocks, statuses, objectives, overlaps = [], [], [], []
+    level_records = []
     with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
         for first in range(0, len(raw), batch_size):
             last = min(first + batch_size, len(raw))
@@ -912,7 +1042,18 @@ def register(
                     "metric_callback": report_metrics,
                     "metric_interval": metric_interval,
                 }
-            physical, steps, status = _optimize(
+            optimize = _optimize_pyramid if multiresolution else _optimize
+            pyramid_options = (
+                {
+                    "moving": moving.isel(time=slice(first, last)),
+                    "fixed_data": fixed,
+                    "schedule": (factors, sigmas, budgets),
+                    "records": level_records,
+                }
+                if multiresolution
+                else {}
+            )
+            physical, steps, status = optimize(
                 images,
                 target_tensor,
                 plane,
@@ -923,6 +1064,7 @@ def register(
                 convergence_minimum_value=convergence_minimum_value,
                 initial_parameters=initial_tensor,
                 **metric_options,
+                **pyramid_options,
             )
             if device == "cuda":
                 torch.cuda.synchronize()
@@ -1050,6 +1192,10 @@ def register(
         },
     )
     diagnostics.attrs["batch_size"] = batch_size
+    if multiresolution:
+        from voxreg.pyramid import _add_level_diagnostics
+
+        _add_level_diagnostics(diagnostics, level_records, factors, sigmas, budgets)
     if isinstance(plane, SpatialGrid) and plane.slice_basis is not None:
         diagnostics.attrs.update(
             metric_domain="fixed_slice" if fixed.sizes["k"] == 1 else "fixed_volume",

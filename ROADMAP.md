@@ -19,15 +19,21 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 4. **Broaden real-data qualification.** Revisit pair, motion and atlas workflows
    with original images, native geometry and explicit quality limitations.
 
+## Implemented, opt-in
+
+- **Multi-resolution:** explicit coarse-to-fine shrink factors, Gaussian image
+  smoothing sigmas in mm and per-level iteration budgets for every model.
+  Physical transforms/halfway fields carry between levels with fresh optimizer
+  and convergence state; original images are resampled once. See the
+  [API and diagnostic conventions](README.md#multi-resolution-fitting).
+  Qualifying useful schedules, capture range and whole-call performance on real
+  workflows remains future work; no multi-resolution default preset is enabled.
+
 ## Candidates, not enabled defaults
 
 - **Fixed and moving masks:** respect each mask's native geometry, warp moving
   masks into the metric domain, and define mask-aware local statistics/pyramids.
   Keep user ROIs distinct from geometric support and the output validity mask.
-- **Multi-resolution:** shrink factors, per-level iteration budgets and image
-  smoothing sigmas **in mm**, respecting anisotropy and singleton axes. Carry
-  physical transforms/fields between levels and resample original images once.
-  Define per-level optimizer/convergence state; do not compare losses across levels.
 - **Mutual information:** a differentiable, mask-aware estimator with explicit
   bins/ranges/kernels and bounded memory. Add a small per-frame metric interface;
   revisit NCC-specific conditioning, diagnostics and stopping calibration.
