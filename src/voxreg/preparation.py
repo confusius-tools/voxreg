@@ -43,6 +43,8 @@ class RegistrationSettings:
     ) = None
     moving_intensity_scaling: IntensityScaling = None
     fixed_intensity_scaling: IntensityScaling = None
+    moving_winsorize_percentiles: Sequence[float] | None = None
+    fixed_winsorize_percentiles: Sequence[float] | None = None
     metric: Literal["ncc", "local_ncc", "mi"] | None = None
     mi_bins: int = 32
     mi_sigma: float = 0.5
@@ -166,6 +168,86 @@ def validate_intensity_scaling(value: IntensityScaling, name: str) -> None:
     )
 
 
+def validate_winsorize_percentiles(value: Sequence[float] | None, name: str) -> None:
+    """Validate optional lower and upper fitting percentiles.
+
+    Parameters
+    ----------
+    value : sequence of float, optional
+        Two finite percentile bounds in increasing order within [0, 100].
+    name : str
+        Public argument name used in errors.
+
+    Returns
+    -------
+    None
+        Valid bounds need no conversion.
+
+    Raises
+    ------
+    ValueError
+        If bounds are not two finite real non-boolean values in range and order.
+    """
+    if value is None:
+        return
+    if (
+        isinstance(value, Sequence)
+        and not isinstance(value, (str, bytes))
+        and len(value) == 2
+        and all(
+            isinstance(bound, (int, float, np.integer, np.floating))
+            and not isinstance(bound, (bool, np.bool_))
+            and 0 <= bound <= 100
+            for bound in value
+        )
+        and value[0] < value[1]
+    ):
+        return
+    raise ValueError(
+        f"{name} must be None or two finite percentiles with 0 <= lower < upper <= 100."
+    )
+
+
+def _winsorize_intensities(
+    values: npt.NDArray,
+    percentiles: Sequence[float] | None,
+    axes: tuple[int, ...],
+    name: str,
+) -> npt.NDArray:
+    """Clip native signed intensities using per-image linear percentiles.
+
+    Parameters
+    ----------
+    values : numpy.ndarray
+        Finite intensities in preprocessing precision.
+    percentiles : sequence of float, optional
+        Validated lower and upper bounds; not provided leaves values unchanged.
+    axes : tuple of int
+        Complete spatial axes, excluding time.
+    name : str
+        Image side used in errors.
+
+    Returns
+    -------
+    numpy.ndarray
+        Clipped values, or unchanged input when clipping is disabled.
+
+    Raises
+    ------
+    ValueError
+        If percentile interpolation produces nonfinite bounds.
+    """
+    if percentiles is None:
+        return values
+    with np.errstate(over="ignore", invalid="ignore"):
+        lower, upper = np.percentile(
+            values, percentiles, axis=axes, keepdims=True, method="linear"
+        )
+    if not np.isfinite(lower).all() or not np.isfinite(upper).all():
+        raise ValueError(f"{name} winsorization percentile bounds overflowed float64.")
+    return np.clip(values, lower, upper)
+
+
 def _scale_intensities(
     values: npt.NDArray, scaling: IntensityScaling, name: str
 ) -> npt.NDArray:
@@ -211,6 +293,8 @@ def prepare_fitting_images(
     metric: str | None = None,
     *,
     implicit_fixed: bool = False,
+    moving_winsorize_percentiles: Sequence[float] | None = None,
+    fixed_winsorize_percentiles: Sequence[float] | None = None,
 ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     """Prepare float32 fitting images while preserving double/integer contrast.
 
@@ -229,6 +313,10 @@ def prepare_fitting_images(
         Selected metric; MI uses native per-image ranges instead of NCC conditioning.
     implicit_fixed : bool, default: False
         Whether to reuse the first transformed moving frame as the fitting target.
+    moving_winsorize_percentiles, fixed_winsorize_percentiles : sequence of float, optional
+        Lower/upper percentiles in [0, 100], independently per native image before
+        intensity transforms. Bounds include values outside masks; interpolation
+        is NumPy's linear method. Clipping is disabled when not provided.
 
     Returns
     -------
@@ -245,11 +333,19 @@ def prepare_fitting_images(
     """
     validate_intensity_scaling(moving_intensity_scaling, "moving_intensity_scaling")
     validate_intensity_scaling(fixed_intensity_scaling, "fixed_intensity_scaling")
+    validate_winsorize_percentiles(
+        moving_winsorize_percentiles, "moving_winsorize_percentiles"
+    )
+    validate_winsorize_percentiles(
+        fixed_winsorize_percentiles, "fixed_winsorize_percentiles"
+    )
     spatial_axes = tuple(range(1, raw.ndim))
     preprocessing_dtype = (
         np.float64
         if moving_intensity_scaling is not None
         or fixed_intensity_scaling is not None
+        or moving_winsorize_percentiles is not None
+        or fixed_winsorize_percentiles is not None
         or any(
             np.issubdtype(data.dtype, np.integer) or data.dtype.itemsize > 4
             for data in (raw, target_raw)
@@ -260,11 +356,23 @@ def prepare_fitting_images(
     target_raw = target_raw.astype(preprocessing_dtype, copy=False)
     if not np.any(fit_raw):
         raise ValueError("An all-zero recording cannot be registered.")
+    fit_raw = _winsorize_intensities(
+        fit_raw, moving_winsorize_percentiles, spatial_axes, "moving"
+    )
     fit_raw = _scale_intensities(fit_raw, moving_intensity_scaling, "moving")
     target_raw = (
         fit_raw[0].copy()
         if implicit_fixed
-        else _scale_intensities(target_raw, fixed_intensity_scaling, "fixed")
+        else _scale_intensities(
+            _winsorize_intensities(
+                target_raw,
+                fixed_winsorize_percentiles,
+                tuple(range(target_raw.ndim)),
+                "fixed",
+            ),
+            fixed_intensity_scaling,
+            "fixed",
+        )
     )
     if not np.any(fit_raw) and not np.any(target_raw):
         raise ValueError("Intensity scaling produced all-zero fitting images.")

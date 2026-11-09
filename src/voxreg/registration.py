@@ -30,6 +30,7 @@ from voxreg.preparation import (
     prepare_fitting_images,
     resolve_device,
     validate_intensity_scaling,
+    validate_winsorize_percentiles,
 )
 from voxreg.results import LinearFit, RegistrationResult
 from voxreg.sampling import (
@@ -60,6 +61,8 @@ def register(
     | None = None,
     moving_intensity_scaling: IntensityScaling = None,
     fixed_intensity_scaling: IntensityScaling = None,
+    moving_winsorize_percentiles: Sequence[float] | None = None,
+    fixed_winsorize_percentiles: Sequence[float] | None = None,
     metric: Literal["ncc", "local_ncc", "mi"] | None = None,
     mi_bins: int = 32,
     mi_sigma: float = 0.5,
@@ -178,6 +181,21 @@ def register(
         Without explicit fixed, the first-frame reference uses moving scaling;
         specifying this argument then is invalid.
         The implicit reference output remains exactly the original first frame.
+    moving_winsorize_percentiles : sequence of float, optional
+        Lower/upper percentiles on the 0-100 scale, with lower < upper; not
+        provided disables clipping. For example (1, 99) clips each moving frame
+        independently to its native signed-intensity percentiles, using NumPy's
+        linear interpolation. Clip before magnitude/intensity transforms, metric
+        conditioning and pyramids. Bounds include the full image outside ROIs.
+        Native moment initialization and original-intensity resampling are unchanged.
+        Constant clipped moving frames retain the usual invalid-metric handling.
+    fixed_winsorize_percentiles : sequence of float, optional
+        Independent clipping of an explicit fixed image; not provided disables
+        clipping, without inheriting moving bounds. An implicit first-frame
+        reference uses moving clipping; specifying fixed bounds then is invalid.
+        A constant clipped fixed image raises ValueError. Percentile interpolation
+        overflow raises ValueError rather than producing nonfinite fitting values.
+        Both controls are shared across stages and do not modify input data.
     metric : {"ncc", "local_ncc", "mi"}, optional
         Fitting objective. None preserves global squared NCC for linear models
         and rectangular local squared NCC for SyN. Explicit ncc selects global
@@ -409,6 +427,8 @@ def register(
         initialization=initialization,
         moving_intensity_scaling=moving_intensity_scaling,
         fixed_intensity_scaling=fixed_intensity_scaling,
+        moving_winsorize_percentiles=moving_winsorize_percentiles,
+        fixed_winsorize_percentiles=fixed_winsorize_percentiles,
         metric=metric,
         mi_bins=mi_bins,
         mi_sigma=mi_sigma,
@@ -499,6 +519,8 @@ def run_stage(
     initialization = settings.initialization
     moving_intensity_scaling = settings.moving_intensity_scaling
     fixed_intensity_scaling = settings.fixed_intensity_scaling
+    moving_winsorize_percentiles = settings.moving_winsorize_percentiles
+    fixed_winsorize_percentiles = settings.fixed_winsorize_percentiles
     metric = settings.metric
     mi_bins = settings.mi_bins
     mi_sigma = settings.mi_sigma
@@ -632,6 +654,16 @@ def run_stage(
     validate_intensity_scaling(fixed_intensity_scaling, "fixed_intensity_scaling")
     if implicit_fixed and fixed_intensity_scaling is not None:
         raise ValueError("fixed_intensity_scaling requires an explicit fixed image.")
+    validate_winsorize_percentiles(
+        moving_winsorize_percentiles, "moving_winsorize_percentiles"
+    )
+    validate_winsorize_percentiles(
+        fixed_winsorize_percentiles, "fixed_winsorize_percentiles"
+    )
+    if implicit_fixed and fixed_winsorize_percentiles is not None:
+        raise ValueError(
+            "fixed_winsorize_percentiles requires an explicit fixed image."
+        )
     if resample_interpolation not in ("linear", "nearest", "bspline"):
         raise ValueError("resample_interpolation must be linear, nearest or bspline.")
     if (
@@ -771,6 +803,8 @@ def run_stage(
         fixed_intensity_scaling,
         metric,
         implicit_fixed=implicit_fixed,
+        moving_winsorize_percentiles=moving_winsorize_percentiles,
+        fixed_winsorize_percentiles=fixed_winsorize_percentiles,
     )
     timings = {
         "prepare": perf_counter() - start,

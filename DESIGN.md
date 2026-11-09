@@ -255,7 +255,11 @@ roundoff-aware variance guards. SyN rejects lattices that become nonfinite or
 singular in float32 working arithmetic rather than silently corrupting fields.
 Independent moving/fixed intensity transforms affect fitting only; original
 inputs are never modified. Preparation evaluates magnitude log1p/power in float64
-before per-image metric conditioning and pyramids. No intensity reductions span
+before per-image metric conditioning and pyramids. Optional moving/fixed
+winsorization uses native signed per-image NumPy linear percentiles before these
+transforms; bounds include the full image outside masks and never affect native
+moment weights or final resampling. Clipping is disabled by default and shared
+across stages. No intensity reductions span
 time or couple moving/fixed images; an implicit target copies the first transformed
 moving frame. Explicit fixed scaling defaults independently to no transform.
 Initialization precedes conditioning and stages always start from originals.

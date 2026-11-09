@@ -25,15 +25,6 @@ time, then stop for user review and a separate commit.
 
 ## Planned capabilities and investigations
 
-### Optional fitting winsorization
-
-Add independent moving/fixed percentile-clipping arguments to `register`, disabled
-by default and shared across stages. Define percentile units/order, per-image
-bounds, masks, zero/constant inputs and ordering before intensity transforms;
-keep native moment initialization and final resampling unchanged. Validate against
-NumPy percentile/clip, including lazy chunk invariance; expose no ANTs/FireANTs
-compatibility aliases.
-
 ### Lazy recordings and resampling with Dask
 
 Support `register(recording)` and `resample(recording, ..., transforms)` with lazy
@@ -83,6 +74,11 @@ Time chunking alone does not provide complex-data support.
 
 Details live in the linked docs rather than being duplicated here:
 
+- **Optional fitting winsorization:** independent moving/fixed 0–100 percentile
+  pairs, disabled by default. Per-image signed clipping precedes intensity
+  transforms and is shared across stages; native moments/output stay unchanged.
+  See [semantics](README.md#fitting-winsorization). Dask execution remains pending.
+
 - **Figure 2 DVARS investigation:** valid-support QC resolves the reported spikes;
   no registration change needed. Evidence and remaining interpretation limits are
   in [validation](VALIDATION.md#first-real-data-motion-quality-case).
@@ -125,8 +121,7 @@ Details live in the linked docs rather than being duplicated here:
   levels with fresh optimizer/convergence state and one final resampling. No
   default preset. See [pyramids](README.md#multi-resolution-fitting).
 
-**Still unqualified/deferred:** auto-device/cubic performance, a clean full CUDA
-test gate ([existing failures](VALIDATION.md#intensity-scaling)), label-aware
+**Still unqualified/deferred:** auto-device/cubic performance, label-aware
 resampling (use nearest for categorical labels), and real-data qualification/
 configurations listed above. CPU success alone does not qualify CUDA; eager
 batching does not provide out-of-core execution.

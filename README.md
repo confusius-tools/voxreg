@@ -77,6 +77,7 @@ result = voxreg.register(
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
 | `fixed_mask`, `moving_mask` | Optional boolean ROI VoxelData in their own physical grids. Fixed mask is spatial-only; moving mask can be shared or per-frame with matching time labels. Masks restrict fitting at every stage and level. |
 | `moving_intensity_scaling`, `fixed_intensity_scaling` | Independent fitting-only transforms: `None` (default), `"log1p"`, `"sqrt"` or a positive finite power exponent. Fixed scaling applies only to an explicit fixed image. |
+| `moving_winsorize_percentiles`, `fixed_winsorize_percentiles` | Optional lower/upper percentile pairs on the 0–100 scale, e.g. `(1, 99)`. Disabled by default; clip each image independently before intensity transforms. |
 | `metric` | Default `None` retains global squared NCC for linear models and local squared NCC for SyN. Explicit `"ncc"` selects global NCC, `"local_ncc"` selects SyN local NCC, and `"mi"` selects mutual information. |
 | `mi_bins`, `mi_sigma` | MI histogram bins (default `32`, range `2`–`256`) and Gaussian standard deviation in bin widths (default `0.5`, range `0.1`–`10`). |
 | `resample_interpolation` | Final resampling of original intensities: `"linear"` (default), `"nearest"` or cubic `"bspline"`. Fitting always uses linear interpolation. |
@@ -111,6 +112,34 @@ Dask-backed inputs are not supported.
 
 For all options, including optimizer controls and callbacks, use
 `help(voxreg.register)` or read the [API docstring](src/voxreg/registration.py).
+
+## Fitting winsorization
+
+Optionally clip fitting outliers without modifying input images or output
+intensities:
+
+```python
+result = voxreg.register(
+    moving, fixed,
+    moving_winsorize_percentiles=(1, 99),
+    fixed_winsorize_percentiles=(1, 99),
+)
+```
+
+Both controls default independently to `None` (disabled). Supply two finite,
+non-boolean bounds with `0 <= lower < upper <= 100`. Bounds are computed with
+`numpy.percentile(method="linear")` over each complete native image/frame,
+including zeros and values outside masks. Clip signed intensities **before**
+log1p/square root/power transforms, metric ranges and pyramid smoothing. Clipping
+is not a magnitude operation and does not normalize across time chunks.
+
+The implicit first-frame reference uses moving clipping; non-`None` fixed bounds
+require an explicit fixed image. Settings apply to all stages, each starting
+from originals. Native moment weights, output dtype/intensities and geometric
+support remain unchanged. Constant clipped moving frames use the usual
+invalid-metric status; constant clipped fixed images raise an error. Nonfinite
+percentile interpolation bounds raise a descriptive error. No percentile preset
+is enabled or anatomically qualified; clipping may suppress genuine structures.
 
 ## Fitting intensity scaling
 

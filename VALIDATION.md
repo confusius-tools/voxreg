@@ -134,6 +134,24 @@ requests log1p; this is not numerically equivalent to its historical dB settings
 settings, paper outputs and artifacts were not migrated or rerun. New comparisons
 must disclose the default/convention changes rather than relabel old results.
 
+## Fitting winsorization
+
+Optional moving/fixed percentile pairs are independently validated before any
+stage runs. Each native signed image/frame is clipped using NumPy linear
+percentiles before intensity transforms, metric conditioning and pyramids, with
+no ROI-restricted or recording-wide bounds. Native moments and final output
+resampling remain untouched; disabled clipping skips percentile calculation.
+
+The 163 focused CPU/CUDA checks compare public fits to independently NumPy-clipped
+inputs for all models and staged pyramids, NCC/MI, full-image bounds outside masks,
+and moving-only/fixed-only/both settings. Native output pulls, input immutability,
+implicit references, float32/float64/integer frames, batch independence, signed
+outliers, endpoint percentiles, invalid bounds, percentile overflow and constant
+image handling are covered. Frozen-optimizer cases verify native centroid weights
+through stages. The full CUDA-enabled suite passes: 1532 passed; all pre-commit
+checks pass. No real-data clipping preset, performance or lazy-execution
+qualification is claimed; Dask support remains separate roadmap work.
+
 ## Acceptance
 
 [BENCHMARK.md](BENCHMARK.md) defines the measurement boundaries:
