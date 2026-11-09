@@ -831,6 +831,7 @@ def run_syn(prepared: PreparedRegistration) -> RegistrationResult:
         attrs={
             "transform": "syn",
             "batch_size": batch_size,
+            "device": device,
             "metric": (
                 "negative squared local NCC"
                 if metric_function is None

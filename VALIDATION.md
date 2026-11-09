@@ -54,6 +54,15 @@ Float64 oracle discrepancies in the initial unequal-grid checks were below
 performance qualification is claimed. The existing paper-case support policy
 and artifacts are unchanged.
 
+Automatic device tests compare public default/auto calls with explicit devices
+for linear and SyN models, complete staged pyramids and all final resampling
+interpolators with matrix and dense-field pulls. They check resolved-device
+metadata, once-per-pipeline selection, explicit CPU without CUDA probing,
+unavailable CUDA rejection, and propagation of simulated CUDA runtime/OOM errors
+without CPU retry. CPU selection is exercised locally; actual CUDA comparisons
+skip when unavailable. Selecting auto does not establish new CUDA accuracy or
+performance qualification.
+
 Batch comparisons of float32 fits allow a maximum physical pull difference of
 0.001 minimum-spacing voxels over the full grid. Linear matrices are evaluated
 at world points; their raw translation entries depend on the world origin.

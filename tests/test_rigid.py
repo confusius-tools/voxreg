@@ -158,7 +158,7 @@ def test_explicit_fixed_and_low_overlap(recording_factory):
         {"learning_rate": [0.1, 0.2]},
         {"device": "invalid"},
         {"intensity_scaling": "invalid"},
-        {"interpolation": "cubic"},
+        {"resample_interpolation": "cubic"},
     ],
 )
 def test_invalid_options(recording_factory, option):

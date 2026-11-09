@@ -697,6 +697,7 @@ def run_linear(
             ),
         },
     )
+    diagnostics.attrs["device"] = device
     diagnostics.attrs["batch_size"] = batch_size
     diagnostics.attrs["metric"] = (
         "negative mutual information"

@@ -294,6 +294,18 @@ original frame's minimum; `valid` identifies supported samples. Transform export
 is opt-in: linear matrices or complete forward/inverse SyN displacement fields
 on the fixed/moving grids, respectively.
 
+Public registration and resampling default to `device="auto"`. A shared
+preparation helper resolves that choice once per public call using CUDA
+availability, before batch sizing or device allocations. Explicit CPU does not
+query CUDA availability; unavailable explicit CUDA raises. Prepared registration
+settings carry only a concrete CPU/CUDA choice, shared across all stages. Linear
+and SyN diagnostics, including pipeline summary and per-stage datasets, record
+that choice in `attrs["device"]`. Resampling retains its image/mask return contract.
+CUDA execution errors and out-of-memory failures propagate; there is no retry or
+implicit CPU migration. Outputs remain NumPy-backed on CPU. Existing benchmark
+adapters retain explicit devices. Lazy execution is not implemented yet; its
+future worker-local resolution and GPU concurrency policy remain roadmap work.
+
 Automatic batching uses a CPU cap and conservative CUDA memory estimates;
 `batch_size` overrides it. It is not an autotuner or an OOM retry. Full CPU outputs
 and optional dense exports are not bounded by the batch size. Two equal-grid

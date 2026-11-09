@@ -27,6 +27,7 @@ from voxreg.preparation import (
     RegistrationSettings,
     choose_batch_size,
     prepare_fitting_images,
+    resolve_device,
 )
 from voxreg.results import LinearFit, RegistrationResult
 from voxreg.sampling import (
@@ -71,7 +72,7 @@ def register(
     syn_total_sigma: float = 0.5,
     convergence_window_size: int = 50,
     convergence_minimum_value: float = 1e-6,
-    device: Literal["cpu", "cuda"] = "cpu",
+    device: Literal["auto", "cpu", "cuda"] = "auto",
     progress: Literal["auto"] | bool | Callable[[int, int], None] | None = "auto",
     metric_callback: Callable[
         [npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[np.float64]], None
@@ -250,8 +251,12 @@ def register(
     convergence_minimum_value : float, default: 1e-6
         Stop when ITK's normalized B-spline improvement trend is at or below this
         nonnegative threshold. This is not a raw NCC difference or parameter step.
-    device : {"cpu", "cuda"}, default: "cpu"
-        Explicit Torch device; unavailable CUDA is an error, not a fallback.
+    device : {"auto", "cpu", "cuda"}, default: "auto"
+        Auto selects CUDA when available, otherwise CPU, once per call. Explicit
+        CPU bypasses CUDA selection; unavailable explicit CUDA is an error.
+        CUDA execution errors, including out-of-memory, propagate without a CPU
+        retry. The concrete device is recorded in diagnostics.attrs["device"]
+        and in each stage's diagnostics. Outputs remain NumPy-backed on CPU.
     progress : {"auto"} or bool or callable, default: "auto"
         Auto shows the frame bar only for multiple moving frames, remaining quiet
         for a spatial pair or a single-frame recording. True explicitly displays
@@ -405,7 +410,7 @@ def register(
         syn_total_sigma=syn_total_sigma,
         convergence_window_size=convergence_window_size,
         convergence_minimum_value=convergence_minimum_value,
-        device=device,
+        device=resolve_device(device),
         progress=progress,
         metric_callback=metric_callback,
         metric_interval=metric_interval,
@@ -608,10 +613,6 @@ def run_stage(
         raise ValueError(
             'syn_cc_radius, syn_update_sigma and syn_total_sigma require transform="syn" when nondefault.'
         )
-    if device not in ("cpu", "cuda") or (
-        device == "cuda" and not torch.cuda.is_available()
-    ):
-        raise ValueError("device must be cpu or an available cuda device.")
     if intensity_scaling not in ("none", "db"):
         raise ValueError("intensity_scaling must be none or db.")
     if resample_interpolation not in ("linear", "nearest", "bspline"):

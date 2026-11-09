@@ -23,8 +23,9 @@ class RegistrationSettings:
     """Carry shared registration settings between the entry point and stages.
 
     This internal execution record owns no image data and defines no workflow
-    presets. Attribute names, units and defaults match the public register API.
-    Stage overrides create a new record with dataclasses.replace.
+    presets. Attribute names and units match the public register API; device is
+    already resolved to CPU or CUDA. Stage overrides create a new record with
+    dataclasses.replace.
     """
 
     fixed_mask: xr.DataArray | None = None
@@ -91,6 +92,38 @@ class PreparedRegistration:
     implicit_fixed: bool
     same_grid: bool
     active_frames: npt.NDArray[np.bool_] | None
+
+
+def resolve_device(device: Literal["auto", "cpu", "cuda"]) -> Literal["cpu", "cuda"]:
+    """Resolve a public execution choice before preparation or device allocation.
+
+    Parameters
+    ----------
+    device : {"auto", "cpu", "cuda"}
+        Auto selects CUDA when available, otherwise CPU. Explicit CPU bypasses
+        availability checks; explicit CUDA requires availability. CUDA execution
+        failures are never retried here.
+
+    Returns
+    -------
+    {"cpu", "cuda"}
+        Concrete Torch execution device for the complete call, including stages.
+
+    Raises
+    ------
+    ValueError
+        If the choice is unsupported or explicit CUDA is unavailable.
+    """
+    if device not in ("auto", "cpu", "cuda"):
+        raise ValueError("device must be auto, cpu or cuda.")
+    if device == "cpu":
+        return "cpu"
+    available = torch.cuda.is_available()
+    if device == "auto":
+        return "cuda" if available else "cpu"
+    if not available:
+        raise ValueError("CUDA was requested but is unavailable.")
+    return "cuda"
 
 
 def prepare_fitting_images(

@@ -46,6 +46,8 @@ class RegistrationResult:
         For staged calls, n_iterations sums all stages, while objective and
         model-specific variables describe the final model. stage_diagnostics
         retains the original counts and statuses of each stage separately.
+        attrs["device"] records the resolved CPU/CUDA execution choice in the
+        summary and in each stage dataset.
     inverse_transforms : xarray.DataArray, optional
         None unless register(return_transforms=True). Linear models: inverse
         world z/y/x pull matrices. SyN: complete moving-world-to-fixed-world

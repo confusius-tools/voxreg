@@ -8,21 +8,12 @@ contracts and unresolved accuracy limits belong in [VALIDATION.md](VALIDATION.md
 
 Work proceeds one roadmap point at a time, stopping after each for user review
 and a separate commit. The registration-module refactor is implemented and
-reviewed. Cubic final-image interpolation is implemented and reviewed. Device
-defaults remain unchanged. Broad benchmark
-expansion remains deferred to its roadmap point; preserve existing artifacts and
-frozen sources/settings.
+reviewed. Cubic final-image interpolation is implemented and reviewed. Automatic
+device selection is implemented and reviewed.
+Broad benchmark expansion remains deferred to its roadmap point; preserve
+existing artifacts and frozen sources/settings.
 
 ## Planned capabilities
-
-### Device selection
-
-Consider device="auto" for registration and resampling, resolving to CUDA when
-available and CPU otherwise, while preserving explicit device="cpu"/"cuda".
-Record the resolved device in diagnostics and document execution on lazy workers.
-Resolve whether auto becomes the default after CPU/CUDA quality qualification;
-benchmarks retain explicit devices. Do not silently retry on CPU after CUDA
-execution failures or out-of-memory errors.
 
 ### Intensity scaling and initialization
 
@@ -150,6 +141,15 @@ time chunking by itself does not provide it.
    with original images, native geometry and explicit quality limitations.
 
 ## Implemented
+
+- **Automatic device selection:** `register` and `resample` default to
+  `device="auto"`, choosing CUDA when available, otherwise CPU. Explicit CPU/CUDA
+  choices remain supported. Resolution happens once per call and shared stage
+  settings retain the concrete device, recorded in registration summary/stage
+  diagnostics. CUDA execution/OOM errors propagate without CPU retry. Benchmark
+  adapters retain explicit devices. CPU behavior is checked; actual CUDA tests
+  skip on this machine. Future lazy workers must resolve auto at execution time
+  and bound GPU concurrency; lazy execution remains unimplemented.
 
 - **Final image interpolation:** optional cubic B-spline (`"bspline"`) in 2D/3D
   registration and offline resampling, with float64 coefficients/evaluation,

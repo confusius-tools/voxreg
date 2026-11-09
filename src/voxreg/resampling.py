@@ -21,7 +21,7 @@ from voxreg.interpolation import (
     restore_image_dtype,
     sample_cubic_spline,
 )
-from voxreg.preparation import choose_batch_size
+from voxreg.preparation import choose_batch_size, resolve_device
 from voxreg.results import build_output_template
 from voxreg.sampling import sample_displaced
 from voxreg.transforms import validate_matrices
@@ -92,7 +92,7 @@ def resample(
     transforms: npt.ArrayLike | xr.DataArray,
     *,
     interpolation: Interpolation = "linear",
-    device: Literal["cpu", "cuda"] = "cpu",
+    device: Literal["auto", "cpu", "cuda"] = "auto",
     batch_size: int | None = None,
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """Resample original intensities using a reference-to-moving world pull.
@@ -126,8 +126,10 @@ def resample(
         coefficients and queries use float64 on the selected device. Floating
         overshoot is retained; integer outputs are rounded and dtype-clipped.
         No extra support erosion is applied for the cubic kernel radius.
-    device : {"cpu", "cuda"}, default="cpu"
-        Sampling device. Results are NumPy-backed on CPU in either case.
+    device : {"auto", "cpu", "cuda"}, default: "auto"
+        Auto selects CUDA when available, otherwise CPU, once per call. Explicit
+        CUDA requires availability. CUDA execution errors, including out-of-memory,
+        propagate without a CPU retry. Results are NumPy-backed on CPU in all cases.
     batch_size : int, optional
         Positive frame batch limit; omitted uses the registration memory policy.
 
@@ -156,10 +158,7 @@ def resample(
         raise ValueError("reference must be spatial VoxelData without time.")
     if interpolation not in ("linear", "nearest", "bspline"):
         raise ValueError("interpolation must be linear, nearest or bspline.")
-    if device not in ("cpu", "cuda") or (
-        device == "cuda" and not torch.cuda.is_available()
-    ):
-        raise ValueError("device must be cpu or an available cuda device.")
+    device = resolve_device(device)
     if batch_size is not None and (type(batch_size) is not int or batch_size < 1):
         raise ValueError("batch_size must be None or a positive integer.")
     integer = np.issubdtype(moving.dtype, np.integer)

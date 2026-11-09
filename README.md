@@ -49,8 +49,12 @@ print(result.diagnostics)
 ```
 
 For a recording, the first frame is the default reference and is preserved exactly. For
-a single image pair, pass `voxreg.register(moving, fixed)`. Select `device="cuda"` to
-use a GPU.
+a single image pair, pass `voxreg.register(moving, fixed)`. Both `register` and
+`resample` default to `device="auto"`: CUDA when available, otherwise CPU. Use
+`device="cpu"` or `device="cuda"` to select explicitly. CUDA execution errors
+propagate, including out-of-memory errors; there is no CPU retry. Results remain
+NumPy-backed on CPU. Registration records the resolved choice in
+`result.diagnostics.attrs["device"]`, including each stage's diagnostics.
 
 ## `voxreg.register`
 
@@ -60,7 +64,7 @@ result = voxreg.register(
     fixed=None,
     transform="rigid",
     intensity_scaling="db",
-    device="cpu",
+    device="auto",
     return_transforms=False,
 )
 ```
@@ -80,7 +84,7 @@ result = voxreg.register(
 | `shrink_factors`, `smoothing_sigmas` | Explicit coarse→fine downsampling factors and Gaussian image smoothing standard deviations in mm. Defaults `(1,)` and `(0.0,)` retain native-resolution fitting. |
 | `syn_cc_radius` | SyN local NCC radius in voxels; default `2` gives a rectangular window of width `5`. |
 | `syn_update_sigma`, `syn_total_sigma` | SyN Gaussian smoothing standard deviations in voxels, before update composition and on the accumulated field respectively; defaults `1.5` and `0.5`. Zero disables the corresponding smoothing. |
-| `device`, `progress` | `"cpu"` or `"cuda"`; progress defaults to `"auto"`, or use `False` to silence it. |
+| `device`, `progress` | Device defaults to `"auto"` (CUDA when available, otherwise CPU); explicit `"cpu"`/`"cuda"` are supported. Progress defaults to `"auto"`, or use `False` to silence it. |
 | `return_transforms` | Opt into forward and inverse maps: linear matrices or SyN displacement fields. Dense fields can be much larger than the images. |
 
 The result contains **`registered`** intensities and a boolean **`valid`** support
