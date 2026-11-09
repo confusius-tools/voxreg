@@ -11,8 +11,8 @@ from registration_options import RegistrationOptions
 
 from voxreg import position_to_world, register, resample
 from voxreg.masks import _MaskSampler, _MetricMasks, _source
+from voxreg.metrics import compute_local_ncc
 from voxreg.sampling import _recover_initial_parameters, make_grid
-from voxreg.syn import compute_local_ncc
 from voxreg.transforms import configure_transform
 
 

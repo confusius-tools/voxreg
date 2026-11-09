@@ -271,7 +271,7 @@ CUDA synchronization and do not change best-valid return semantics.
 | [geometry.py](src/voxreg/geometry.py) | VoxelData validation and array-position geometry |
 | [transforms.py](src/voxreg/transforms.py) | Linear parameterization, scaling and seed constraints |
 | [resampling.py](src/voxreg/resampling.py) | Offline world-pull application on CPU/CUDA |
-| [sampling.py](src/voxreg/sampling.py) | Physical pull sampling, global NCC and matrix conversion |
+| [sampling.py](src/voxreg/sampling.py) | Physical pull sampling and matrix conversion |
 | [rigid.py](src/voxreg/rigid.py) | Public API, shared linear fitting and result assembly |
 | [fields.py](src/voxreg/fields.py) | Field interpolation, composition, smoothing, inversion and Jacobians |
 | [syn.py](src/voxreg/syn.py) | Symmetric field fitting and dense outputs |
@@ -279,7 +279,7 @@ CUDA synchronization and do not change best-valid return semantics.
 | [pyramid.py](src/voxreg/pyramid.py) | Physical image smoothing, pyramid lattices, field transfer and level diagnostics |
 | [stages.py](src/voxreg/stages.py) | Stage specifications, shared-option inheritance and per-frame pipeline execution |
 | [masks.py](src/voxreg/masks.py) | Physical binary ROI membership and metric-domain mask intersections |
-| [metrics.py](src/voxreg/metrics.py) | Per-frame objective selection and chunked differentiable MI |
+| [metrics.py](src/voxreg/metrics.py) | Per-frame objective selection, global/local NCC and chunked differentiable MI |
 
 No backend registry, public precision/compiler switch or transform-object
 framework is needed. [Tests](tests/) own mathematical contracts;

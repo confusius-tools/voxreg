@@ -31,12 +31,12 @@ from voxreg.fields import (
 )
 from voxreg.geometry import position_to_world
 from voxreg.masks import _MetricMasks, _source
+from voxreg.metrics import compute_global_ncc, compute_local_ncc
 from voxreg.sampling import (
     _prepare_displaced_sampling,
     _recover_initial_parameters,
     _sample_prepared,
     build_world_matrices,
-    compute_global_ncc,
     make_grid,
     sample_rigid,
 )
@@ -101,76 +101,6 @@ def smooth_field(field, grid, *, sigma):
         )
     result = result.masked_fill(grid.boundary, 0)
     return result.clamp(-1, 1).to(field.dtype) * scale
-
-
-def _sum_neighborhoods(values, radius):
-    """Sum neighborhoods separably in metric precision."""
-    dimensions = values.ndim - 2
-    for axis in range(dimensions):
-        padding = [0] * (2 * dimensions)
-        padding[2 * (dimensions - axis - 1) : 2 * (dimensions - axis)] = [
-            radius + 1,
-            radius,
-        ]
-        width = 2 * radius + 1
-        if values.dtype == torch.float32:
-            # Local accumulation avoids cancellation of long float32 prefix sums.
-            padding[2 * (dimensions - axis - 1)] = radius
-            kernel = [1] * dimensions
-            kernel[axis] = width
-            pool = F.avg_pool2d if dimensions == 2 else F.avg_pool3d
-            values = pool(F.pad(values, padding), kernel, stride=1, divisor_override=1)
-            continue
-        cumulative = F.pad(values, padding).cumsum(dim=axis + 2)
-        values = cumulative.narrow(
-            axis + 2, width, values.shape[axis + 2]
-        ) - cumulative.narrow(axis + 2, 0, values.shape[axis + 2])
-    return values
-
-
-def compute_local_ncc(moving, fixed, valid, radius):
-    """Compute masked squared neighborhood correlation independently per frame.
-
-    Parameters
-    ----------
-    moving : torch.Tensor
-        Sampled moving images, shaped (batch, *spatial_shape).
-    fixed : torch.Tensor
-        Sampled fixed images with the same shape.
-    valid : torch.Tensor
-        Boolean common-support mask.
-    radius : int
-        Neighborhood radius in active voxel axes.
-
-    Returns
-    -------
-    loss : torch.Tensor
-        Per-frame negative mean squared correlation; lower is better.
-    meaningful : torch.Tensor
-        Whether each frame has sufficient support and nonconstant neighborhoods.
-    """
-    dtype = torch.float64 if moving.dtype == torch.float64 else torch.float32
-    x, y = moving.to(dtype), fixed.to(dtype)
-    w = valid.to(dtype)
-    stats = _sum_neighborhoods(
-        torch.stack((w, w * x, w * y, w * x * x, w * y * y, w * x * y), dim=1), radius
-    )
-    n, sx, sy, sxx, syy, sxy = stats.unbind(dim=1)
-    count = n.clamp_min(1)
-    vx = (sxx - sx * sx / count).clamp_min(0)
-    vy = (syy - sy * sy / count).clamp_min(0)
-    tolerance_x = tolerance_y = 1e-12
-    if dtype == torch.float32:
-        # Raw-moment cancellation must not make constant neighborhoods meaningful.
-        epsilon = 16 * torch.finfo(dtype).eps
-        tolerance_x = epsilon * (sxx + sx * sx / count).abs()
-        tolerance_y = epsilon * (syy + sy * sy / count).abs()
-    usable = valid & (n > 1) & (vx > tolerance_x) & (vy > tolerance_y)
-    cc = ((sxy - sx * sy / count).square() / (vx * vy).clamp_min(1e-24)).clamp(max=1)
-    axes = tuple(range(1, x.ndim))
-    counts = usable.sum(dim=axes)
-    loss = -torch.where(usable, cc, 0).sum(dim=axes) / counts.clamp_min(1)
-    return loss, counts > 1
 
 
 def _compute_midpoint_loss(

@@ -9,8 +9,8 @@ from registration_options import RegistrationOptions
 from scipy.ndimage import map_coordinates
 
 from voxreg import position_to_world, register
+from voxreg.metrics import compute_local_ncc
 from voxreg.sampling import _sample_displaced
-from voxreg.syn import compute_local_ncc
 
 
 @pytest.mark.parametrize("planar", [True, False])

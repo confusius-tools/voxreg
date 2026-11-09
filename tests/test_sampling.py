@@ -8,9 +8,9 @@ from numpy.testing import assert_allclose, assert_array_equal
 from scipy.ndimage import map_coordinates
 
 from voxreg import position_to_world
+from voxreg.metrics import compute_global_ncc
 from voxreg.sampling import (
     build_world_matrices,
-    compute_global_ncc,
     make_plane,
     sample_rigid,
 )

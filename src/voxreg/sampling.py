@@ -12,6 +12,7 @@ import torch.nn.functional as F
 import xarray as xr
 
 from voxreg.geometry import _compute_plane_alignment, position_to_world
+from voxreg.metrics import compute_global_ncc  # noqa: F401 -- preserve the previous internal import path
 from voxreg.transforms import (
     build_intrinsic_linear,
     build_linear_world_matrices,
@@ -753,71 +754,6 @@ def sample_rigid(
         align_corners=True,
     )[:, 0]
     return sampled, valid
-
-
-def compute_global_ncc(
-    moved: torch.Tensor, fixed: torch.Tensor, valid: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute independent, valid-sample negative squared global correlations.
-
-    Parameters
-    ----------
-    moved : (B, ...) torch.Tensor
-        Sampled moving intensities.
-    fixed : (...) torch.Tensor
-        Fixed image intensities.
-    valid : (B, ...) torch.Tensor
-        Valid moving sample centers.
-
-    Returns
-    -------
-    loss : (B,) torch.Tensor
-        Negative squared correlations, with guards for invalid metric arithmetic.
-    meaningful : (B,) torch.Tensor
-        Whether support and both centered variances are nonzero.
-    """
-    axes = tuple(range(1, moved.ndim))
-    # Fitting samples use float32; explicit double inputs retain double metric math.
-    dtype = torch.float64 if moved.dtype == torch.float64 else torch.float32
-    moved, fixed = moved.to(dtype), fixed.to(dtype)
-    padding = (-moved[0].numel()) % 32
-    if dtype == torch.float32 and padding:
-        # Align frame rows so CUDA reductions do not change with row-address alignment.
-        fixed = torch.broadcast_to(fixed, moved.shape)
-        moved = F.pad(moved.flatten(1), (0, padding))
-        fixed = F.pad(fixed.flatten(1), (0, padding))
-        valid = F.pad(valid.flatten(1), (0, padding), value=False)
-        axes = (1,)
-    weights = valid.to(moved.dtype)
-    count = weights.sum(dim=axes, keepdim=True).clamp_min(1)
-    mean_x = (moved * weights).sum(dim=axes, keepdim=True) / count
-    mean_y = (fixed * weights).sum(dim=axes, keepdim=True) / count
-    x = (moved - mean_x) * weights
-    y = (fixed - mean_y) * weights
-    vx = x.square().sum(dim=axes)
-    vy = y.square().sum(dim=axes)
-    denominator = vx * vy
-    tolerance_x = tolerance_y = 0.0
-    if dtype == torch.float32:
-        epsilon = 16 * torch.finfo(dtype).eps ** 2
-        tolerance_x = (
-            epsilon * count.reshape(len(moved)) * mean_x.reshape(len(moved)).square()
-        )
-        tolerance_y = (
-            epsilon * count.reshape(len(moved)) * mean_y.reshape(len(moved)).square()
-        )
-    meaningful = (
-        (count.reshape(len(moved)) > 1)
-        & (vx > tolerance_x)
-        & (vy > tolerance_y)
-        & torch.isfinite(denominator)
-        & (denominator > torch.finfo(moved.dtype).tiny)
-    )
-    safe_denominator = torch.where(
-        meaningful, denominator, torch.ones_like(denominator)
-    )
-    loss = -(x * y).sum(dim=axes).square() / safe_denominator
-    return torch.where(meaningful, loss, torch.zeros_like(loss)), meaningful
 
 
 def _recover_initial_parameters(

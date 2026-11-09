@@ -25,13 +25,12 @@ from voxreg.masks import (
     _source,
     _validate_masks,
 )
-from voxreg.metrics import _Metric, _validate_metric
+from voxreg.metrics import _Metric, _validate_metric, compute_global_ncc
 from voxreg.sampling import (
     Plane,
     SpatialGrid,
     _recover_initial_parameters,
     build_world_matrices,
-    compute_global_ncc,
     make_grid,
     sample_rigid,
 )
