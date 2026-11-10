@@ -55,7 +55,9 @@ Run a single test: `uv run pytest path/to/test_file.py::TestClass::test_method`.
 Benchmark recipes are `just benchmark-resample OUTPUT ...`,
 `just benchmark-register OUTPUT ...`, and
 `just benchmark-report OUTPUT RESULT...`. The first two install/reuse an isolated
-Python 3.13 environment with ANTsPy for reference comparisons. Research scripts,
+Python 3.13 environment with ANTsPy for reference comparisons.
+`just benchmark-lazy OUTPUT --operation register|resample ...` measures streaming
+read/compute/Zarr writes without ANTs; large files require explicit `--size-gib`. Research scripts,
 notebooks, and benchmark notes live in `research/` and `examples/`.
 
 ## Code Architecture

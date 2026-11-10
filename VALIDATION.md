@@ -183,6 +183,21 @@ a measured larger-than-physical-RAM or full VRAM qualification. Source storage
 blocks, worker concurrency and scheduler prefetch still require workload-specific
 memory measurements. Multi-host/GPU scaling and performance remain unqualified.
 
+## Lazy streaming benchmark
+
+`just benchmark-lazy` now stages uncompressed synthetic Zarr data incrementally,
+then separates end-to-end timing, process-tree RAM/worker VRAM, and full-frame
+accuracy phases. Temporal chunks target 32/128 MiB for large inputs, aligned to
+whole-volume storage blocks; task-duration samples expose scheduling overhead.
+Public CLI tests and corruption checks cover inputs, images, support and geometry.
+The full suite passes with 1670 tests; all pre-commit checks pass.
+
+Small CPU/CUDA rigid registration and resampling runs pass, including 3D volumes;
+frozen local evidence is in `artifacts/benchmark-lazy-register-smoke-20261110-092112/`
+and `artifacts/benchmark-lazy-resample-smoke-20261110-091227/`. These one-call runs
+are diagnostic, not five-call throughput or larger-than-RAM qualification. No
+10–40 GiB dataset was generated. See [protocol and commands](BENCHMARK.md#lazy-streaming-benchmark).
+
 ## Acceptance
 
 [BENCHMARK.md](BENCHMARK.md) defines the measurement boundaries:

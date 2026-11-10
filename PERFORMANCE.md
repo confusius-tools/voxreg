@@ -22,6 +22,11 @@ separate. Failed accuracy gates cannot qualify as speed improvements.
 
 See the [precision contract](DESIGN.md#precision-output-and-execution).
 
+The separate [lazy streaming benchmark](BENCHMARK.md#lazy-streaming-benchmark)
+measures disk-backed read/compute/Zarr writes with 32/128 MiB chunk targets and
+isolated timing, memory and accuracy phases. Large inputs are opt-in; small smoke
+results do not qualify recordings larger than host RAM.
+
 ## Next measurements
 
 Rerun both complete matrices to establish the scorecard for this revision.

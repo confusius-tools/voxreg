@@ -35,6 +35,12 @@ benchmark-resample output *args: antspy-venv
 benchmark-register output *args: antspy-venv
     uv run --extra examples python examples/benchmark_register.py --antspy-python "{{justfile_directory()}}/.venv-antspy/bin/python" --output "$@"
 
+# Benchmark lazy read/compute/Zarr writes; large inputs require --size-gib.
+[unix]
+[positional-arguments]
+benchmark-lazy output *args:
+    uv run --extra examples python examples/benchmark_lazy.py --output "$@"
+
 # Render one or more benchmark run directories or results.json files as HTML.
 [unix]
 [positional-arguments]

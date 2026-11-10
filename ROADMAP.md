@@ -27,8 +27,10 @@ time, then stop for user review and a separate commit.
 
 ### Qualify large lazy recordings
 
-The bounded Dask path is implemented and tested on small inputs. Measure peak
-RAM/VRAM and scheduler/storage prefetch on recordings larger than physical RAM
+The bounded Dask path is implemented and tested on small inputs. Run the
+[streaming benchmark](BENCHMARK.md#lazy-streaming-benchmark) with its 32/128 MiB
+chunk targets to measure peak RAM/VRAM and scheduler/storage prefetch on recordings
+larger than physical RAM
 before claiming fully qualified out-of-core execution. One eager spatial pair and
 working state must fit each worker; source storage blocks must be bounded too.
 Qualify multi-host/GPU deployment and workload-specific concurrency/performance;

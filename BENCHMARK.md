@@ -139,6 +139,52 @@ versions, host, power boundaries, actual batches, failures and phase logs are
 recorded. A changed preparation/measurement policy requires new results, not
 relabeling existing measurements.
 
+## Lazy streaming benchmark
+
+`benchmark-lazy` is voxreg-only and initially tests rigid motion, not SyN or
+cross-backend rankings. It writes seeded analytic float32 volumes incrementally
+into uncompressed, one-volume Zarr blocks; a declared 16-pose cycle bounds
+preparation memory without skipping any frame. Large files are opt-in:
+
+```bash
+# Eight-frame diagnostic smoke case; no ANTs environment required.
+just benchmark-lazy artifacts/lazy-smoke --operation resample --devices cpu --runs 1
+
+# Run separately in fresh directories; defaults to five complete calls.
+just benchmark-lazy artifacts/lazy-register-10g --operation register --size-gib 10
+just benchmark-lazy artifacts/lazy-resample-10g --operation resample --size-gib 10
+```
+
+Default large-input Dask chunks target **32/128 MiB**, rounded to whole volumes
+and aligned with storage. This follows [Dask's guidance](https://docs.dask.org/en/stable/array-chunks.html):
+fit comfortably in memory, commonly 10 MB–1 GB, and tasks substantially longer
+than 100 ms. Reports include actual chunk bytes and bounded task-duration
+samples, not a claim that these sizes are optimal. Smoke chunks are deliberately
+smaller. Overrides: `--chunk-mib`, `--shape K J I`, `--workers`,
+`--worker-memory-gib`, `--threads`, `--batch-size`, `--devices` and `--iterations`.
+Fitting batches are selected in workers, then pinned across phases; default
+registration is 100 updates without early stopping.
+
+Fresh timing/memory/accuracy processes measure **open → graph → read → compute →
+one DataTree Zarr write**. Cluster/device initialization, generation and deletion
+of successful temporary outputs are excluded; peak process-tree RSS is sampled
+only during the memory phase. Per-worker allocated/reserved VRAM peaks are not
+simultaneous device-wide totals. Every stored frame is checked against physical
+truth (registration RMS ≤0.30 voxels) and SciPy pulls (relative RMSE <1e-5), with
+support/geometry/time checks and selected eager comparisons. Failed outputs and
+bounded failure evidence are retained; successful temporary outputs are removed
+to avoid retaining five copies. Sources, inputs, settings, logs, `results.json`
+and a separate `report.html` remain. The resident reporter does not combine this
+`voxreg-lazy-benchmark-v1` protocol with its older matrices.
+
+**10 GiB is a streaming test, not necessarily larger than host RAM.** Use an
+explicit larger size (e.g. `--size-gib 40` on a 32 GiB host) for that qualification;
+the report records both host RAM and worker memory limits. Keep sufficient disk
+for inputs plus one result, avoid competing heavy jobs, and do not describe these
+runs as cold-cache or durable-media latency measurements: OS caches are not
+flushed and writes use normal OS buffering without forced fsync. Worker-loss
+retries are disabled; no OOM retry or automatic chunk shrinking occurs.
+
 ## Reports
 
 Each output directory contains `results.json`, a self-contained graphical
