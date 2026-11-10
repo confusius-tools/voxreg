@@ -1,7 +1,7 @@
 # Registration design
 
-`voxreg.register` fits physical fixed→moving pulls with PyTorch. ConfUSIus
-provides the xarray-based VoxelData model and progress display—not the fitter.
+`voxreg.register` fits physical fixed→moving pulls with PyTorch. VoxelData
+provides spatial geometry and I/O; ConfUSIus currently provides progress display.
 See the [public API](README.md#voxregregister) for usage and the function's
 [docstring](src/voxreg/registration.py) for all options.
 
@@ -9,13 +9,13 @@ See the [public API](README.md#voxregregister) for usage and the function's
 
 - Moving data is `(k, j, i)` or `(time, k, j, i)`; fixed data is spatial-only.
   A recording without explicit fixed uses its first frame, preserved exactly.
-- Eager fitting inputs are finite real NumPy-backed VoxelData with ConfUSIus
+- Eager fitting inputs are finite real NumPy-backed VoxelData with supported
   length units. Dask recordings execute as bounded eager time tasks; metadata
   validation remains eager and data-dependent checks are deferred.
   Native spatial coordinates
   are uniform, monotonic integers; offsets, crops, strides and reversal are supported.
 - Fixed/moving shapes, spacings, origins and orientations may differ. Geometry
-  comes from ConfUSIus's lazy world index, not mutable metadata shortcuts.
+  comes from VoxelData's lazy world index, not mutable metadata shortcuts.
 - Slices have `k=1` and at least two samples on `j/i`; volumes have at least two
   samples on every axis. Unsupported singleton layouts and extra dimensions fail.
 
@@ -31,7 +31,9 @@ image/mask. `position_to_world` converts the full physical affine (top three
 rows, including its origin) to mm by default; its explicit `units` keyword can
 request another supported output unit. Native indices and input metadata are
 preserved. Geometry validation requires world-coordinate units to agree with
-the index and delegates supported length conversions to ConfUSIus.
+the index and delegates supported length conversions to VoxelData. General model
+checks use `voxeldata.validate_voxeldata`; voxreg adds backend, single-affine,
+length-unit, exact integer-spacing and coordinate/index consistency restrictions.
 
 Matrix translations and displacement components are in mm for exported maps;
 linear coefficients remain dimensionless. Labelled inputs may declare another

@@ -1,4 +1,4 @@
-"""ConfUSIus VoxelData geometry with voxreg's registration restrictions."""
+"""Canonical VoxelData geometry with voxreg's registration restrictions."""
 
 from typing import cast
 
@@ -6,7 +6,11 @@ import dask.array as da
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
-from confusius._utils.geometry import VoxelToWorldIndex, convert_length_units
+from voxeldata import (
+    VoxelToWorldIndex,
+    convert_length_units,
+    validate_voxeldata,
+)
 
 VOXEL_DIMS = ("k", "j", "i")
 """Native voxel dimensions, always last in a supported registration array."""
@@ -20,7 +24,7 @@ def length_scale_to_mm(units: str) -> float:
     Parameters
     ----------
     units : str
-        ConfUSIus length unit to convert.
+        VoxelData length unit to convert.
 
     Returns
     -------
@@ -49,7 +53,7 @@ def _check_affine(affine: npt.ArrayLike) -> npt.NDArray[np.float64]:
 
 
 def validate_registration_geometry(data: xr.DataArray) -> None:
-    """Check the ConfUSIus geometry subset supported by registration.
+    """Check the VoxelData geometry subset supported by registration.
 
     Parameters
     ----------
@@ -64,21 +68,10 @@ def validate_registration_geometry(data: xr.DataArray) -> None:
     ValueError
         If geometry, dimensions, units or coordinates are unsupported.
     """
-    if not isinstance(data, xr.DataArray):
-        raise TypeError("Expected an xarray.DataArray.")
-    if data.dims not in (VOXEL_DIMS, ("time", *VOXEL_DIMS)):
-        raise ValueError(
-            "Expected dimensions (k, j, i) or (time, k, j, i); pose is not supported."
-        )
-    if any(size == 0 for size in data.shape):
-        raise ValueError("VoxelData dimensions must be nonempty.")
+    validate_voxeldata(data, allow_extra_dims=False)
     if not isinstance(data.data, (np.ndarray, da.Array)):
         raise TypeError("Expected NumPy- or Dask-backed VoxelData.")
-    index = data.xindexes.get("z")
-    if not isinstance(index, VoxelToWorldIndex) or any(
-        data.xindexes.get(world) is not index for world in WORLD_DIMS
-    ):
-        raise ValueError("VoxelData requires ConfUSIus's VoxelToWorldIndex on z/y/x.")
+    index = cast(VoxelToWorldIndex, data.xindexes["z"])
     matrix = _check_affine(index.voxel_to_world)
     length_scale_to_mm(index.units)
     for world in WORLD_DIMS:
@@ -88,14 +81,12 @@ def validate_registration_geometry(data: xr.DataArray) -> None:
             )
     coordinates = {}
     for dim in VOXEL_DIMS:
-        if dim not in data.coords or data.coords[dim].dims != (dim,):
-            raise ValueError(f"Missing one-dimensional {dim} coordinate.")
         values = data.coords[dim].values
         if not np.issubdtype(values.dtype, np.integer):
             raise TypeError(f"{dim} coordinates must be integer native voxel indices.")
         if int(values.min()) < -(2**63) or int(values.max()) > 2**63 - 1:
             raise ValueError(
-                f"{dim} coordinates must fit ConfUSIus's signed int64 indices."
+                f"{dim} coordinates must fit VoxelData's signed int64 indices."
             )
         if len(values) > 1:
             # Integer differences preserve unit steps above float64's exact range.
@@ -109,8 +100,10 @@ def validate_registration_geometry(data: xr.DataArray) -> None:
                     f"{dim} coordinates must be uniformly spaced and strictly monotonic."
                 )
         coordinates[dim] = values
-    # Detect coordinate reassignment without inspecting ConfUSIus's transform internals.
-    expected = VoxelToWorldIndex.from_affine(coordinates, matrix, units=index.units)
+    # Detect coordinate reassignment without inspecting VoxelData transform internals.
+    expected = VoxelToWorldIndex.from_affine(
+        coordinates, matrix, units=index.units, named_affines=index.named_affines
+    )
     if not index.equals(expected):
         raise ValueError(
             "Native coordinates disagree with the world index; rebuild VoxelData "
@@ -223,7 +216,7 @@ def position_to_world(
     data : xarray.DataArray
         VoxelData with uniform integer native coordinates.
     units : str, default: "mm"
-        Output length unit supported by ConfUSIus: m, cm, mm, um/µm or nm.
+        Output length unit supported by VoxelData: m, cm, mm, um/µm or nm.
         The default normalizes geometry for voxreg's mm transforms regardless
         of the input index unit. Native coordinates and metadata are not modified.
 

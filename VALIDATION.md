@@ -34,7 +34,7 @@ storage and nonlinear-contrast physical truth in 2D/3D translation and SyN.
 Integration covers masks, stage overrides, failure isolation and pyramids.
 CUDA tests skip when unavailable; CPU success does not qualify CUDA.
 
-Length-unit regressions cover all ConfUSIus-supported length scales, mixed-unit
+Length-unit regressions cover all VoxelData-supported length scales, mixed-unit
 fixed/moving/mask grids, cropped/strided/oblique geometry, large world origins,
 every transform model, staged pyramids, labelled seeds and initialization aliases.
 Resampling is checked against independent SciPy pulls, including displacement
@@ -175,13 +175,27 @@ Tests exercise synchronous, threaded, multiprocessing and distributed execution,
 including separate worker processes, worker callbacks and task-time auto devices.
 Local fitting concurrency is checked explicitly; distributed tasks use one
 scheduler semaphore lease per host CPU/physical GPU. Joint DataTree Zarr writes
-are checked for one fit per batch and round-trip native geometry with ConfUSIus
+are checked for one fit per batch and round-trip native geometry with VoxelData
 loading. Independent deferred writes can clone graphs and repeat fitting, so the
 storage recipe deliberately uses one writer. Live-source tracking for 4 versus
 24 frames verifies bounded retained volumes during incremental storage; it is not
 a measured larger-than-physical-RAM or full VRAM qualification. Source storage
 blocks, worker concurrency and scheduler prefetch still require workload-specific
 memory measurements. Multi-host/GPU scaling and performance remain unqualified.
+
+## VoxelData 0.0.6 integration
+
+Geometry, construction and I/O use VoxelData's public APIs. General model
+validation is delegated to `validate_voxeldata`; registration retains its stricter
+backend, affine, physical-unit and exact native-index checks. ConfUSIus is still
+used for progress display and independent numerical references, with explicit
+test-only conversion to its legacy geometry model.
+
+The full suite passes with 1672 tests. New IQ Zarr → lazy magnitude → registration
+→ Dataset/DataTree Zarr regressions verify one fit per source task, boolean masks,
+values, native geometry, named frames, time metadata and diagnostics. No full
+recording or larger-than-RAM qualification was performed. `RegistrationResult`
+remains unchanged; returning a DataTree is a separate API change.
 
 ## Lazy streaming benchmark
 

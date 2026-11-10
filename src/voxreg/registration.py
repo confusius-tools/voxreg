@@ -95,7 +95,7 @@ def register(
         Finite real VoxelData: NumPy-backed (k, j, i) image pairs or NumPy/Dask
         (time, k, j, i) recordings. Dask-backed images/masks/seeds return lazy
         recording results; spatial registration pairs remain eager.
-        World coordinates may use ConfUSIus length units (m, cm, mm, um/µm, nm);
+        World coordinates may use VoxelData length units (m, cm, mm, um/µm, nm);
         fixed, moving and masks may use different units. Geometry is normalized
         to mm. Output images retain the fixed grid's native coordinates and units.
         Slice pairs use k=1; volume pairs require all spatial axes >= 2.

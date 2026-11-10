@@ -28,6 +28,7 @@ dependencies = [
     "numpy>=2.3.4",
     "scipy>=1.16.3",
     "torch>=2.14.1",
+    "voxeldata[io]>=0.0.6",
     "xarray>=2026.9.0",
 ]
 

@@ -131,17 +131,16 @@ def validate_resampling_metadata(
         raise TypeError("moving must have real integer or floating-point intensities.")
     if moving.dtype == np.bool_ and interpolation != "nearest":
         raise ValueError("Boolean images require nearest interpolation.")
-    for name, data in (("moving", moving), ("transforms", transforms)):
-        if (
-            isinstance(data, xr.DataArray)
-            and "time" in data.dims
-            and (
-                "time" not in data.coords
-                or data.time.dims != ("time",)
-                or not data.get_index("time").is_unique
-            )
-        ):
-            raise ValueError(f"{name} must have unique time labels.")
+    if (
+        isinstance(transforms, xr.DataArray)
+        and "time" in transforms.dims
+        and (
+            "time" not in transforms.coords
+            or transforms.time.dims != ("time",)
+            or not transforms.get_index("time").is_unique
+        )
+    ):
+        raise ValueError("transforms must have unique time labels.")
     if isinstance(transforms, xr.DataArray):
         from voxreg.lazy import has_lazy_data
 
@@ -243,7 +242,7 @@ def resample(
         World z/y/x homogeneous pull matrix (4, 4), per-frame matrices (N, 4, 4),
         or a world displacement DataArray. Bare matrices use mm. Labelled
         matrices use spatial_units (default mm); field components must declare
-        spatial_units. ConfUSIus length units are converted to mm. Field lattice
+        spatial_units. VoxelData length units are converted to mm. Field lattice
         units are independent of component units. Fields must match the physical
         reference grid; they are not implicitly regridded. Use forward
         transforms with moving images and the fixed reference, or inverse
@@ -342,12 +341,7 @@ def resample(
             else np.arange(count)
         )
         moving = moving.expand_dims(time=time)
-    if (
-        "time" not in moving.coords
-        or moving.time.dims != ("time",)
-        or not moving.get_index("time").is_unique
-    ):
-        raise ValueError("moving must have unique time labels.")
+        validate_registration_geometry(moving)
     frames = moving.sizes["time"]
     if not shared and count != frames:
         raise ValueError("Expected one transform per moving frame.")

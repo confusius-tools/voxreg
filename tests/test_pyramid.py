@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
-from confusius import create_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 from registration_options import RegistrationOptions
 from scipy.ndimage import convolve
+from voxeldata import create_voxeldata
 
 from voxreg import position_to_world, register, resample
 from voxreg.fields import make_field_grid

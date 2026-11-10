@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
-from confusius import create_voxeldata
 from numpy.testing import assert_array_equal
 from registration_options import RegistrationOptions
 from rich.console import Console
+from voxeldata import create_voxeldata
 
 from voxreg import linear, register
 

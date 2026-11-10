@@ -9,7 +9,7 @@
 > **Research prototype.** Anatomical registration quality is not yet validated.
 
 Batched physical-space image registration with **PyTorch** and
-[ConfUSIus](https://github.com/confusius-tools/confusius) VoxelData.
+[VoxelData](https://github.com/confusius-tools/voxeldata) arrays.
 
 - Translation, rigid, affine and symmetric nonlinear (SyN) registration.
 - Single image pairs or motion correction of recordings, on CPU or CUDA.
@@ -31,16 +31,17 @@ cd voxreg
 uv sync
 ```
 
-ConfUSIus provides the VoxelData model; registration itself runs in PyTorch. CUDA
-requires a compatible GPU and PyTorch installation.
+VoxelData provides spatial geometry and I/O; registration itself runs in PyTorch.
+ConfUSIus is currently retained for progress display. CUDA requires a compatible
+GPU and PyTorch installation.
 
 ## Quick start
 
 ```python
-import confusius as cf
+import voxeldata as vd
 import voxreg
 
-recording = cf.load("recording.nii.gz").compute()
+recording = vd.load_array("recording.zarr", chunks={})
 result = voxreg.register(recording)
 
 corrected = result.registered
@@ -178,7 +179,7 @@ new comparisons must disclose the log1p and per-image-conditioning changes.
 
 ## Physical units
 
-World coordinates may use ConfUSIus length units: `m`, `cm`, `mm`, `um`/`µm`
+World coordinates may use VoxelData length units: `m`, `cm`, `mm`, `um`/`µm`
 or `nm`. Fixed images, moving images and masks may each use different units.
 Voxreg converts their geometry to **mm internally**, without changing inputs.
 Image outputs retain the reference/fixed grid's native coordinates and length
@@ -487,25 +488,30 @@ centers are lazy `rotation_center_zyx_mm` variables instead of eager attributes.
 All-zero moving task batches against a nonconstant fixed image produce per-frame
 invalid-metric statuses rather than aborting otherwise independent frames.
 
-For incremental Zarr writes, store affine metadata and restore VoxelData with
-`confusius.io.load`; plain `xarray.open_zarr` does not rebuild custom indexes:
+For chunked Zarr writes, VoxelData 0.0.6 handles geometry metadata automatically.
+Save related outputs together, without first calling `.compute()` or `.persist()`:
 
 ```python
-def storage_view(image):
-    index = image.xindexes["z"]
-    return image.drop_vars(["z", "y", "x"]).assign_attrs(
-        voxel_to_world=index.voxel_to_world.tolist(),
-        voxel_to_world_units=index.units,
-    )
+import xarray as xr
 
+images = xr.Dataset({"registered": result.registered, "valid": result.valid})
+vd.save(images, "registration.zarr")
+stored = vd.load_dataset("registration.zarr", chunks={})
+```
+
+To include diagnostics or outputs on different grids, use a DataTree:
+
+```python
 tree = xr.DataTree.from_dict({
-    "images": storage_view(result.registered).to_dataset(name="image"),
-    "validity": storage_view(result.valid).to_dataset(name="valid"),
+    "images": images,
     "diagnostics": result.diagnostics,
 })
-tree.to_zarr("registration.zarr", compute=False).compute()
-# confusius.io.load("registration.zarr", group="images", variable="image").
+vd.save(tree, "registration.zarr")
+stored = vd.load_tree("registration.zarr", chunks={})
 ```
+
+`vd.save(..., compute=False)` returns one delayed write for explicit scheduling.
+Existing stores are protected by default. Failed writes may leave a partial store.
 
 Use **one DataTree/Dataset write** for related outputs. Separate
 `to_zarr(compute=False)` calls can independently optimize/clone the fitting graphs,

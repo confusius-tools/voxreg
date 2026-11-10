@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 import torch
-from confusius import create_voxeldata
+from voxeldata import create_voxeldata
 
 from voxreg import register
 from voxreg.linear import _optimize

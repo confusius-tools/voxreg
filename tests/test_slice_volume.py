@@ -7,12 +7,12 @@ from typing import Literal
 import numpy as np
 import pytest
 import torch
-from confusius import create_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 from oracles import sample_mixed as sample
 from oracles import voxel
 from registration_options import RegistrationOptions
 from scipy.spatial.transform import Rotation
+from voxeldata import create_voxeldata
 
 from voxreg import position_to_world, register
 from voxreg.sampling import (

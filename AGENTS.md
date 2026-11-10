@@ -25,8 +25,8 @@ coordinates from voxel indices and the voxel-to-world affine. Geometry and trans
 values in voxreg use **z/y/x, mm**.
 
 Registration inputs, masks, resampling inputs, and spatial outputs must follow the
-VoxelData model. Use voxreg `validate_voxeldata`/`ensure_voxeldata` to validate
-VoxelData and `create_voxeldata` to construct it. Do not add plain-coordinate fallbacks
+VoxelData model. Use `voxeldata.validate_voxeldata`/`voxeldata.ensure_voxeldata`
+to validate VoxelData and `voxeldata.create_voxeldata` to construct it. Do not add plain-coordinate fallbacks
 or code that silently accepts a spatial DataArray without its `VoxelToWorldIndex`.
 Invalid spatial inputs should raise a descriptive exception.
 

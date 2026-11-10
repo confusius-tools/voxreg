@@ -1,4 +1,4 @@
-"""Reproduce the 120-frame motion-correction example using ConfUSIus VoxelData."""
+"""Reproduce the 120-frame motion-correction example using canonical VoxelData."""
 
 import argparse
 import hashlib
@@ -15,8 +15,8 @@ import nibabel as nib
 import numpy as np
 import torch
 import xarray as xr
-from confusius import create_voxeldata
 from scipy.ndimage import map_coordinates
+from voxeldata import create_voxeldata
 
 from voxreg import (
     RegistrationResult,
@@ -77,17 +77,21 @@ def load_recording(path: Path, window: slice | None = None) -> xr.DataArray:
         values,
         dims=("time", "k", "j", "i"),
         time=time[window],
-        # Infer before cropping so singleton windows retain source timing.
-        volume_acquisition_duration=metadata.get(
+        voxel_to_world=affine,
+        attrs={"source": str(path.resolve())},
+    )
+    # Infer before cropping so singleton windows retain source timing.
+    duration = float(
+        metadata.get(
             "FrameAcquisitionDuration",
             float(np.median(np.diff(time)))
             if len(time) > 1
             else float(image.header.get_zooms()[3]),
-        ),
-        voxel_to_world=affine,
-        attrs={"source": str(path.resolve())},
+        )
     )
-    result.time.attrs["units"] = "s"
+    if not np.isfinite(duration) or duration <= 0:
+        raise ValueError("FrameAcquisitionDuration must be finite and positive.")
+    result.time.attrs.update(units="s", volume_acquisition_duration=duration)
     return result
 
 

@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 import torch
-from confusius import create_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
 from scipy.ndimage import map_coordinates
+from voxeldata import create_voxeldata
 
 from voxreg import position_to_world
 from voxreg.metrics import compute_global_ncc

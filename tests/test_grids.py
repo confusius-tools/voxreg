@@ -6,11 +6,10 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
-from confusius import create_voxeldata
-from confusius.validation import validate_voxeldata
 from registration_options import RegistrationOptions
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
+from voxeldata import create_voxeldata, validate_voxeldata
 
 from voxreg import position_to_world, register
 from voxreg.sampling import (

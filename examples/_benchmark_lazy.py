@@ -33,8 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 """Live or frozen source root used by isolated benchmark workers."""
 sys.path.insert(0, str(ROOT / "src"))
 
-from confusius import create_voxeldata
-from confusius.io import load
+from voxeldata import create_voxeldata, load_array
 
 from voxreg import register, resample
 from voxreg.preparation import choose_batch_size
@@ -253,14 +252,17 @@ def configure_worker(config: dict[str, Any]) -> dict[str, Any]:
         torch.backends.cudnn.allow_tf32 = False
         torch.cuda.synchronize()
         torch.cuda.reset_peak_memory_stats()
-    moving = load(
+    moving = load_array(
         Path(config["inputs"]) / "recording.zarr",
         variable="image",
         chunks={"time": config["chunk_frames"]},
         consolidated=False,
     )
-    fixed = load(
-        Path(config["inputs"]) / "fixed.zarr", variable="image", consolidated=False
+    fixed = load_array(
+        Path(config["inputs"]) / "fixed.zarr",
+        variable="image",
+        chunks=None,
+        consolidated=False,
     )
     batch = (
         config.get("effective_batch_size")
@@ -312,7 +314,7 @@ def storage_view(image: xr.DataArray) -> xr.DataArray:
     Returns
     -------
     xarray.DataArray
-        Zarr-ready values with affine metadata for ConfUSIus loading.
+        Zarr-ready values with affine metadata for VoxelData loading.
     """
     index = image.xindexes["z"]
     return image.drop_vars(["z", "y", "x"]).assign_attrs(
@@ -336,13 +338,15 @@ def execute(config: dict[str, Any], output: Path) -> None:
         A single DataTree write completes all related outputs jointly.
     """
     inputs = Path(config["inputs"])
-    moving = load(
+    moving = load_array(
         inputs / "recording.zarr",
         variable="image",
         chunks={"time": config["chunk_frames"]},
         consolidated=False,
     )
-    fixed = load(inputs / "fixed.zarr", variable="image", consolidated=False)
+    fixed = load_array(
+        inputs / "fixed.zarr", variable="image", chunks=None, consolidated=False
+    )
     options = {"device": config["device"], "batch_size": config["effective_batch_size"]}
     if config["operation"] == "register":
         result = register(
@@ -444,7 +448,9 @@ def verify(config: dict[str, Any], output: Path, directory: Path) -> dict[str, A
     observed_tasks: set[int] = set()
     samples = sorted({0, frames // 2, frames - 1})
     eager_worst = 0.0
-    fixed = load(inputs / "fixed.zarr", variable="image", consolidated=False).compute()
+    fixed = load_array(
+        inputs / "fixed.zarr", variable="image", chunks=None, consolidated=False
+    ).compute()
     inverse_affine = np.linalg.inv(affine)
     for frame in range(frames):
         raw = source["image"][frame]
@@ -935,6 +941,7 @@ def main(argv: list[str] | None = None) -> int:
                 "scipy",
                 "xarray",
                 "confusius",
+                "voxeldata",
                 "dask",
                 "distributed",
                 "zarr",

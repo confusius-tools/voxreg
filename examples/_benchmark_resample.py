@@ -98,7 +98,7 @@ def _prepare_inputs(config_path):
 
 
 def _voxel_inputs(arrays, metadata):
-    from confusius import create_voxeldata
+    from voxeldata import create_voxeldata
 
     dims = ("k", "j", "i")
     moving = create_voxeldata(

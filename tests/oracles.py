@@ -1,10 +1,36 @@
 """Independent numerical oracles shared by the package's registration tests."""
 
 import numpy as np
-from confusius import create_voxeldata
+import xarray as xr
 from scipy.ndimage import map_coordinates
+from voxeldata import create_voxeldata
 
 from voxreg import position_to_world
+
+
+def confusius_reference(data: xr.DataArray) -> xr.DataArray:
+    """Copy spatial geometry into the legacy independent reference backend.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        Spatial VoxelData image in its native grid.
+
+    Returns
+    -------
+    xarray.DataArray
+        ConfUSIus image with identical values and physical sample positions in mm.
+
+    Raises
+    ------
+    ValueError
+        If the input geometry is unsupported by voxreg.
+    """
+    from confusius import create_voxeldata as create_reference
+
+    return create_reference(
+        data.values, dims=("k", "j", "i"), voxel_to_world=position_to_world(data)
+    )
 
 
 def voxel(values, affine):

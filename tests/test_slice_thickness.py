@@ -5,7 +5,9 @@ import numpy as np
 import pytest
 import torch
 from numpy.testing import assert_allclose, assert_array_equal
+from oracles import confusius_reference
 from scipy.spatial.transform import Rotation
+from voxeldata import create_voxeldata
 
 from voxreg import position_to_world
 from voxreg.sampling import make_grid, recover_initial_parameters, sample_rigid
@@ -28,7 +30,7 @@ def test_singleton_slab_matches_cf_without_replicating_pixels(
             [0.8, 0.25, 0.125]
         )
         affine[:3, 3] = [3.0, -2.0, 4.0]
-    source = cf.create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=affine)
+    source = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=affine)
     pull = np.eye(4)
     if oblique:
         source = source.isel(j=slice(None, None, -1), i=slice(None, None, 2))
@@ -38,7 +40,7 @@ def test_singleton_slab_matches_cf_without_replicating_pixels(
     index = np.eye(4)
     index[0, 0], index[0, 3] = (0.2, -0.6) if oblique else (0.25, -0.75)
     target_affine = np.linalg.inv(pull) @ position_to_world(source) @ index
-    target = cf.create_voxeldata(
+    target = create_voxeldata(
         np.ones((7, *source.shape[1:]), dtype=dtype),
         dims=("k", "j", "i"),
         voxel_to_world=target_affine,
@@ -56,8 +58,8 @@ def test_singleton_slab_matches_cf_without_replicating_pixels(
     fill = float(source.min())
     actual = torch.where(valid, sampled, fill).cpu().numpy()[0]
     reference = cf.registration.resample_like(
-        source,
-        target,
+        confusius_reference(source),
+        confusius_reference(target),
         pull,
         interpolation=interpolation,
         fill_value=fill,
@@ -66,8 +68,8 @@ def test_singleton_slab_matches_cf_without_replicating_pixels(
     ones = source.copy(data=np.ones(source.shape))
     expected_valid = (
         cf.registration.resample_like(
-            ones,
-            target,
+            confusius_reference(ones),
+            confusius_reference(target),
             pull,
             interpolation=interpolation,
             fill_value=0.0,

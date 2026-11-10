@@ -83,32 +83,6 @@ def _execution_slot(device: str) -> Generator[None]:
         yield
 
 
-def _check_time(data: xr.DataArray) -> None:
-    """Validate recording labels before constructing tasks.
-
-    Parameters
-    ----------
-    data : xarray.DataArray
-        Spatial input or recording.
-
-    Returns
-    -------
-    None
-        Valid labels require no conversion.
-
-    Raises
-    ------
-    ValueError
-        If recording time labels are absent or nonunique.
-    """
-    if "time" in data.dims and (
-        "time" not in data.coords
-        or data.time.dims != ("time",)
-        or not data.get_index("time").is_unique
-    ):
-        raise ValueError("moving must have unique one-dimensional time labels.")
-
-
 def _check_chunks(data: Any, limit: int) -> None:
     """Reject source time blocks larger than the eager task memory contract.
 
@@ -619,7 +593,6 @@ def register_lazy(
     from voxreg.registration import run_stage
 
     validate_registration_geometry(moving)
-    _check_time(moving)
     if "time" not in moving.dims:
         raise TypeError(
             "Lazy registration requires a time recording; compute spatial image pairs before register."
@@ -886,7 +859,7 @@ def resample_lazy(
     if "time" not in moving.dims:
         time = transforms.time if labeled and per_frame else np.arange(count)
         moving = moving.expand_dims(time=time)
-    _check_time(moving)
+        validate_registration_geometry(moving)
     ranges = _task_ranges(moving.sizes["time"], batch_size, source, transforms)
     # Reference intensities are unused; replacing data avoids loading a lazy image.
     reference = reference.copy(data=np.broadcast_to(np.uint8(0), reference.shape))

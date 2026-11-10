@@ -10,12 +10,12 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
-from confusius._utils.geometry import VoxelToWorldIndex
 from dask import delayed
 from distributed import Client, LocalCluster
 from numpy.testing import assert_allclose, assert_array_equal
 from oracles import max_pull_difference
 from registration_options import RegistrationOptions
+from voxeldata import VoxelToWorldIndex
 
 from voxreg import Stage, position_to_world, register, resample
 from voxreg.geometry import validate_registration_geometry
@@ -500,10 +500,12 @@ def test_distributed_worker_execution_and_joint_zarr_storage(
         )
         tree.to_zarr(tmp_path / "result.zarr", compute=False, zarr_format=2).compute()
         assert len(client.get_events("voxreg-test-callback")) == 2 * len(events)
-    from confusius.io import load
+    from voxeldata import load_array
 
-    stored = load(tmp_path / "result.zarr", variable="image", group="images")
-    stored_valid = load(tmp_path / "result.zarr", variable="valid", group="validity")
+    stored = load_array(tmp_path / "result.zarr", variable="image", group="images")
+    stored_valid = load_array(
+        tmp_path / "result.zarr", variable="valid", group="validity"
+    )
     validate_registration_geometry(stored)
     validate_registration_geometry(stored_valid)
     assert_array_equal(stored, image)

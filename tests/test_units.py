@@ -3,10 +3,10 @@
 import numpy as np
 import pytest
 import xarray as xr
-from confusius._utils.geometry import attach_voxel_to_world_index
 from numpy.testing import assert_allclose, assert_array_equal
 from oracles import max_pull_difference, sample_mixed
 from registration_options import RegistrationOptions
+from voxeldata import attach_voxel_to_world_index
 
 from voxreg import position_to_world, register, resample
 

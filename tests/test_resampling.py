@@ -5,8 +5,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 import xarray as xr
-from confusius import create_voxeldata
 from scipy.ndimage import map_coordinates
+from voxeldata import create_voxeldata
 
 from voxreg import position_to_world, register, resample
 
@@ -329,7 +329,7 @@ def test_rejects_invalid_time_coordinates(
         labeled = labeled.drop_indexes("time").assign_coords(time=0)
     else:
         labeled = labeled.assign_coords(time=[0, 0])
-    with pytest.raises(ValueError, match="time labels"):
+    with pytest.raises(ValueError, match="time"):
         resample(
             moving if on_transform else labeled,
             fixed,

@@ -8,10 +8,10 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
-from confusius import create_voxeldata
 from registration_options import RegistrationOptions
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
+from voxeldata import create_voxeldata
 
 from voxreg import position_to_world, register
 from voxreg.sampling import build_world_matrices, make_grid, recover_initial_parameters

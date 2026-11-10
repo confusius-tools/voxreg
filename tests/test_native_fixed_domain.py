@@ -5,7 +5,7 @@ import pytest
 import SimpleITK as sitk
 import torch
 from numpy.testing import assert_allclose, assert_array_equal
-from oracles import voxel
+from oracles import confusius_reference, voxel
 from scipy.spatial.transform import Rotation
 
 from voxreg import linear, position_to_world, register
@@ -114,8 +114,12 @@ def test_native_domains_and_nonidentity_seed_match_sitk_value(
     transform.SetTranslation(seed[:3, 3])
     evaluator.SetInitialTransform(transform)
     expected = evaluator.MetricEvaluate(
-        sitk.Cast(voxeldata_to_sitk_image(fixed), sitk.sitkFloat64),
-        sitk.Cast(voxeldata_to_sitk_image(moving), sitk.sitkFloat64),
+        sitk.Cast(
+            voxeldata_to_sitk_image(confusius_reference(fixed)), sitk.sitkFloat64
+        ),
+        sitk.Cast(
+            voxeldata_to_sitk_image(confusius_reference(moving)), sitk.sitkFloat64
+        ),
     )
     assert_allclose(result.diagnostics.objective, expected, atol=1e-6, rtol=0)
     assert_array_equal(moving.values, originals[0])

@@ -40,6 +40,7 @@ PACKAGES = (
     "scipy",
     "xarray",
     "confusius",
+    "voxeldata",
     "fireants",
     "SimpleITK",
     "nibabel",

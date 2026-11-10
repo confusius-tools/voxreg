@@ -65,6 +65,10 @@ def test_nifti_round_trip_and_window(recording_factory, tmp_path, dtype, suffix)
     )
     declared = example.load_recording(path, slice(1, 2))
     assert declared.time.attrs["volume_acquisition_duration"] == 0.03
+    for duration in (0, -1, float("nan")):
+        sidecar.write_text(json.dumps({"FrameAcquisitionDuration": duration}))
+        with pytest.raises(ValueError, match="FrameAcquisitionDuration"):
+            example.load_recording(path)
     sidecar.write_text(json.dumps({"VolumeTiming": [1, 2]}))
     with pytest.raises(ValueError, match="VolumeTiming"):
         example.load_recording(path)

@@ -3,9 +3,8 @@
 import numpy as np
 import pytest
 import torch
-from confusius import create_voxeldata
-from confusius.validation import validate_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
+from voxeldata import create_voxeldata, validate_voxeldata
 
 from voxreg import position_to_world, register
 
@@ -208,10 +207,10 @@ def test_nonzero_constant_frame_is_not_optimized(recording_factory):
 
 def test_empty_and_invalid_time_labels(recording_factory):
     data, _, _ = recording_factory()
-    with pytest.raises(ValueError, match="nonempty"):
+    with pytest.raises(ValueError, match="zero-length"):
         register(data.isel(time=slice(0, 0)))
     for invalid in (data.drop_vars("time"), data.assign_coords(time=[1, 1, 2])):
-        with pytest.raises(ValueError, match="time labels"):
+        with pytest.raises(ValueError, match="time"):
             register(invalid)
 
 

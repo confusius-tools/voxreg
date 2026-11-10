@@ -3,10 +3,10 @@
 import numpy as np
 import pytest
 import torch
-from confusius import create_voxeldata
 from oracles import sample_mixed, voxel
 from scipy.ndimage import gaussian_filter, map_coordinates
 from scipy.spatial.transform import Rotation
+from voxeldata import create_voxeldata
 
 from voxreg import position_to_world
 

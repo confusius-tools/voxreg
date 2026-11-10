@@ -1676,6 +1676,25 @@ wheels = [
 ]
 
 [[package]]
+name = "h5netcdf"
+version = "1.8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (platform_machine == 'x86_64' and sys_platform == 'darwin')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64') or (python_full_version >= '3.12' and sys_platform != 'darwin')" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/44/93/2481ef2df548fce871d7e28a8260821c7ca52b7fffd0f93fb8e68d4576f3/h5netcdf-1.8.2.tar.gz", hash = "sha256:3c34102269d99f7631d6529ff7a3067f51677f23ebf14669da1dc795af1caac5", size = 80386, upload-time = "2026-10-27T07:26:50.501Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/87/b27650a01459c8b428c30234ba39dcb31b2d50762b67989806fd754ce225/h5netcdf-1.8.2-py3-none-any.whl", hash = "sha256:a0306ee81addee2abe2d2e18433fd5e9f33952272f4db960679d2e41db4ac079", size = 63566, upload-time = "2026-10-27T07:26:48.917Z" },
+]
+
+[package.optional-dependencies]
+h5py = [
+    { name = "h5py" },
+]
+
+[[package]]
 name = "h5py"
 version = "3.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -6039,6 +6058,28 @@ wheels = [
 ]
 
 [[package]]
+name = "voxeldata"
+version = "0.0.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (platform_machine == 'x86_64' and sys_platform == 'darwin')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64') or (python_full_version >= '3.12' and sys_platform != 'darwin')" },
+    { name = "pandas" },
+    { name = "xarray" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/14/f0/34bd8667e64adf07313e29fded71b4f965bb4a204cd7777536b61694b671/voxeldata-0.0.6.tar.gz", hash = "sha256:fe0e82d0d8df8655e6da23e20cdd7fc1bf5a9533d5dba74dc459b609ed706547", size = 56014, upload-time = "2026-11-10T11:17:39.136Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/a4/bae542905e74b9056d83d74f9b194ca3b709db07e569781aec90e352b82f/voxeldata-0.0.6-py3-none-any.whl", hash = "sha256:ff097a3bb2d1debaea6c4d899ba1ea0d255a314be2d5c8f67e7ebc955a54ba2a", size = 63116, upload-time = "2026-11-10T11:17:38.019Z" },
+]
+
+[package.optional-dependencies]
+io = [
+    { name = "h5netcdf", extra = ["h5py"] },
+    { name = "zarr", version = "3.1.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "zarr", version = "3.4.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+
+[[package]]
 name = "voxreg"
 version = "0.0.1"
 source = { editable = "." }
@@ -6052,6 +6093,7 @@ dependencies = [
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "torch" },
+    { name = "voxeldata", extra = ["io"] },
     { name = "xarray" },
 ]
 
@@ -6090,6 +6132,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.16.3" },
     { name = "scipy", marker = "extra == 'examples'", specifier = ">=1.16.3" },
     { name = "torch", specifier = ">=2.14.1" },
+    { name = "voxeldata", extras = ["io"], specifier = ">=0.0.6" },
     { name = "xarray", specifier = ">=2026.9.0" },
 ]
 provides-extras = ["examples"]

@@ -1,12 +1,10 @@
-"""ConfUSIus interoperability and voxreg's private registration geometry guards."""
+"""VoxelData interoperability and registration geometry validation."""
 
 import numpy as np
 import pytest
 import xarray as xr
-from confusius import create_voxeldata
-from confusius._utils.geometry import VoxelToWorldIndex
-from confusius.validation import validate_voxeldata
 from numpy.testing import assert_allclose, assert_array_equal
+from voxeldata import VoxelToWorldIndex, create_voxeldata, validate_voxeldata
 
 from voxreg import position_to_world, register
 from voxreg.geometry import _check_affine, validate_registration_geometry
@@ -39,7 +37,7 @@ def test_slice_reverse_and_time_reduction(recording_factory):
     assert_array_equal(vector.x.values, data.x.isel(i=[2, 4, 6]).values)
 
 
-def test_confusius_input_and_output_share_voxeldata(recording_factory):
+def test_input_and_output_share_voxeldata(recording_factory):
     data, _, _ = recording_factory(oblique=True, strided=True)
     external = create_voxeldata(
         data.data,
@@ -57,9 +55,7 @@ def test_confusius_input_and_output_share_voxeldata(recording_factory):
         validate_voxeldata(output)
         assert isinstance(output.xindexes["z"], VoxelToWorldIndex)
         assert output.time.attrs == external.time.attrs
-        assert_array_equal(
-            output.fusi.affine.voxel_to_world, external.fusi.affine.voxel_to_world
-        )
+        assert_array_equal(output.vd.voxel_to_world, external.vd.voxel_to_world)
         for dim in external.dims:
             assert_array_equal(output[dim], external[dim])
     assert_array_equal(result.registered[0], external[0])
@@ -93,7 +89,7 @@ def test_invalid_native_coordinates(coordinates):
     data = create_voxeldata(
         np.ones((1, 3, 4)), dims=("k", "j", "i"), voxel_to_world=np.eye(4)
     )
-    with pytest.raises((TypeError, ValueError), match="coordinate"):
+    with pytest.raises((TypeError, ValueError), match="[Cc]oordinate"):
         validate_registration_geometry(data.assign_coords(j=coordinates))
 
 
@@ -142,7 +138,7 @@ def test_large_nonuniform_native_steps_are_rejected():
         position_to_world(data)
 
 
-def test_native_indices_cannot_wrap_in_confusius():
+def test_native_indices_cannot_wrap_in_voxeldata():
     data = create_voxeldata(
         np.ones((1, 3, 4)),
         dims=("k", "j", "i"),
@@ -162,12 +158,13 @@ def test_units_and_unsupported_dimensions():
         np.ones((2, 1, 4, 5)),
         dims=("pose", "k", "j", "i"),
         voxel_to_world=np.repeat(np.eye(4)[None], 2, axis=0),
+        geometry_dims=("pose",),
     )
     with pytest.raises(ValueError, match="dimensions"):
         validate_registration_geometry(poses)
 
 
-def test_valid_confusius_dask_data_preserves_lazy_geometry(recording_factory):
+def test_valid_voxeldata_dask_data_preserves_lazy_geometry(recording_factory):
     data, _, _ = recording_factory()
     lazy = data.chunk({"time": 1})
     validate_voxeldata(lazy)

@@ -123,7 +123,7 @@ def _phantom(points, shape):
 
 
 def _dataset(shape, frames, model, recording):
-    from confusius import create_voxeldata
+    from voxeldata import create_voxeldata
 
     points = _grid(shape)
     affine = np.diag([*SPACING, 1.0])
