@@ -60,9 +60,16 @@ def test_explicit_single_level_preserves_defaults(linear_pair_factory, planar, m
         shrink_factors=(1,),
         smoothing_sigmas=(0,),
     )
-    for name in ("registered", "valid", "forward_transforms", "inverse_transforms"):
-        xr.testing.assert_identical(getattr(baseline, name), getattr(explicit, name))
-    xr.testing.assert_equal(baseline.diagnostics, explicit.diagnostics)
+    for name in (
+        "images/registered",
+        "images/valid",
+        "forward/transform",
+        "inverse/transform",
+    ):
+        xr.testing.assert_identical(baseline[name], explicit[name])
+    xr.testing.assert_equal(
+        baseline["diagnostics"].to_dataset(), explicit["diagnostics"].to_dataset()
+    )
 
 
 @pytest.mark.parametrize("planar", [True, False])
@@ -148,22 +155,38 @@ def test_pyramid_native_output_and_level_diagnostics(
         return_transforms=True,
         progress=False,
     )
-    assert result.registered.shape == fixed.shape
-    assert result.registered.dtype == moving.dtype
-    assert result.registered.xindexes["z"].equals(fixed.xindexes["z"])
-    assert_array_equal(result.diagnostics.shrink_factor, [3, 1])
-    assert_array_equal(result.diagnostics.iteration_budget, [2, 3])
-    assert result.diagnostics.smoothing_sigma.attrs["units"] == "mm"
-    assert result.diagnostics.level_n_iterations.dims == ("level",)
+    assert result["images"].to_dataset()["registered"].shape == fixed.shape
+    assert result["images"].to_dataset()["registered"].dtype == moving.dtype
     assert (
-        result.diagnostics.n_iterations == result.diagnostics.level_n_iterations.sum()
+        result["images"]
+        .to_dataset()["registered"]
+        .xindexes["z"]
+        .equals(fixed.xindexes["z"])
     )
-    assert result.diagnostics.objective == result.diagnostics.level_objective[-1]
-    assert result.diagnostics.status == result.diagnostics.level_status[-1]
-    assert result.forward_transforms is not None
-    sampled, valid = resample(moving, fixed, result.forward_transforms, device=device)
-    assert_allclose(sampled, result.registered, rtol=0, atol=3e-6)
-    assert_array_equal(valid, result.valid)
+    assert_array_equal(result["diagnostics"].to_dataset().shrink_factor, [3, 1])
+    assert_array_equal(result["diagnostics"].to_dataset().iteration_budget, [2, 3])
+    assert result["diagnostics"].to_dataset().smoothing_sigma.attrs["units"] == "mm"
+    assert result["diagnostics"].to_dataset().level_n_iterations.dims == ("level",)
+    assert (
+        result["diagnostics"].to_dataset().n_iterations
+        == result["diagnostics"].to_dataset().level_n_iterations.sum()
+    )
+    assert (
+        result["diagnostics"].to_dataset().objective
+        == result["diagnostics"].to_dataset().level_objective[-1]
+    )
+    assert (
+        result["diagnostics"].to_dataset().status
+        == result["diagnostics"].to_dataset().level_status[-1]
+    )
+    assert "forward" in result
+    sampled, valid = resample(
+        moving, fixed, result["forward"].to_dataset()["transform"], device=device
+    )
+    assert_allclose(
+        sampled, result["images"].to_dataset()["registered"], rtol=0, atol=3e-6
+    )
+    assert_array_equal(valid, result["images"].to_dataset()["valid"])
     xr.testing.assert_identical(moving, original)
 
 
@@ -180,11 +203,15 @@ def test_coarse_final_level_still_outputs_native_grid(linear_pair_factory, model
         return_transforms=True,
         progress=False,
     )
-    assert result.registered.shape == fixed.shape
-    assert result.forward_transforms is not None
-    sampled, valid = resample(moving, fixed, result.forward_transforms)
-    assert_allclose(sampled, result.registered, rtol=0, atol=2e-6)
-    assert_array_equal(valid, result.valid)
+    assert result["images"].to_dataset()["registered"].shape == fixed.shape
+    assert "forward" in result
+    sampled, valid = resample(
+        moving, fixed, result["forward"].to_dataset()["transform"]
+    )
+    assert_allclose(
+        sampled, result["images"].to_dataset()["registered"], rtol=0, atol=2e-6
+    )
+    assert_array_equal(valid, result["images"].to_dataset()["valid"])
 
 
 @pytest.mark.parametrize("model", ["rigid", "syn"])
@@ -213,13 +240,17 @@ def test_pyramid_reference_failure_isolation_and_batching(linear_pair_factory, m
             ),
         )
         assert progress[-1] == (3, 3)
-        assert_array_equal(result.registered[0], recording[0])
-        assert_array_equal(result.diagnostics.level_n_iterations[0], [0, 0])
+        assert_array_equal(result["images"].to_dataset()["registered"][0], recording[0])
         assert_array_equal(
-            result.diagnostics.level_status[0], ["reference", "reference"]
+            result["diagnostics"].to_dataset().level_n_iterations[0], [0, 0]
         )
         assert_array_equal(
-            result.diagnostics.level_status[2], ["invalid_metric", "invalid_metric"]
+            result["diagnostics"].to_dataset().level_status[0],
+            ["reference", "reference"],
+        )
+        assert_array_equal(
+            result["diagnostics"].to_dataset().level_status[2],
+            ["invalid_metric", "invalid_metric"],
         )
         assert metrics and all(steps.max() <= 3 for _, steps, _ in metrics)
         fitted_clocks = [
@@ -227,10 +258,15 @@ def test_pyramid_reference_failure_isolation_and_batching(linear_pair_factory, m
         ]
         assert fitted_clocks == [0, 3, 0, 3]
         results.append(result)
-    assert_allclose(results[0].registered, results[1].registered, rtol=0, atol=2e-6)
+    assert_allclose(
+        results[0]["images"].to_dataset()["registered"],
+        results[1]["images"].to_dataset()["registered"],
+        rtol=0,
+        atol=2e-6,
+    )
     assert_array_equal(
-        results[0].diagnostics.level_n_iterations,
-        results[1].diagnostics.level_n_iterations,
+        results[0]["diagnostics"].to_dataset().level_n_iterations,
+        results[1]["diagnostics"].to_dataset().level_n_iterations,
     )
 
 
@@ -252,16 +288,18 @@ def test_linear_pyramid_recovers_independent_truth(
         return_transforms=True,
         progress=False,
     )
-    assert result.forward_transforms is not None
+    assert "forward" in result
     points = position_to_world(fixed) @ np.vstack(
         (np.indices(fixed.shape).reshape(3, -1), np.ones(fixed.size))
     )
-    difference = ((result.forward_transforms.values - truth) @ points)[:3]
+    difference = (
+        (result["forward"].to_dataset()["transform"].values - truth) @ points
+    )[:3]
     spacing = np.linalg.norm(
         position_to_world(fixed)[:3, :3][:, np.array(fixed.shape) > 1], axis=0
     ).min()
     assert np.sqrt(np.mean(np.sum(difference**2, axis=0))) / spacing < 0.30
-    assert_array_equal(result.diagnostics.level_n_iterations, [80, 120])
+    assert_array_equal(result["diagnostics"].to_dataset().level_n_iterations, [80, 120])
 
 
 @pytest.mark.parametrize("planar", [True, False])
@@ -279,15 +317,22 @@ def test_syn_pyramid_recovers_nonlinear_truth(nonlinear_pair_factory, device, pl
         return_transforms=True,
         progress=False,
     )
-    assert result.forward_transforms is not None
+    assert "forward" in result
     spacing = np.linalg.norm(
         position_to_world(fixed)[:3, :3][:, np.array(fixed.shape) > 1], axis=0
     ).min()
-    residual = result.forward_transforms.values - truth
+    residual = (
+        result["forward"]
+        .to_dataset()["transform"]
+        .transpose(..., "world_component")
+        .values
+        - truth
+    )
     assert np.sqrt(np.mean(np.sum(residual**2, axis=-1))) / spacing < 0.30
-    assert result.diagnostics.min_jacobian > 0
+    assert result["diagnostics"].to_dataset().min_jacobian > 0
     assert_array_equal(
-        result.diagnostics.level_status, ["max_iterations", "max_iterations"]
+        result["diagnostics"].to_dataset().level_status,
+        ["max_iterations", "max_iterations"],
     )
 
 
@@ -310,11 +355,15 @@ def test_mixed_pyramid_preserves_native_domain(
         return_transforms=True,
         progress=False,
     )
-    assert result.registered.shape == fixed.shape
-    assert result.forward_transforms is not None
-    sampled, valid = resample(moving, fixed, result.forward_transforms)
-    assert_allclose(sampled, result.registered, rtol=0, atol=2e-6)
-    assert_array_equal(valid, result.valid)
+    assert result["images"].to_dataset()["registered"].shape == fixed.shape
+    assert "forward" in result
+    sampled, valid = resample(
+        moving, fixed, result["forward"].to_dataset()["transform"]
+    )
+    assert_allclose(
+        sampled, result["images"].to_dataset()["registered"], rtol=0, atol=2e-6
+    )
+    assert_array_equal(valid, result["images"].to_dataset()["valid"])
 
 
 @pytest.mark.parametrize("model", ["rigid", "affine", "syn"])
@@ -343,20 +392,26 @@ def test_pyramid_moments_uses_original_images_and_preserves_failed_seed(
         return_transforms=True,
         progress=False,
     )
-    assert result.forward_transforms is not None
+    assert "forward" in result
     assert_array_equal(
-        result.diagnostics.level_status, ["invalid_metric", "invalid_metric"]
+        result["diagnostics"].to_dataset().level_status,
+        ["invalid_metric", "invalid_metric"],
     )
-    assert result.diagnostics.n_iterations == 0
-    assert result.registered.dtype == np.uint16
+    assert result["diagnostics"].to_dataset().n_iterations == 0
+    assert result["images"].to_dataset()["registered"].dtype == np.uint16
     if model == "syn":
         assert_allclose(
-            result.forward_transforms,
+            result["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component"),
             np.broadcast_to(expected, (*fixed.shape, 3)),
             rtol=0,
             atol=1e-12,
         )
     else:
         assert_allclose(
-            result.forward_transforms.values[:3, 3], expected, rtol=0, atol=1e-12
+            result["forward"].to_dataset()["transform"].values[:3, 3],
+            expected,
+            rtol=0,
+            atol=1e-12,
         )

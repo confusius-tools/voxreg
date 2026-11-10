@@ -1,10 +1,11 @@
-"""Registration outputs, shared status codes and native-grid result assembly."""
+"""Registration trees, shared status codes and native-grid result assembly."""
 
 from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
+from voxeldata import ensure_voxeldata
 
 STATUS_LABELS: npt.NDArray[np.str_] = np.array(
     [
@@ -18,68 +19,55 @@ STATUS_LABELS: npt.NDArray[np.str_] = np.array(
         "skipped",
     ]
 )
-
 """Per-frame optimizer status labels shared by linear, nonlinear and staged fits."""
 
 
-@dataclass(frozen=True)
-class RegistrationResult:
-    """Labeled registration outputs, not a replacement spatial container.
+def assemble_result_tree(
+    registered: xr.DataArray,
+    valid: xr.DataArray,
+    forward: xr.DataArray | None,
+    diagnostics: xr.Dataset,
+    inverse: xr.DataArray | None = None,
+    stages: tuple[xr.Dataset, ...] | None = None,
+) -> xr.DataTree:
+    """Assemble node-local registration outputs into one saveable tree.
 
-    Attributes
+    Parameters
     ----------
     registered : xarray.DataArray
         Original intensities resampled on the fixed grid, retaining moving dtype.
-        Dask inputs retain lazy time blocks shared with maps and diagnostics.
-        Integer output is rounded to nearest-even and clipped to its type range.
     valid : xarray.DataArray
-        Boolean VoxelData mask of valid moving-image sample centers.
-    forward_transforms : xarray.DataArray, optional
-        None unless register(return_transforms=True). Linear models: homogeneous world z/y/x pull matrices. SyN: complete
-        fixed-world-to-moving-world displacement in mm on the fixed grid, with
-        a final world_component axis labeled z/y/x. Recordings retain time.
+        Boolean VoxelData support mask on the registered image grid.
+    forward : xarray.DataArray, optional
+        Fixed-world-to-moving-world pull matrix or displacement in mm.
     diagnostics : xarray.Dataset
-        Objective, update count and status, plus linear motion parameters or
-        SyN regularity/inverse-consistency diagnostics. Pyramid fitting adds
-        level_objective, level_status and level_n_iterations; n_iterations sums
-        the actual updates across levels, while status describes the final level
-        including native-grid SyN finalization checks.
-        For staged calls, n_iterations sums all stages, while objective and
-        model-specific variables describe the final model. stage_diagnostics
-        retains the original counts and statuses of each stage separately.
-        Eager attrs["device"] records the resolved CPU/CUDA choice. Lazy results
-        expose execution_device, execution_task_size, execution_batch_size and
-        execution_batch_start variables. Tasks follow source chunks; fitting batch
-        sizes can be smaller. Timings in batch_*_seconds repeat per task frame. Compute or
-        store related outputs jointly to avoid repeated fitting; one DataTree
-        write preserves sharing across image, map and diagnostic groups.
-    inverse_transforms : xarray.DataArray, optional
-        None unless register(return_transforms=True). Linear models: inverse
-        world z/y/x pull matrices. SyN: complete moving-world-to-fixed-world
-        displacement in mm on the original moving grid. Sampled field inverses
-        are approximate.
-    stage_diagnostics : tuple of xarray.Dataset, optional
-        One dataset per stage for an explicit pipeline, including each stage's
-        pyramid diagnostics. None for the original single-model string API.
+        Summary fitting and execution diagnostics.
+    inverse : xarray.DataArray, optional
+        Moving-world-to-fixed-world pull on the original moving grid.
+    stages : tuple of xarray.Dataset, optional
+        Independent stage diagnostics in execution order.
+
+    Returns
+    -------
+    xarray.DataTree
+        Images at `images/registered` and `images/valid`, summary at
+        `diagnostics`, optional maps at `forward/transform` and
+        `inverse/transform`, and optional stage diagnostics at `stages/0`, etc.
+        All spatial coordinates are local to leaf nodes. Lazy outputs retain
+        shared task identities for a single `voxeldata.save` write.
     """
-
-    registered: xr.DataArray
-    valid: xr.DataArray
-    forward_transforms: xr.DataArray | None
-    diagnostics: xr.Dataset
-    inverse_transforms: xr.DataArray | None = None
-    stage_diagnostics: tuple[xr.Dataset, ...] | None = None
-
-    @property
-    def transforms(self) -> xr.DataArray | None:
-        """Access forward_transforms through the original attribute name.
-
-        Returns
-        -------
-        xarray.DataArray or None
-            The same forward pull, without copying or allocating transforms.
-        """
-        return self.forward_transforms
+    nodes = {
+        "/images": xr.Dataset({"registered": registered, "valid": valid}),
+        "/diagnostics": diagnostics,
+    }
+    for name, transform in (("forward", forward), ("inverse", inverse)):
+        if transform is not None:
+            if "world_component" in transform.dims:
+                transform = ensure_voxeldata(transform)
+            nodes[f"/{name}"] = transform.to_dataset(name="transform")
+    if stages is not None:
+        nodes.update({f"/stages/{index}": data for index, data in enumerate(stages)})
+    return xr.DataTree.from_dict(nodes)
 
 
 @dataclass(frozen=True)
@@ -133,7 +121,7 @@ def build_result(
     diagnostics: xr.Dataset,
     inverse: xr.DataArray | None,
     spatial_input: bool,
-) -> RegistrationResult:
+) -> xr.DataTree:
     """Package native outputs, removing synthetic time for spatial pairs.
 
     Parameters
@@ -155,7 +143,7 @@ def build_result(
 
     Returns
     -------
-    RegistrationResult
+    xarray.DataTree
         Labelled image, support, transform and diagnostic outputs.
     """
     if values.ndim == 3:
@@ -168,4 +156,4 @@ def build_result(
         diagnostics = diagnostics.isel(time=0, drop=True)
         forward = None if forward is None else forward.isel(time=0, drop=True)
         inverse = None if inverse is None else inverse.isel(time=0, drop=True)
-    return RegistrationResult(registered, valid, forward, diagnostics, inverse)
+    return assemble_result_tree(registered, valid, forward, diagnostics, inverse)

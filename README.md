@@ -44,9 +44,10 @@ import voxreg
 recording = vd.load_array("recording.zarr", chunks={})
 result = voxreg.register(recording)
 
-corrected = result.registered
-valid = result.valid
-print(result.diagnostics)
+corrected = result["images/registered"]
+valid = result["images/valid"]
+print(result["diagnostics"])
+vd.save(result, "registration.zarr")
 ```
 
 For a recording, the first frame is the default reference and is preserved exactly. For
@@ -55,8 +56,32 @@ a single image pair, pass `voxreg.register(moving, fixed)`. Both `register` and
 `device="cpu"` or `device="cuda"` to select explicitly. CUDA execution errors
 propagate, including out-of-memory errors; there is no CPU retry. Results remain
 NumPy-backed on CPU for eager calls; Dask inputs retain lazy outputs.
-Eager registration records the device in `result.diagnostics.attrs["device"]`;
+Eager registration records the device in `result["diagnostics"].attrs["device"]`;
 lazy diagnostics expose worker-resolved `execution_device` per frame.
+
+## Result tree
+
+Both eager and lazy registration return a native `xarray.DataTree`:
+
+```text
+/
+├── images       registered, valid (VoxelData on the fixed grid)
+├── diagnostics  summary fit and execution diagnostics
+├── forward      transform (only with return_transforms=True)
+├── inverse      transform (only with return_transforms=True)
+└── stages       0, 1, ... (diagnostic leaves for explicit pipelines only)
+```
+
+Forward transforms are fixed→moving world pulls; inverse transforms are
+moving→fixed pulls. Displacement fields use canonical VoxelData dimensions
+`(world_component, [time,] k, j, i)`, with components labelled z/y/x. Nonlinear
+inverse fields keep the original moving grid,
+independent of the fixed-grid image and forward field. Spatial coordinates are
+local to leaf nodes; the root has no shared grid. Image variables are named
+`registered` and `valid`; map variables are named `transform`. Intensity metadata
+and dtype are retained. The former `RegistrationResult` and its attribute aliases
+are removed; use tree paths and test optional groups with `"forward" in result`.
+For a node's Dataset, use `result["diagnostics"].to_dataset()`.
 
 ## `voxreg.register`
 
@@ -268,7 +293,7 @@ Masks do not zero or crop the input images, clip the output, or force deformatio
 to vanish outside the ROI. Shared masks apply to every stage and level; this
 differs from ANTsPy's default final-stage-only mask policy.
 
-`result.valid` and `diagnostics.valid_fraction` still describe geometric output
+`result["images/valid"]` and `diagnostics.valid_fraction` still describe geometric output
 support. With masks, `diagnostics.roi_valid_fraction` separately reports the
 fraction of native fixed-grid centres inside both ROIs and image support at the
 returned endpoint map. For SyN this is an endpoint diagnostic, separate from its
@@ -322,11 +347,11 @@ iteration limit permit continuation. Registration failure stops that frame's
 pipeline and retains its best valid transform; later stages mark it `skipped`.
 Other frames continue, and an implicit first-frame reference is preserved exactly.
 
-`result.stage_diagnostics` is a tuple with one dataset per stage, including that
-stage's pyramid diagnostics and zero-based `stage`/`transform` attributes.
-`result.diagnostics` describes the final model, preserves any earlier failure
+`result["stages/0"]`, `result["stages/1"]`, etc. retain each stage's pyramid
+diagnostics and zero-based `stage`/`transform` attributes.
+`result["diagnostics"]` describes the final model, preserves any earlier failure
 status and sums updates across all stages. Its level variables describe only the
-final stage; consult `stage_diagnostics` for earlier levels. Phase timings sum
+final stage; consult the `stages` subtree for earlier levels. Phase timings sum
 stage timings; `stage_overhead_seconds` records validation/orchestration overhead.
 Convergence windows restart at every stage and level. A summary `converged`
 status describes the final stage/level; it does not assert that every earlier
@@ -409,8 +434,8 @@ spatial image pair:
 
 ```python
 result = voxreg.register(moving, fixed, return_transforms=True)
-resampled, valid = voxreg.resample(moving, fixed, result.forward_transforms, device="cuda")
-reverse, reverse_valid = voxreg.resample(fixed, moving, result.inverse_transforms, device="cuda")
+resampled, valid = voxreg.resample(moving, fixed, result["forward/transform"], device="cuda")
+reverse, reverse_valid = voxreg.resample(fixed, moving, result["inverse/transform"], device="cuda")
 ```
 
 The reference must be spatial-only; for a recording use a spatial frame as the
@@ -430,16 +455,12 @@ finite values, integer ranges, moments and numeric transform checks occur in tas
 and may fail at compute/write time.
 
 ```python
-import dask
-import xarray as xr
-
 result = voxreg.register(
     recording.chunk(time=16), fixed,
     device="auto", return_transforms=True,
 )
-images, valid, diagnostics = dask.compute(
-    result.registered, result.valid, result.diagnostics,
-)
+vd.save(result, "registration.zarr")  # Compute and write bounded time tasks.
+# For small results only: computed = result.compute().
 ```
 
 Each task handles one temporal source chunk and runs its full stage/pyramid
@@ -458,6 +479,12 @@ when the moving input has none. Spatial-image broadcasting follows map chunks,
 not a synthetic full-recording chunk. Without any temporal Dask source, task sizes
 fall back to an explicit `batch_size` or one frame. Auxiliary time chunks larger
 than the largest primary task chunk are rejected; align them at the data source.
+Very small temporal storage chunks can make graph construction slow and consume
+substantial client memory. Choose a larger aligned multiple when worker RAM allows:
+`vd.load_array(path, chunks={"time": 300})` groups six 50-frame storage chunks.
+This changes task size, not the optimizer's fitting-batch override. It is not a
+universal recommended chunk size.
+
 Spatial chunks are assembled into complete volumes within each task. **Rechunking
 cannot avoid reading a larger underlying storage/loader block**. The complete
 source chunk and task outputs must fit worker RAM; only the fitting batch and its
@@ -488,26 +515,18 @@ centers are lazy `rotation_center_zyx_mm` variables instead of eager attributes.
 All-zero moving task batches against a nonconstant fixed image produce per-frame
 invalid-metric statuses rather than aborting otherwise independent frames.
 
-For chunked Zarr writes, VoxelData 0.0.6 handles geometry metadata automatically.
-Save related outputs together, without first calling `.compute()` or `.persist()`:
+VoxelData 0.0.6 handles all tree geometry metadata automatically. Save the result
+without first calling `.compute()` or `.persist()`:
 
 ```python
-import xarray as xr
-
-images = xr.Dataset({"registered": result.registered, "valid": result.valid})
-vd.save(images, "registration.zarr")
-stored = vd.load_dataset("registration.zarr", chunks={})
-```
-
-To include diagnostics or outputs on different grids, use a DataTree:
-
-```python
-tree = xr.DataTree.from_dict({
-    "images": images,
-    "diagnostics": result.diagnostics,
-})
-vd.save(tree, "registration.zarr")
+vd.save(result, "registration.zarr")
 stored = vd.load_tree("registration.zarr", chunks={})
+registered = stored["images/registered"]
+valid = stored["images/valid"]
+# Or load just one array:
+registered = vd.load_array(
+    "registration.zarr", group="images", variable="registered", chunks={},
+)
 ```
 
 `vd.save(..., compute=False)` returns one delayed write for explicit scheduling.
@@ -516,7 +535,8 @@ Existing stores are protected by default. Failed writes may leave a partial stor
 Use **one DataTree/Dataset write** for related outputs. Separate
 `to_zarr(compute=False)` calls can independently optimize/clone the fitting graphs,
 even when later passed together to `dask.compute`; that can repeat registration.
-Add map/stage datasets as sibling DataTree groups to retain different spatial grids.
+Map/stage groups are already included when requested, with spatial grids local
+to their leaf nodes.
 
 Small CPU/CUDA and distributed tests cover bounded source loading and Zarr round
 trips. They are not a measured full-recording peak-RAM/VRAM qualification on data

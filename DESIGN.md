@@ -308,6 +308,14 @@ original frame's minimum; `valid` identifies supported samples. Transform export
 is opt-in: linear matrices or complete forward/inverse SyN displacement fields
 on the fixed/moving grids, respectively.
 
+Registration returns a native `xarray.DataTree`: `images` holds `registered` and
+`valid`, `diagnostics` holds the summary, optional `forward`/`inverse` leaves
+hold `transform`, and explicit pipelines add diagnostic leaves `stages/0`, etc.
+Spatial geometry is node-local, allowing different image and map grids.
+Displacement fields use canonical VoxelData order `(world_component, [time,] k, j, i)`;
+resampling normalizes labelled component axes at its boundary for the sampler.
+`voxeldata.save(result, path)` serializes the complete tree in one shared write.
+
 Public registration and resampling default to `device="auto"`. A shared
 preparation helper resolves that choice once per eager public call, or within each
 lazy task, using CUDA availability before device allocations. Explicit CPU does not

@@ -95,11 +95,22 @@ def test_stops_before_next_update_and_disabled_window_reaches_limit(
     limited = register(
         data, return_transforms=True, **options, convergence_window_size=9
     )
-    np.testing.assert_array_equal(stopped.diagnostics.n_iterations[1:], 3)
-    np.testing.assert_array_equal(stopped.diagnostics.status[1:], "converged")
-    np.testing.assert_array_equal(limited.diagnostics.n_iterations[1:], 8)
-    np.testing.assert_array_equal(limited.diagnostics.status[1:], "max_iterations")
-    np.testing.assert_array_equal(stopped.transforms, limited.transforms)
+    np.testing.assert_array_equal(
+        stopped["diagnostics"].to_dataset().n_iterations[1:], 3
+    )
+    np.testing.assert_array_equal(
+        stopped["diagnostics"].to_dataset().status[1:], "converged"
+    )
+    np.testing.assert_array_equal(
+        limited["diagnostics"].to_dataset().n_iterations[1:], 8
+    )
+    np.testing.assert_array_equal(
+        limited["diagnostics"].to_dataset().status[1:], "max_iterations"
+    )
+    np.testing.assert_array_equal(
+        stopped["forward"].to_dataset()["transform"],
+        limited["forward"].to_dataset()["transform"],
+    )
 
 
 @pytest.mark.parametrize(
@@ -151,8 +162,13 @@ def test_terminal_check_preserves_frozen_full_budget_results(
     monkeypatch.setattr(linear, "_check_all_frames_stopped", lambda status: False)
     full_budget = register(data, return_transforms=True, **options)
     assert stopped_calls < len(calls)
-    for field in ["registered", "valid", "transforms", "diagnostics"]:
-        xr.testing.assert_equal(getattr(stopped, field), getattr(full_budget, field))
+    for field in [
+        "images/registered",
+        "images/valid",
+        "forward/transform",
+        "diagnostics",
+    ]:
+        xr.testing.assert_equal(stopped[field], full_budget[field])
 
 
 @pytest.mark.parametrize("device", DEVICES)

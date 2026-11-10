@@ -3,11 +3,9 @@
 from voxreg.geometry import position_to_world
 from voxreg.registration import register
 from voxreg.resampling import resample
-from voxreg.results import RegistrationResult
 from voxreg.stages import Stage
 
 __all__ = [
-    "RegistrationResult",
     "Stage",
     "position_to_world",
     "register",

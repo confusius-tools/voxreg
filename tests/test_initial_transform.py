@@ -102,7 +102,7 @@ def test_initial_pose_enables_large_displacement_and_is_refined(device):
         "device": device,
     }
     identity = register(moving, fixed, return_transforms=True, **options)
-    assert identity.diagnostics.status == "insufficient_overlap"
+    assert identity["diagnostics"].to_dataset().status == "insufficient_overlap"
     seed = truth.copy()
     seed[:3, :3] = (
         truth[:3, :3] @ Rotation.from_rotvec([0.004, -0.006, 0.003]).as_matrix()
@@ -113,21 +113,24 @@ def test_initial_pose_enables_large_displacement_and_is_refined(device):
     result = register(
         moving, fixed, return_transforms=True, initial_transform=seed, **options
     )
-    assert result.transforms is not None
+    assert "forward" in result
     np.testing.assert_array_equal(seed, untouched)
     points = world_points(fixed)
     ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
     before = np.linalg.norm(((seed - truth) @ points)[:3], axis=0)
-    after = np.linalg.norm(((result.transforms.values - truth) @ points)[:3], axis=0)
+    after = np.linalg.norm(
+        ((result["forward"].to_dataset()["transform"].values - truth) @ points)[:3],
+        axis=0,
+    )
     assert np.sqrt(np.mean(after**2)) < 0.25 * ell
     assert np.mean(after**2) < np.mean(before**2) / 10
-    assert result.diagnostics.objective < -0.995
-    assert result.diagnostics.n_iterations > 0
+    assert result["diagnostics"].to_dataset().objective < -0.995
+    assert result["diagnostics"].to_dataset().n_iterations > 0
     # Diagnostics parameterize the full returned transform, not a residual.
     p = np.array(
         [
             [
-                float(result.diagnostics[name])
+                float(result["diagnostics"].to_dataset()[name])
                 for name in [
                     "rotation_z",
                     "rotation_y",
@@ -141,7 +144,7 @@ def test_initial_pose_enables_large_displacement_and_is_refined(device):
     )
     np.testing.assert_allclose(
         build_world_matrices(p, make_grid(fixed, moving))[0],
-        result.transforms,
+        result["forward"].to_dataset()["transform"],
         atol=1e-13,
     )
 
@@ -164,14 +167,16 @@ def test_failed_fit_retains_initial_not_identity(device, failure):
         progress=False,
         device=device,
     )
-    assert r.transforms is not None
-    assert r.diagnostics.status == (
+    assert "forward" in r
+    assert r["diagnostics"].to_dataset().status == (
         "invalid_metric" if failure == "constant" else "insufficient_overlap"
     )
-    assert r.diagnostics.n_iterations == 0
-    np.testing.assert_allclose(r.transforms, seed, atol=2e-14, rtol=0)
+    assert r["diagnostics"].to_dataset().n_iterations == 0
+    np.testing.assert_allclose(
+        r["forward"].to_dataset()["transform"], seed, atol=2e-14, rtol=0
+    )
     if failure == "overlap":
-        assert not r.valid.any()
+        assert not r["images"].to_dataset()["valid"].any()
 
 
 @pytest.mark.parametrize("oblique,strided", [(False, False), (True, True)])
@@ -187,20 +192,28 @@ def test_slice_per_frame_initialization_and_reference(
         "progress": False,
     }
     combined = register(data, return_transforms=True, batch_size=3, **options)
-    assert combined.transforms is not None
+    assert "forward" in combined
     serial = register(data, return_transforms=True, batch_size=1, **options)
-    assert serial.transforms is not None
+    assert "forward" in serial
     np.testing.assert_allclose(
-        combined.transforms, serial.transforms, atol=1e-9, rtol=0
+        combined["forward"].to_dataset()["transform"],
+        serial["forward"].to_dataset()["transform"],
+        atol=1e-9,
+        rtol=0,
     )
     np.testing.assert_array_equal(
-        combined.diagnostics.n_iterations, serial.diagnostics.n_iterations
+        combined["diagnostics"].to_dataset().n_iterations,
+        serial["diagnostics"].to_dataset().n_iterations,
     )
-    np.testing.assert_array_equal(combined.transforms[0], np.eye(4))
-    np.testing.assert_array_equal(combined.registered[0], data[0])
-    assert combined.diagnostics.status[0] == "reference"
+    np.testing.assert_array_equal(
+        combined["forward"].to_dataset()["transform"][0], np.eye(4)
+    )
+    np.testing.assert_array_equal(
+        combined["images"].to_dataset()["registered"][0], data[0]
+    )
+    assert combined["diagnostics"].to_dataset().status[0] == "reference"
     np.testing.assert_array_equal(seed, truth)
-    labeled = combined.transforms.copy(data=truth)
+    labeled = combined["forward"].to_dataset()["transform"].copy(data=truth)
     again = register(
         data,
         return_transforms=True,
@@ -209,7 +222,10 @@ def test_slice_per_frame_initialization_and_reference(
         max_iterations=100,
         progress=False,
     )
-    np.testing.assert_array_equal(again.transforms, combined.transforms)
+    np.testing.assert_array_equal(
+        again["forward"].to_dataset()["transform"],
+        combined["forward"].to_dataset()["transform"],
+    )
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -224,8 +240,13 @@ def test_identity_seed_preserves_default_bitwise(recording_factory, device):
     seeded = register(
         data, return_transforms=True, initial_transform=np.eye(4), **options
     )
-    for name in ["registered", "valid", "transforms", "diagnostics"]:
-        xr.testing.assert_equal(getattr(default, name), getattr(seeded, name))
+    for name in [
+        "images/registered",
+        "images/valid",
+        "forward/transform",
+        "diagnostics",
+    ]:
+        xr.testing.assert_equal(default[name], seeded[name])
 
 
 @pytest.mark.parametrize(
@@ -280,8 +301,8 @@ def test_reference_and_labeled_seed_validation(recording_factory):
             data, return_transforms=True, initial_transform=truth[1], progress=False
         )
     result = register(data, return_transforms=True, max_iterations=1, progress=False)
-    assert result.transforms is not None
-    labeled = result.transforms.copy(data=truth)
+    assert "forward" in result
+    labeled = result["forward"].to_dataset()["transform"].copy(data=truth)
     for wrong in [
         labeled.isel(time=slice(None, None, -1)),
         labeled.isel(world_in=slice(None, None, -1)),
@@ -318,8 +339,13 @@ def test_seeded_original_float64_resampling_matches_scipy(monkeypatch):
     expected = map_coordinates(
         moving.values, positions, order=1, mode="nearest", prefilter=False
     ).reshape(fixed.shape)
-    np.testing.assert_allclose(r.registered, expected, atol=5e-13, rtol=0)
-    assert r.valid.all() and r.registered.dtype == np.float64
+    np.testing.assert_allclose(
+        r["images"].to_dataset()["registered"], expected, atol=5e-13, rtol=0
+    )
+    assert (
+        r["images"].to_dataset()["valid"].all()
+        and r["images"].to_dataset()["registered"].dtype == np.float64
+    )
 
 
 def test_3d_seed_batch_and_device_independence():
@@ -340,7 +366,7 @@ def test_3d_seed_batch_and_device_independence():
         batch_size=2,
         **options,
     )
-    assert together.transforms is not None
+    assert "forward" in together
     alone = register(
         data,
         fixed,
@@ -366,13 +392,17 @@ def test_3d_seed_batch_and_device_independence():
         if torch.cuda.is_available()
         else []
     ):
-        assert other.transforms is not None
+        assert "forward" in other
         error = np.einsum(
-            "bij,jp->bip", other.transforms.values - together.transforms.values, points
+            "bij,jp->bip",
+            other["forward"].to_dataset()["transform"].values
+            - together["forward"].to_dataset()["transform"].values,
+            points,
         )[:, :3]
         assert np.linalg.norm(error, axis=1).max() < 0.01 * ell
         np.testing.assert_array_equal(
-            other.diagnostics.n_iterations, together.diagnostics.n_iterations
+            other["diagnostics"].to_dataset().n_iterations,
+            together["diagnostics"].to_dataset().n_iterations,
         )
     shared = register(
         data,
@@ -390,7 +420,10 @@ def test_3d_seed_batch_and_device_independence():
         batch_size=2,
         **options,
     )
-    np.testing.assert_array_equal(shared.transforms, explicit.transforms)
+    np.testing.assert_array_equal(
+        shared["forward"].to_dataset()["transform"],
+        explicit["forward"].to_dataset()["transform"],
+    )
 
 
 def test_unlabeled_dataarray_seeds_follow_position(recording_factory):
@@ -403,10 +436,12 @@ def test_unlabeled_dataarray_seeds_follow_position(recording_factory):
         max_iterations=1,
         progress=False,
     )
-    assert r.transforms is not None
-    np.testing.assert_allclose(r.transforms, truth, atol=1e-12)
+    assert "forward" in r
+    np.testing.assert_allclose(
+        r["forward"].to_dataset()["transform"], truth, atol=1e-12
+    )
     # Selecting one time leaves scalar provenance, not a per-frame index.
-    shared = r.transforms.isel(time=1)
+    shared = r["forward"].to_dataset()["transform"].isel(time=1)
     fixed = data.isel(time=0, drop=True)
     options: RegistrationOptions = {
         "max_iterations": 1,
@@ -418,7 +453,10 @@ def test_unlabeled_dataarray_seeds_follow_position(recording_factory):
     positional = register(
         data, fixed, return_transforms=True, initial_transform=shared.values, **options
     )
-    np.testing.assert_array_equal(labeled.transforms, positional.transforms)
+    np.testing.assert_array_equal(
+        labeled["forward"].to_dataset()["transform"],
+        positional["forward"].to_dataset()["transform"],
+    )
 
 
 def test_float32_rotation_roundoff_preserves_seed_center():
@@ -480,7 +518,7 @@ def test_itk_initial_transform_inplaceoff_oracle():
         max_iterations=1,
         progress=False,
     )
-    assert result.transforms is not None
+    assert "forward" in result
     points = world_points(fixed)[:, ::100]
     expected = np.array(
         [
@@ -489,7 +527,10 @@ def test_itk_initial_transform_inplaceoff_oracle():
         ]
     ).T
     np.testing.assert_allclose(
-        (result.transforms.values @ points)[:3], expected, atol=3e-13, rtol=0
+        (result["forward"].to_dataset()["transform"].values @ points)[:3],
+        expected,
+        atol=3e-13,
+        rtol=0,
     )
     # ITK's cloned output can be modified without changing the supplied initial object.
     parameters = native.GetParameters()
@@ -525,8 +566,13 @@ def test_initialization_matrix_alias_matches_initial_transform(representation):
     actual = register(
         moving, fixed, return_transforms=True, initialization=seed, **options
     )
-    for name in ["registered", "valid", "transforms", "diagnostics"]:
-        xr.testing.assert_equal(getattr(actual, name), getattr(expected, name))
+    for name in [
+        "images/registered",
+        "images/valid",
+        "forward/transform",
+        "diagnostics",
+    ]:
+        xr.testing.assert_equal(actual[name], expected[name])
     np.testing.assert_array_equal(seed, untouched)
 
 

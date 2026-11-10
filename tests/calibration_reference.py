@@ -51,15 +51,18 @@ def compare(
             convergence_minimum_value=minimum,
             progress=False,
         )
-        assert result.transforms is not None
-        matrices = result.transforms.values
+        assert "forward" in result
+        matrices = result["forward"].to_dataset()["transform"].values
         np.testing.assert_array_equal(matrices[0], np.eye(4))
         sampled[name], valid = example.sample_matrices(db, matrices, affine)
         common &= valid
         results[name] = {
             "matrices": matrices,
-            "iterations": result.diagnostics.n_iterations.values[1:].tolist(),
-            "status": result.diagnostics.status.values[1:].tolist(),
+            "iterations": result["diagnostics"]
+            .to_dataset()
+            .n_iterations.values[1:]
+            .tolist(),
+            "status": result["diagnostics"].to_dataset().status.values[1:].tolist(),
         }
     if np.any(common.sum(axis=(1, 2)) < 2):
         raise ValueError("Insufficient joint support for scoring.")

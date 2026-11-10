@@ -162,13 +162,15 @@ def validate_resampling_metadata(
                 *VOXEL_DIMS,
                 "world_component",
             )
-            if transforms.dims != expected or list(
+            if set(transforms.dims) != set(expected) or list(
                 transforms.world_component.values
             ) != ["z", "y", "x"]:
                 raise ValueError(
-                    "Displacements must have dimensions [time,] k/j/i/world_component ordered z/y/x."
+                    "Displacements must have dimensions [time,] k/j/i/world_component with components ordered z/y/x."
                 )
-            scalar = transforms.isel(world_component=0, drop=True)
+            scalar = transforms.isel(world_component=0, drop=True).transpose(
+                *(("time",) if "time" in transforms.dims else ()), *VOXEL_DIMS
+            )
             validate_registration_geometry(scalar)
             if not same_physical_grid(scalar, reference):
                 raise ValueError(
@@ -292,6 +294,13 @@ def resample(
     )
     from voxreg.lazy import has_lazy_data, resample_lazy
 
+    if isinstance(transforms, xr.DataArray) and "world_component" in transforms.dims:
+        # VoxelData stores components before spatial axes; sampling uses them last.
+        transforms = transforms.transpose(
+            *(("time",) if "time" in transforms.dims else ()),
+            *VOXEL_DIMS,
+            "world_component",
+        )
     if has_lazy_data(moving, transforms):
         return resample_lazy(
             moving, reference, transforms, interpolation, device, batch_size

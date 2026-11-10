@@ -85,7 +85,7 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
         progress=False,
         device=device,
     )
-    assert before.diagnostics.status == "insufficient_overlap"
+    assert before["diagnostics"].to_dataset().status == "insufficient_overlap"
     r = register(
         moving,
         fixed,
@@ -97,16 +97,26 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
         progress=False,
         device=device,
     )
-    assert r.transforms is not None
+    assert "forward" in r
     expected = np.eye(4)
     expected[:3, 3] = translation
-    np.testing.assert_allclose(r.transforms, expected, atol=3e-13, rtol=0)
     np.testing.assert_allclose(
-        r.diagnostics.attrs["rotation_center_zyx_mm"], center, atol=3e-13, rtol=0
+        r["forward"].to_dataset()["transform"], expected, atol=3e-13, rtol=0
     )
-    np.testing.assert_allclose(r.registered, fixed, atol=3e-13, rtol=0)
-    assert r.valid.all() and r.diagnostics.objective < -0.999999
-    assert r.registered.dtype == np.float64
+    np.testing.assert_allclose(
+        r["diagnostics"].to_dataset().attrs["rotation_center_zyx_mm"],
+        center,
+        atol=3e-13,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        r["images"].to_dataset()["registered"], fixed, atol=3e-13, rtol=0
+    )
+    assert (
+        r["images"].to_dataset()["valid"].all()
+        and r["diagnostics"].to_dataset().objective < -0.999999
+    )
+    assert r["images"].to_dataset()["registered"].dtype == np.float64
     np.testing.assert_array_equal(fixed.values, original_fixed)
     np.testing.assert_array_equal(moving.values, original_moving)
 
@@ -162,7 +172,7 @@ def test_moments_pivot_sampling_and_scales(
         progress=False,
         device=device,
     )
-    assert r.transforms is not None
+    assert "forward" in r
     plane = captured["plane"]
     if kind == "volume":
         rotation = Rotation.from_rotvec([0.02, -0.03, 0.04]).as_matrix()[::-1, ::-1]
@@ -175,7 +185,9 @@ def test_moments_pivot_sampling_and_scales(
     expected = np.eye(4)
     expected[:3, :3] = rotation
     expected[:3, 3] = translation - (rotation - np.eye(3)) @ center
-    np.testing.assert_allclose(r.transforms, expected, atol=2e-12, rtol=0)
+    np.testing.assert_allclose(
+        r["forward"].to_dataset()["transform"], expected, atol=2e-12, rtol=0
+    )
     af = position_to_world(fixed)
     points = af @ np.vstack(
         (np.indices(fixed.shape).reshape(3, -1), np.ones((1, fixed.size)))
@@ -190,9 +202,14 @@ def test_moments_pivot_sampling_and_scales(
     )
     values[~valid] = moving.values.min()
     np.testing.assert_allclose(
-        r.registered, values.reshape(fixed.shape), atol=2e-12, rtol=0
+        r["images"].to_dataset()["registered"],
+        values.reshape(fixed.shape),
+        atol=2e-12,
+        rtol=0,
     )
-    np.testing.assert_array_equal(r.valid, valid.reshape(fixed.shape))
+    np.testing.assert_array_equal(
+        r["images"].to_dataset()["valid"], valid.reshape(fixed.shape)
+    )
     distances = points[:3] - center[:, None]
     ell = np.linalg.norm(af[:3, :3] if kind == "volume" else af[:3, 1:], axis=0).min()
     if kind == "volume":
@@ -215,25 +232,35 @@ def test_series_reference_batch_and_fitting_scaling(recording_factory, mode, dev
         "progress": False,
     }
     combined = register(data, return_transforms=True, batch_size=3, **options)
-    assert combined.transforms is not None
+    assert "forward" in combined
     serial = register(data, return_transforms=True, batch_size=1, **options)
-    assert serial.transforms is not None
+    assert "forward" in serial
     if device == "cpu":
         np.testing.assert_allclose(
-            combined.transforms, serial.transforms, atol=1e-9, rtol=0
+            combined["forward"].to_dataset()["transform"],
+            serial["forward"].to_dataset()["transform"],
+            atol=1e-9,
+            rtol=0,
         )
     else:
         assert (
             max_pull_difference(
-                combined.transforms, serial.transforms, data.isel(time=0, drop=True)
+                combined["forward"].to_dataset()["transform"],
+                serial["forward"].to_dataset()["transform"],
+                data.isel(time=0, drop=True),
             )
             < 0.01
         )
     np.testing.assert_array_equal(
-        combined.diagnostics.n_iterations, serial.diagnostics.n_iterations
+        combined["diagnostics"].to_dataset().n_iterations,
+        serial["diagnostics"].to_dataset().n_iterations,
     )
-    np.testing.assert_array_equal(combined.transforms[0], np.eye(4))
-    np.testing.assert_array_equal(combined.registered[0], data[0])
+    np.testing.assert_array_equal(
+        combined["forward"].to_dataset()["transform"][0], np.eye(4)
+    )
+    np.testing.assert_array_equal(
+        combined["images"].to_dataset()["registered"][0], data[0]
+    )
     # With a frozen optimizer, fitting scaling cannot alter the initialized pose/pivot.
     from unittest.mock import patch
 
@@ -249,10 +276,13 @@ def test_series_reference_batch_and_fitting_scaling(recording_factory, mode, dev
         logarithmic = register(
             data, return_transforms=True, moving_intensity_scaling="log1p", **options
         )
-    np.testing.assert_array_equal(linear.transforms, logarithmic.transforms)
     np.testing.assert_array_equal(
-        linear.diagnostics.attrs["rotation_center_zyx_mm"],
-        logarithmic.diagnostics.attrs["rotation_center_zyx_mm"],
+        linear["forward"].to_dataset()["transform"],
+        logarithmic["forward"].to_dataset()["transform"],
+    )
+    np.testing.assert_array_equal(
+        linear["diagnostics"].to_dataset().attrs["rotation_center_zyx_mm"],
+        logarithmic["diagnostics"].to_dataset().attrs["rotation_center_zyx_mm"],
     )
 
 
@@ -305,21 +335,30 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
             progress=False,
             device=device,
         )
-        assert r.transforms is not None
+        assert "forward" in r
         error = (
-            np.linalg.norm(((r.transforms.values - truth) @ points)[:3], axis=0) / ell
+            np.linalg.norm(
+                ((r["forward"].to_dataset()["transform"].values - truth) @ points)[:3],
+                axis=0,
+            )
+            / ell
         )
         assert np.sqrt(np.mean(error**2)) < 0.25
-        assert r.diagnostics.objective < -0.999
+        assert r["diagnostics"].to_dataset().objective < -0.999
         results.append(r)
     if len(results) == 2:
-        assert results[0].transforms is not None and results[1].transforms is not None
+        assert "forward" in results[0] and "forward" in results[1]
         error = (
-            (results[0].transforms.values - results[1].transforms.values) @ points
+            (
+                results[0]["forward"].to_dataset()["transform"].values
+                - results[1]["forward"].to_dataset()["transform"].values
+            )
+            @ points
         )[:3]
         assert np.linalg.norm(error, axis=0).max() < 0.01 * ell
         np.testing.assert_array_equal(
-            results[0].diagnostics.n_iterations, results[1].diagnostics.n_iterations
+            results[0]["diagnostics"].to_dataset().n_iterations,
+            results[1]["diagnostics"].to_dataset().n_iterations,
         )
 
 

@@ -59,23 +59,40 @@ def test_winsorization_matches_numpy_before_transforms_and_pyramids(
         **options,
     )
     expected = register(clipped_moving, clipped_fixed, **options)
-    assert result.transforms is not None and expected.transforms is not None
-    assert_allclose(result.transforms, expected.transforms, rtol=0, atol=1e-11)
+    assert "forward" in result and "forward" in expected
     assert_allclose(
-        result.diagnostics.objective, expected.diagnostics.objective, rtol=0, atol=1e-6
+        result["forward"].to_dataset()["transform"],
+        expected["forward"].to_dataset()["transform"],
+        rtol=0,
+        atol=1e-11,
     )
-    native, valid = resample(moving, fixed, result.transforms, device=device)
-    assert_allclose(result.registered, native, rtol=0, atol=1e-11)
-    assert_array_equal(result.valid, valid)
+    assert_allclose(
+        result["diagnostics"].to_dataset().objective,
+        expected["diagnostics"].to_dataset().objective,
+        rtol=0,
+        atol=1e-6,
+    )
+    native, valid = resample(
+        moving, fixed, result["forward"].to_dataset()["transform"], device=device
+    )
+    assert_allclose(
+        result["images"].to_dataset()["registered"], native, rtol=0, atol=1e-11
+    )
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
     assert_array_equal(moving, moving_original)
     assert_array_equal(fixed, fixed_original)
     assert_allclose(
-        position_to_world(result.registered), position_to_world(fixed), rtol=0, atol=0
+        position_to_world(result["images"].to_dataset()["registered"]),
+        position_to_world(fixed),
+        rtol=0,
+        atol=0,
     )
-    if result.stage_diagnostics:
-        assert expected.stage_diagnostics is not None
+    if "stages" in result:
+        assert "stages" in expected
         for actual_stage, expected_stage in zip(
-            result.stage_diagnostics, expected.stage_diagnostics, strict=True
+            (tuple(node.to_dataset() for node in result["stages"].children.values())),
+            (tuple(node.to_dataset() for node in expected["stages"].children.values())),
+            strict=True,
         ):
             assert_allclose(
                 actual_stage.objective, expected_stage.objective, rtol=0, atol=1e-6
@@ -154,17 +171,23 @@ def test_implicit_reference_and_per_frame_bounds_are_batch_independent(
         data, moving_winsorize_percentiles=percentiles, batch_size=1, **options
     )
     expected = register(data.copy(data=clipped), **options)
-    assert (
-        together.transforms is not None
-        and serial.transforms is not None
-        and expected.transforms is not None
+    assert "forward" in together and "forward" in serial and "forward" in expected
+    assert_allclose(
+        together["forward"].to_dataset()["transform"],
+        expected["forward"].to_dataset()["transform"],
+        rtol=0,
+        atol=1e-11,
     )
-    assert_allclose(together.transforms, expected.transforms, rtol=0, atol=1e-11)
-    assert_allclose(together.transforms, serial.transforms, rtol=0, atol=1e-7)
-    assert_array_equal(together.registered[0], data[0])
-    assert_array_equal(together.transforms[0], np.eye(4))
-    assert_array_equal(together.registered.time, data.time)
-    assert together.registered.dtype == dtype
+    assert_allclose(
+        together["forward"].to_dataset()["transform"],
+        serial["forward"].to_dataset()["transform"],
+        rtol=0,
+        atol=1e-7,
+    )
+    assert_array_equal(together["images"].to_dataset()["registered"][0], data[0])
+    assert_array_equal(together["forward"].to_dataset()["transform"][0], np.eye(4))
+    assert_array_equal(together["images"].to_dataset()["registered"].time, data.time)
+    assert together["images"].to_dataset()["registered"].dtype == dtype
     assert percentiles == [10, 90]
 
 
@@ -201,15 +224,23 @@ def test_clipping_preserves_native_moment_initialization(
         fixed_winsorize_percentiles=(5, 95) if explicit else None,
         **options,
     )
-    assert native.transforms is not None and clipped.transforms is not None
+    assert "forward" in native and "forward" in clipped
     positions = np.indices(data.shape[1:]).reshape(3, -1)
     weights = data.values.reshape(len(data), -1)
     centers = (positions @ weights.T / weights.sum(axis=1)).T
     expected = np.broadcast_to(np.eye(4), (len(data), 4, 4)).copy()
     expected[:, :3, 3] = (centers - centers[0]) @ position_to_world(data)[:3, :3].T
-    assert_allclose(native.transforms, expected, rtol=0, atol=1e-12)
-    assert_array_equal(clipped.transforms, native.transforms)
-    assert_array_equal(clipped.registered, native.registered)
+    assert_allclose(
+        native["forward"].to_dataset()["transform"], expected, rtol=0, atol=1e-12
+    )
+    assert_array_equal(
+        clipped["forward"].to_dataset()["transform"],
+        native["forward"].to_dataset()["transform"],
+    )
+    assert_array_equal(
+        clipped["images"].to_dataset()["registered"],
+        native["images"].to_dataset()["registered"],
+    )
 
 
 def test_clipped_constant_fixed_and_zero_recording_rejected(recording_factory):
@@ -236,11 +267,11 @@ def test_clipped_constant_moving_frame_retains_failure_isolation(recording_facto
         return_transforms=True,
         device="cpu",
     )
-    assert result.transforms is not None
-    assert result.diagnostics.status[1] == "invalid_metric"
-    assert result.diagnostics.n_iterations[1] == 0
-    assert_array_equal(result.transforms[1], np.eye(4))
-    assert result.diagnostics.n_iterations[2] == 2
+    assert "forward" in result
+    assert result["diagnostics"].to_dataset().status[1] == "invalid_metric"
+    assert result["diagnostics"].to_dataset().n_iterations[1] == 0
+    assert_array_equal(result["forward"].to_dataset()["transform"][1], np.eye(4))
+    assert result["diagnostics"].to_dataset().n_iterations[2] == 2
 
 
 @pytest.mark.parametrize("side", ["moving", "fixed"])
@@ -269,10 +300,19 @@ def test_endpoint_percentiles_preserve_float64_fit(recording_factory):
         fixed_winsorize_percentiles=(0, 100),
         **options,
     )
-    assert actual.transforms is not None and expected.transforms is not None
-    assert_array_equal(actual.transforms, expected.transforms)
-    assert_array_equal(actual.diagnostics.objective, expected.diagnostics.objective)
-    assert_array_equal(actual.registered, expected.registered)
+    assert "forward" in actual and "forward" in expected
+    assert_array_equal(
+        actual["forward"].to_dataset()["transform"],
+        expected["forward"].to_dataset()["transform"],
+    )
+    assert_array_equal(
+        actual["diagnostics"].to_dataset().objective,
+        expected["diagnostics"].to_dataset().objective,
+    )
+    assert_array_equal(
+        actual["images"].to_dataset()["registered"],
+        expected["images"].to_dataset()["registered"],
+    )
 
 
 def test_disabled_clipping_preserves_default_exactly(recording_factory):
@@ -289,6 +329,15 @@ def test_disabled_clipping_preserves_default_exactly(recording_factory):
         fixed_winsorize_percentiles=None,
         **options,
     )
-    assert_array_equal(disabled.registered, default.registered)
-    assert_array_equal(disabled.valid, default.valid)
-    assert_array_equal(disabled.diagnostics.objective, default.diagnostics.objective)
+    assert_array_equal(
+        disabled["images"].to_dataset()["registered"],
+        default["images"].to_dataset()["registered"],
+    )
+    assert_array_equal(
+        disabled["images"].to_dataset()["valid"],
+        default["images"].to_dataset()["valid"],
+    )
+    assert_array_equal(
+        disabled["diagnostics"].to_dataset().objective,
+        default["diagnostics"].to_dataset().objective,
+    )

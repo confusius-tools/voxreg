@@ -29,16 +29,19 @@ def test_optional_transforms(
     }
     target = None if recording else fixed
     exported = register(moving, target, return_transforms=True, **options)
-    assert exported.forward_transforms is not None
-    assert exported.transforms is exported.forward_transforms
-    assert exported.inverse_transforms is not None
+    assert "forward" in exported
+    assert exported["forward"].to_dataset()["transform"].name == "transform"
+    assert "inverse" in exported
     if model != "syn":
         np.testing.assert_allclose(
-            exported.inverse_transforms.values @ exported.forward_transforms.values,
-            np.broadcast_to(np.eye(4), exported.forward_transforms.shape),
+            exported["inverse"].to_dataset()["transform"].values
+            @ exported["forward"].to_dataset()["transform"].values,
+            np.broadcast_to(
+                np.eye(4), exported["forward"].to_dataset()["transform"].shape
+            ),
             atol=1e-12,
         )
-        assert exported.inverse_transforms.attrs["convention"] == (
+        assert exported["inverse"].to_dataset()["transform"].attrs["convention"] == (
             "moving-world-to-fixed-world pull"
         )
 
@@ -56,13 +59,23 @@ def test_optional_transforms(
     if model != "syn":
         monkeypatch.setattr(linear, "build_world_matrices", unexpected)
     omitted = register(moving, target, **options)
-    assert omitted.forward_transforms is None and omitted.inverse_transforms is None
-    xr.testing.assert_identical(omitted.registered, exported.registered)
-    xr.testing.assert_identical(omitted.valid, exported.valid)
+    assert "forward" not in omitted and "inverse" not in omitted
+    xr.testing.assert_identical(
+        omitted["images"].to_dataset()["registered"],
+        exported["images"].to_dataset()["registered"],
+    )
+    xr.testing.assert_identical(
+        omitted["images"].to_dataset()["valid"],
+        exported["images"].to_dataset()["valid"],
+    )
     # Timing alone changes when export is disabled.
-    xr.testing.assert_equal(omitted.diagnostics, exported.diagnostics)
+    xr.testing.assert_equal(
+        omitted["diagnostics"].to_dataset(), exported["diagnostics"].to_dataset()
+    )
     if recording:
-        np.testing.assert_array_equal(omitted.registered[0], moving[0])
+        np.testing.assert_array_equal(
+            omitted["images"].to_dataset()["registered"][0], moving[0]
+        )
 
 
 @pytest.mark.parametrize("value", [None, 0, 1, "yes", np.bool_(True)])

@@ -40,28 +40,53 @@ def test_public_syn_controls(nonlinear_pair_factory, device, planar, options):
         ("syn_update_sigma", "update_sigma_voxels", 1.5),
         ("syn_total_sigma", "total_sigma_voxels", 0.5),
     ):
-        assert result.diagnostics.attrs[diagnostic] == options.get(public, default)
-    assert result.diagnostics.n_iterations.item() == 3
-    assert np.isfinite(result.diagnostics.objective).all()
-    assert result.diagnostics.min_jacobian.item() > 0
-    assert result.forward_transforms is not None
-    assert baseline.forward_transforms is not None
+        assert result["diagnostics"].to_dataset().attrs[diagnostic] == options.get(
+            public, default
+        )
+    assert result["diagnostics"].to_dataset().n_iterations.item() == 3
+    assert np.isfinite(result["diagnostics"].to_dataset().objective).all()
+    assert result["diagnostics"].to_dataset().min_jacobian.item() > 0
+    assert "forward" in result
+    assert "forward" in baseline
     if options == {
         "syn_cc_radius": 2,
         "syn_update_sigma": 1.5,
         "syn_total_sigma": 0.5,
     }:
-        xr.testing.assert_identical(result.registered, baseline.registered)
-        xr.testing.assert_identical(result.valid, baseline.valid)
         xr.testing.assert_identical(
-            result.forward_transforms, baseline.forward_transforms
+            result["images"].to_dataset()["registered"],
+            baseline["images"].to_dataset()["registered"],
         )
         xr.testing.assert_identical(
-            result.inverse_transforms, baseline.inverse_transforms
+            result["images"].to_dataset()["valid"],
+            baseline["images"].to_dataset()["valid"],
+        )
+        xr.testing.assert_identical(
+            result["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component"),
+            baseline["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component"),
+        )
+        xr.testing.assert_identical(
+            result["inverse"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component"),
+            baseline["inverse"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component"),
         )
     else:
         assert not np.array_equal(
-            result.forward_transforms.values, baseline.forward_transforms.values
+            result["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")
+            .values,
+            baseline["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")
+            .values,
         )
 
 
@@ -162,8 +187,18 @@ def test_syn_known_nonlinear_recovery(
         > 0.25
     )
     for actual, expected in [
-        (result.transforms, truth),
-        (result.inverse_transforms, inverse),
+        (
+            result["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component"),
+            truth,
+        ),
+        (
+            result["inverse"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component"),
+            inverse,
+        ),
     ]:
         assert actual is not None
         assert actual.dims == ("k", "j", "i", "world_component")
@@ -174,12 +209,12 @@ def test_syn_known_nonlinear_recovery(
             np.sqrt(np.mean(np.sum((actual.values - expected) ** 2, axis=-1))) / ell
             < 0.25
         )
-    assert result.diagnostics.min_jacobian > 0
-    assert np.isfinite(result.diagnostics.inverse_error)
-    assert result.diagnostics.ncc_squared > 0.98
-    assert result.registered.dims == fixed.dims
-    assert result.registered.dtype == moving.dtype
-    assert result.registered.attrs == moving.attrs
+    assert result["diagnostics"].to_dataset().min_jacobian > 0
+    assert np.isfinite(result["diagnostics"].to_dataset().inverse_error)
+    assert result["diagnostics"].to_dataset().ncc_squared > 0.98
+    assert result["images"].to_dataset()["registered"].dims == fixed.dims
+    assert result["images"].to_dataset()["registered"].dtype == moving.dtype
+    assert result["images"].to_dataset()["registered"].attrs == moving.attrs
     xr.testing.assert_identical(moving, source)
 
 
@@ -205,8 +240,17 @@ def test_syn_cpu_cuda_point_gate(
         )
         for d in ("cpu", "cuda")
     ]
-    for name in ["transforms", "inverse_transforms"]:
-        difference = getattr(results[0], name).values - getattr(results[1], name).values
+    for group in ("forward", "inverse"):
+        difference = (
+            results[0][group]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")
+            .values
+            - results[1][group]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")
+            .values
+        )
         assert np.linalg.norm(difference, axis=-1).max() / _ell(fixed) < 0.01
 
 
@@ -234,18 +278,29 @@ def test_syn_complete_seed_and_original_output(
         max_iterations=1,
         learning_rate=1e-12,
     )
-    assert r.inverse_transforms is not None
-    assert r.transforms is not None
+    assert "inverse" in r
+    assert "forward" in r
     points = position_to_world(fixed) @ np.vstack(
         (np.indices(fixed.shape).reshape(3, -1), np.ones((1, fixed.size)))
     )
     expected = ((seed @ points) - points)[:3].T.reshape(*fixed.shape, 3)
-    assert_allclose(r.transforms.values, expected, rtol=0, atol=2e-12)
+    assert_allclose(
+        r["forward"].to_dataset()["transform"].transpose(..., "world_component").values,
+        expected,
+        rtol=0,
+        atol=2e-12,
+    )
     mapped = (
         np.linalg.inv(position_to_world(moving))
         @ np.vstack(
             (
-                (points[:3].T + r.transforms.values.reshape(-1, 3)).T,
+                (
+                    points[:3].T
+                    + r["forward"]
+                    .to_dataset()["transform"]
+                    .transpose(..., "world_component")
+                    .values.reshape(-1, 3)
+                ).T,
                 np.ones((1, fixed.size)),
             )
         )
@@ -260,15 +315,28 @@ def test_syn_complete_seed_and_original_output(
     if dtype == np.uint16:
         sampled = np.rint(sampled).clip(0, np.iinfo(dtype).max).astype(dtype)
     assert_allclose(
-        r.registered.values,
+        r["images"].to_dataset()["registered"].values,
         sampled,
         rtol=0,
         atol=0 if dtype == np.uint16 else 8 * np.spacing(float(moving.values.max())),
     )
-    assert_array_equal(r.valid.values, valid.reshape(fixed.shape))
-    assert r.registered.xindexes["z"].equals(fixed.xindexes["z"])
-    assert r.inverse_transforms.xindexes["z"].equals(moving.xindexes["z"])
-    assert r.registered.name == moving.name and r.registered.attrs == moving.attrs
+    assert_array_equal(
+        r["images"].to_dataset()["valid"].values, valid.reshape(fixed.shape)
+    )
+    assert (
+        r["images"].to_dataset()["registered"].xindexes["z"].equals(fixed.xindexes["z"])
+    )
+    assert (
+        r["inverse"]
+        .to_dataset()["transform"]
+        .transpose(..., "world_component")
+        .xindexes["z"]
+        .equals(moving.xindexes["z"])
+    )
+    assert (
+        r["images"].to_dataset()["registered"].name == "registered"
+        and r["images"].to_dataset()["registered"].attrs == moving.attrs
+    )
     xr.testing.assert_identical(moving, original)
 
 
@@ -297,31 +365,66 @@ def test_syn_reference_failure_isolation_and_chunks(
             batch_size=batch,
             progress=lambda n, total, events=events: events.append((n, total)),
         )
-        assert result.transforms is not None
+        assert "forward" in result
         results.append(result)
         assert events[-1] == (3, 3)
-        assert_array_equal(result.registered[0], recording[0])
-        assert_array_equal(result.transforms[0], 0)
-        assert_array_equal(result.transforms[2], 0)
-        assert list(result.diagnostics.status.values) == [
+        assert_array_equal(result["images"].to_dataset()["registered"][0], recording[0])
+        assert_array_equal(
+            result["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")[0],
+            0,
+        )
+        assert_array_equal(
+            result["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")[2],
+            0,
+        )
+        assert list(result["diagnostics"].to_dataset().status.values) == [
             "reference",
             "max_iterations",
             "invalid_metric",
         ]
-        assert_array_equal(result.diagnostics.n_iterations, [0, 60, 0])
-        assert_array_equal(result.registered.time, recording.time)
-        assert_array_equal(result.registered.acquisition, recording.acquisition)
+        assert_array_equal(result["diagnostics"].to_dataset().n_iterations, [0, 60, 0])
+        assert_array_equal(
+            result["images"].to_dataset()["registered"].time, recording.time
+        )
+        assert_array_equal(
+            result["images"].to_dataset()["registered"].acquisition,
+            recording.acquisition,
+        )
         assert (
             np.sqrt(
-                np.mean(np.sum((result.transforms[1].values - truth) ** 2, axis=-1))
+                np.mean(
+                    np.sum(
+                        (
+                            result["forward"]
+                            .to_dataset()["transform"]
+                            .transpose(..., "world_component")[1]
+                            .values
+                            - truth
+                        )
+                        ** 2,
+                        axis=-1,
+                    )
+                )
             )
             / _ell(fixed)
             < 0.25
         )
-    assert results[0].transforms is not None and results[1].transforms is not None
+    assert "forward" in results[0] and "forward" in results[1]
     assert (
         np.linalg.norm(
-            results[0].transforms.values - results[1].transforms.values, axis=-1
+            results[0]["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")
+            .values
+            - results[1]["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")
+            .values,
+            axis=-1,
         ).max()
         / _ell(fixed)
         < 0.01
@@ -347,7 +450,7 @@ def test_syn_metric_callback_ownership_and_exceptions(nonlinear_pair_factory):
         metric_callback=callback,
     )
     assert [int(n[0]) for _, n, _ in reports] == [0, 2, 3]
-    assert np.isfinite(result.diagnostics.objective)
+    assert np.isfinite(result["diagnostics"].to_dataset().objective)
 
     def fail(*args):
         raise RuntimeError("caller error")
@@ -447,10 +550,26 @@ def test_syn_float32_working_fields_keep_double_geometry_and_original_data(
         torch.backends.cuda.matmul.allow_tf32,
         torch.backends.cudnn.allow_tf32,
     )
-    assert result.transforms is not None and result.inverse_transforms is not None
-    assert result.transforms.dtype == result.inverse_transforms.dtype == np.float64
-    assert result.registered.dtype == np.float64
-    assert float(result.registered.max() - result.registered.min()) > 0
+    assert "forward" in result and "inverse" in result
+    assert (
+        result["forward"]
+        .to_dataset()["transform"]
+        .transpose(..., "world_component")
+        .dtype
+        == result["inverse"]
+        .to_dataset()["transform"]
+        .transpose(..., "world_component")
+        .dtype
+        == np.float64
+    )
+    assert result["images"].to_dataset()["registered"].dtype == np.float64
+    assert (
+        float(
+            result["images"].to_dataset()["registered"].max()
+            - result["images"].to_dataset()["registered"].min()
+        )
+        > 0
+    )
     xr.testing.assert_identical(moving, untouched)
 
 
@@ -473,11 +592,28 @@ def test_syn_float32_fitting_is_independent_of_large_world_origin(
     shifted = register(
         voxel(moving.values, affine), voxel(fixed.values, affine), **options
     )
-    assert original.transforms is not None and shifted.transforms is not None
-    assert np.any(original.transforms.values != 0)
-    assert_allclose(shifted.transforms, original.transforms, rtol=0, atol=1e-9)
-    assert_array_equal(shifted.registered, original.registered)
-    assert_array_equal(shifted.valid, original.valid)
+    assert "forward" in original and "forward" in shifted
+    assert np.any(
+        original["forward"]
+        .to_dataset()["transform"]
+        .transpose(..., "world_component")
+        .values
+        != 0
+    )
+    assert_allclose(
+        shifted["forward"].to_dataset()["transform"].transpose(..., "world_component"),
+        original["forward"].to_dataset()["transform"].transpose(..., "world_component"),
+        rtol=0,
+        atol=1e-9,
+    )
+    assert_array_equal(
+        shifted["images"].to_dataset()["registered"],
+        original["images"].to_dataset()["registered"],
+    )
+    assert_array_equal(
+        shifted["images"].to_dataset()["valid"],
+        original["images"].to_dataset()["valid"],
+    )
 
 
 def test_syn_rejects_unrepresentable_float32_working_lattice(nonlinear_pair_factory):
@@ -504,13 +640,21 @@ def test_syn_exchange_symmetry_is_not_one_way(nonlinear_pair_factory, device, pl
         "convergence_window_size": 1000,
     }
     forward = register(moving, fixed, return_transforms=True, **options)
-    assert forward.inverse_transforms is not None
+    assert "inverse" in forward
     backward = register(fixed, moving, return_transforms=True, **options)
-    assert backward.transforms is not None
+    assert "forward" in backward
     # A same-domain mathematical symmetry check, not anatomical accuracy evidence.
     assert (
         np.linalg.norm(
-            forward.inverse_transforms.values - backward.transforms.values, axis=-1
+            forward["inverse"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")
+            .values
+            - backward["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")
+            .values,
+            axis=-1,
         ).max()
         / _ell(fixed)
         < 0.001

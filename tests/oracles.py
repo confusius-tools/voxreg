@@ -41,10 +41,14 @@ def max_pull_difference(first, second, domain):
     """Maximum full-grid physical pull difference in minimum-spacing voxels."""
     affine = position_to_world(domain)
     spacing = np.linalg.norm(affine[:3, :3], axis=0)[np.array(domain.shape) > 1].min()
-    difference = np.asarray(first) - np.asarray(second)
     if "world_component" in first.dims:
+        difference = (
+            first.transpose(..., "world_component").values
+            - second.transpose(..., "world_component").values
+        )
         distances = np.linalg.norm(difference, axis=-1)
     else:
+        difference = np.asarray(first) - np.asarray(second)
         points = affine @ np.vstack(
             (np.indices(domain.shape).reshape(3, -1), np.ones((1, domain.size)))
         )

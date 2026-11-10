@@ -71,11 +71,25 @@ def test_nonparallel_planes_refine_image_motion_after_geometry_alignment(
         "progress": False,
     }
     result = register(moving, fixed, return_transforms=True, device=device, **kwargs)
-    assert np.sqrt(np.mean(error(result.transforms, truth, fixed) ** 2)) < 0.25
-    assert result.diagnostics.objective < -0.999
+    assert (
+        np.sqrt(
+            np.mean(
+                error(result["forward"].to_dataset()["transform"], truth, fixed) ** 2
+            )
+        )
+        < 0.25
+    )
+    assert result["diagnostics"].to_dataset().objective < -0.999
     if device == "cuda":
         cpu = register(moving, fixed, return_transforms=True, device="cpu", **kwargs)
-        assert error(result.transforms, cpu.transforms, fixed).max() < 0.01
+        assert (
+            error(
+                result["forward"].to_dataset()["transform"],
+                cpu["forward"].to_dataset()["transform"],
+                fixed,
+            ).max()
+            < 0.01
+        )
 
 
 @pytest.mark.parametrize("planar", [False, True])
@@ -108,12 +122,14 @@ def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
         initialization=truth,
         max_iterations=1,
     )
-    assert r.transforms is not None
-    np.testing.assert_allclose(r.transforms, actual, atol=3e-14, rtol=0)
-    assert r.diagnostics.status == "invalid_metric"
+    assert "forward" in r
+    np.testing.assert_allclose(
+        r["forward"].to_dataset()["transform"], actual, atol=3e-14, rtol=0
+    )
+    assert r["diagnostics"].to_dataset().status == "invalid_metric"
     for key in ("linear_ii", "linear_zz"):
-        if key in r.diagnostics:
-            assert r.diagnostics[key] == pytest.approx(
+        if key in r["diagnostics"].to_dataset():
+            assert r["diagnostics"].to_dataset()[key] == pytest.approx(
                 (grid.basis.T @ truth[:3, :3] @ grid.basis)[0, 0]
             )
 
@@ -195,15 +211,23 @@ def test_fitting_truth_and_cpu_cuda_precision(linear_pair_factory, planar, model
             device=device,
             progress=False,
         )
-        delta = error(r.transforms, truth, fixed)
+        delta = error(r["forward"].to_dataset()["transform"], truth, fixed)
         assert np.sqrt(np.mean(delta**2)) < 0.25
-        assert r.diagnostics.objective < -0.99
-        assert r.diagnostics.status == "max_iterations"
+        assert r["diagnostics"].to_dataset().objective < -0.99
+        assert r["diagnostics"].to_dataset().status == "max_iterations"
         results.append(r)
     if len(results) > 1:
-        assert error(results[0].transforms, results[1].transforms, fixed).max() < 0.01
+        assert (
+            error(
+                results[0]["forward"].to_dataset()["transform"],
+                results[1]["forward"].to_dataset()["transform"],
+                fixed,
+            ).max()
+            < 0.01
+        )
         np.testing.assert_array_equal(
-            results[0].diagnostics.n_iterations, results[1].diagnostics.n_iterations
+            results[0]["diagnostics"].to_dataset().n_iterations,
+            results[1]["diagnostics"].to_dataset().n_iterations,
         )
 
 
@@ -220,27 +244,32 @@ def test_series_batch_reference_and_explicit_seed(recording_factory, model, devi
         "device": device,
     }
     a = register(data, return_transforms=True, batch_size=1, **options)
-    assert a.transforms is not None
+    assert "forward" in a
     b = register(data, return_transforms=True, batch_size=3, **options)
-    assert b.transforms is not None
+    assert "forward" in b
     fixed = data.isel(time=0, drop=True)
-    for first, second in zip(a.transforms.values, b.transforms.values, strict=True):
+    for first, second in zip(
+        a["forward"].to_dataset()["transform"].values,
+        b["forward"].to_dataset()["transform"].values,
+        strict=True,
+    ):
         assert error(first, second, fixed).max() < 0.01
     np.testing.assert_array_equal(
-        a.diagnostics.n_iterations, b.diagnostics.n_iterations
+        a["diagnostics"].to_dataset().n_iterations,
+        b["diagnostics"].to_dataset().n_iterations,
     )
-    np.testing.assert_array_equal(a.transforms[0], np.eye(4))
-    np.testing.assert_array_equal(a.registered[0], data[0])
+    np.testing.assert_array_equal(a["forward"].to_dataset()["transform"][0], np.eye(4))
+    np.testing.assert_array_equal(a["images"].to_dataset()["registered"][0], data[0])
     c = register(
         data,
         return_transforms=True,
         transform=model,
-        initialization=a.transforms,
+        initialization=a["forward"].to_dataset()["transform"],
         max_iterations=1,
         progress=False,
     )
-    assert c.diagnostics.status[0] == "reference"
-    bad = a.transforms.copy(deep=True)
+    assert c["diagnostics"].to_dataset().status[0] == "reference"
+    bad = a["forward"].to_dataset()["transform"].copy(deep=True)
     bad.values[0, :3, 3] += (
         0.1 * make_grid(data.isel(time=0, drop=True), data).basis[:, 0]
     )
@@ -339,11 +368,18 @@ def test_affine_seed_is_refined_as_full_pose_not_frozen_prefix(
         convergence_window_size=161,
         progress=False,
     )
-    assert r.transforms is not None
+    assert "forward" in r
     before = np.sqrt(np.mean(error(seed, truth, fixed) ** 2))
-    after = np.sqrt(np.mean(error(r.transforms, truth, fixed) ** 2))
+    after = np.sqrt(
+        np.mean(error(r["forward"].to_dataset()["transform"], truth, fixed) ** 2)
+    )
     assert after < 0.25 and after < before / 4
-    assert np.max(np.abs(r.transforms.values[:3, :3] - seed[:3, :3])) > 1e-4
+    assert (
+        np.max(
+            np.abs(r["forward"].to_dataset()["transform"].values[:3, :3] - seed[:3, :3])
+        )
+        > 1e-4
+    )
 
 
 @pytest.mark.parametrize("planar", [False, True])
@@ -362,16 +398,23 @@ def test_affine_final_interpolation_preserves_float64_detail(
         max_iterations=1,
         progress=False,
     )
-    assert r.transforms is not None
+    assert "forward" in r
     coordinates = (
-        np.linalg.inv(position_to_world(moving)) @ r.transforms.values @ points(fixed)
+        np.linalg.inv(position_to_world(moving))
+        @ r["forward"].to_dataset()["transform"].values
+        @ points(fixed)
     )[:3]
     expected = map_coordinates(
         moving.values, coordinates, order=1, mode="nearest", prefilter=False
     ).reshape(fixed.shape)
-    assert r.registered.dtype == np.float64 and r.valid.all()
-    assert np.unique(r.registered).size > 100
-    np.testing.assert_allclose(r.registered, expected, atol=1e-6, rtol=0)
+    assert (
+        r["images"].to_dataset()["registered"].dtype == np.float64
+        and r["images"].to_dataset()["valid"].all()
+    )
+    assert np.unique(r["images"].to_dataset()["registered"]).size > 100
+    np.testing.assert_allclose(
+        r["images"].to_dataset()["registered"], expected, atol=1e-6, rtol=0
+    )
 
 
 def test_reflecting_affine_seed_is_preserved(linear_pair_factory):
@@ -387,8 +430,10 @@ def test_reflecting_affine_seed_is_preserved(linear_pair_factory):
         max_iterations=1,
         progress=False,
     )
-    assert r.transforms is not None
-    np.testing.assert_allclose(r.transforms, truth, atol=3e-14, rtol=0)
+    assert "forward" in r
+    np.testing.assert_allclose(
+        r["forward"].to_dataset()["transform"], truth, atol=3e-14, rtol=0
+    )
 
 
 @pytest.mark.parametrize("model", ["translation", "affine"])
@@ -437,10 +482,13 @@ def test_affine_candidate_guard_is_per_frame_and_keeps_best(
         max_iterations=2,
         progress=False,
     )
-    assert r.transforms is not None
-    assert np.isfinite(r.transforms).all()
-    assert np.all(np.abs(np.linalg.det(r.transforms.values[:, :3, :3])) > 1e-8)
-    assert set(r.diagnostics.status.values) <= {
+    assert "forward" in r
+    assert np.isfinite(r["forward"].to_dataset()["transform"]).all()
+    assert np.all(
+        np.abs(np.linalg.det(r["forward"].to_dataset()["transform"].values[:, :3, :3]))
+        > 1e-8
+    )
+    assert set(r["diagnostics"].to_dataset().status.values) <= {
         "invalid_transform",
         "insufficient_overlap",
     }
@@ -474,12 +522,17 @@ def test_invalid_affine_frame_does_not_stop_companions(
         max_iterations=2,
         progress=False,
     )
-    assert result.transforms is not None
-    np.testing.assert_array_equal(result.diagnostics.n_iterations, [0, 2])
+    assert "forward" in result
     np.testing.assert_array_equal(
-        result.diagnostics.status, ["invalid_transform", "max_iterations"]
+        result["diagnostics"].to_dataset().n_iterations, [0, 2]
     )
-    np.testing.assert_array_equal(result.transforms[0], np.eye(4))
+    np.testing.assert_array_equal(
+        result["diagnostics"].to_dataset().status,
+        ["invalid_transform", "max_iterations"],
+    )
+    np.testing.assert_array_equal(
+        result["forward"].to_dataset()["transform"][0], np.eye(4)
+    )
 
 
 def test_default_is_identical_to_explicit_rigid(recording_factory):
@@ -492,8 +545,13 @@ def test_default_is_identical_to_explicit_rigid(recording_factory):
         max_iterations=5,
         progress=False,
     )
-    for field in ("registered", "valid", "transforms", "diagnostics"):
-        xr.testing.assert_equal(getattr(a, field), getattr(b, field))
+    for field in (
+        "images/registered",
+        "images/valid",
+        "forward/transform",
+        "diagnostics",
+    ):
+        xr.testing.assert_equal(a[field], b[field])
 
 
 @pytest.mark.parametrize("bad", ["euler", "nonrigid", None, 3])

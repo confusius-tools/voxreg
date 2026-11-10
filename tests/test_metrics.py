@@ -155,16 +155,24 @@ def test_mi_nonlinear_contrast_recovers_independent_physical_truth(
         shrink_factors=(2, 1) if model == "translation" else (1,),
         smoothing_sigmas=(0.18, 0) if model == "translation" else (0,),
     )
-    assert result.forward_transforms is not None
+    assert "forward" in result
     lattice = position_to_world(fixed)
     ell = np.linalg.norm(lattice[:3, :3], axis=0)[np.array(fixed.shape) > 1].min()
     if model == "syn":
-        residual = result.forward_transforms.values - truth
+        residual = (
+            result["forward"]
+            .to_dataset()["transform"]
+            .transpose(..., "world_component")
+            .values
+            - truth
+        )
     else:
         points = lattice @ np.vstack(
             (np.indices(fixed.shape).reshape(3, -1), np.ones((1, fixed.size)))
         )
-        residual = ((result.forward_transforms.values - truth) @ points)[:3].T
+        residual = (
+            (result["forward"].to_dataset()["transform"].values - truth) @ points
+        )[:3].T
     assert np.sqrt(np.mean(np.sum(residual**2, axis=-1))) / ell <= 0.30
 
 
@@ -193,16 +201,21 @@ def test_mi_masks_pyramids_and_original_intensity_output(
         progress=False,
         metric_callback=lambda frames, clocks, loss: reports.append(loss),
     )
-    assert result.diagnostics.attrs["metric"] == "negative mutual information"
-    assert result.diagnostics.attrs["objective_units"] == "nats"
-    assert result.diagnostics.attrs["mi_bins"] == 12
-    assert np.isfinite(result.diagnostics.objective).all()
-    assert result.diagnostics.level_objective.shape[-1] == 2
+    assert (
+        result["diagnostics"].to_dataset().attrs["metric"]
+        == "negative mutual information"
+    )
+    assert result["diagnostics"].to_dataset().attrs["objective_units"] == "nats"
+    assert result["diagnostics"].to_dataset().attrs["mi_bins"] == 12
+    assert np.isfinite(result["diagnostics"].to_dataset().objective).all()
+    assert result["diagnostics"].to_dataset().level_objective.shape[-1] == 2
     assert reports and all(np.isfinite(loss).all() for loss in reports)
-    assert result.forward_transforms is not None
-    output, valid = resample(moving, fixed, result.forward_transforms)
-    assert_allclose(result.registered, output, rtol=0, atol=2e-6)
-    assert_array_equal(result.valid, valid)
+    assert "forward" in result
+    output, valid = resample(moving, fixed, result["forward"].to_dataset()["transform"])
+    assert_allclose(
+        result["images"].to_dataset()["registered"], output, rtol=0, atol=2e-6
+    )
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
 
 
 @pytest.mark.parametrize("terminal_metric", ["ncc", "local_ncc"])
@@ -232,22 +245,24 @@ def test_mi_stages_motion_failure_isolation_and_overrides(
             return_transforms=True,
             progress=False,
         )
-        assert result.stage_diagnostics is not None
-        assert result.stage_diagnostics[0].attrs["mi_bins"] == 8
-        assert result.stage_diagnostics[1].attrs["metric"] == (
+        assert "stages" in result
+        assert result["stages/0"].to_dataset().attrs["mi_bins"] == 8
+        assert result["stages/1"].to_dataset().attrs["metric"] == (
             "negative squared global NCC"
             if terminal_metric == "ncc"
             else "negative squared local NCC"
         )
         assert_array_equal(
-            result.diagnostics.status,
+            result["diagnostics"].to_dataset().status,
             ["reference", "max_iterations", "insufficient_overlap"],
         )
-        assert_array_equal(result.registered[0], moving[0])
+        assert_array_equal(result["images"].to_dataset()["registered"][0], moving[0])
         results.append(result)
     assert (
         max_pull_difference(
-            results[0].forward_transforms, results[1].forward_transforms, fixed
+            results[0]["forward"].to_dataset()["transform"],
+            results[1]["forward"].to_dataset()["transform"],
+            fixed,
         )
         < 0.01
     )

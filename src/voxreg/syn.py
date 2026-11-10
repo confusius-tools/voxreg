@@ -36,7 +36,6 @@ from voxreg.metrics import compute_global_ncc, compute_local_ncc
 from voxreg.preparation import PreparedRegistration
 from voxreg.results import (
     STATUS_LABELS,
-    RegistrationResult,
     build_output_template,
     build_result,
 )
@@ -582,7 +581,7 @@ def _build_labeled_field(values, template, convention):
     return result
 
 
-def run_syn(prepared: PreparedRegistration) -> RegistrationResult:
+def run_syn(prepared: PreparedRegistration) -> xr.DataTree:
     """Fit a prepared SyN model and assemble complete native-grid world fields.
 
     Parameters
@@ -592,7 +591,7 @@ def run_syn(prepared: PreparedRegistration) -> RegistrationResult:
 
     Returns
     -------
-    RegistrationResult
+    xarray.DataTree
         Original intensities, support, optional complete displacements and diagnostics.
 
     Raises

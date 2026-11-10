@@ -261,29 +261,38 @@ def test_single_pair_output_uses_fixed_grid_and_original_dtype(
         max_iterations=1,
         progress=False,
     )
-    assert r.transforms is not None
-    assert r.registered.dims == fixed.dims and r.registered.shape == fixed.shape
-    assert r.registered.dtype == dtype
-    assert r.registered.xindexes["z"].equals(fixed.xindexes["z"])
-    assert r.transforms.shape == (4, 4)
-    assert r.diagnostics.status.dims == ()
-    validate_voxeldata(r.registered)
-    validate_voxeldata(r.valid)
+    assert "forward" in r
+    assert (
+        r["images"].to_dataset()["registered"].dims == fixed.dims
+        and r["images"].to_dataset()["registered"].shape == fixed.shape
+    )
+    assert r["images"].to_dataset()["registered"].dtype == dtype
+    assert (
+        r["images"].to_dataset()["registered"].xindexes["z"].equals(fixed.xindexes["z"])
+    )
+    assert r["forward"].to_dataset()["transform"].shape == (4, 4)
+    assert r["diagnostics"].to_dataset().status.dims == ()
+    validate_voxeldata(r["images"].to_dataset()["registered"])
+    validate_voxeldata(r["images"].to_dataset()["valid"])
     xr.testing.assert_identical(moving, untouched)
     xr.testing.assert_identical(fixed, fixed_original)
-    assert r.registered.name == moving.name
+    assert r["images"].to_dataset()["registered"].name == "registered"
     assert (
-        r.registered.attrs["units"] == "power"
-        and r.registered.attrs["subject"] == "moving"
+        r["images"].to_dataset()["registered"].attrs["units"] == "power"
+        and r["images"].to_dataset()["registered"].attrs["subject"] == "moving"
     )
-    coords, valid = reference_coordinates(moving, fixed, r.transforms.values)
+    coords, valid = reference_coordinates(
+        moving, fixed, r["forward"].to_dataset()["transform"].values
+    )
     expected = map_coordinates(
         moving.values.astype(float), coords, order=1, mode="nearest", prefilter=False
     )
     if dtype == np.uint16:
         expected = np.rint(expected).astype(dtype)
-    np.testing.assert_allclose(r.registered, expected, atol=2e-12, rtol=0)
-    np.testing.assert_array_equal(r.valid, valid)
+    np.testing.assert_allclose(
+        r["images"].to_dataset()["registered"], expected, atol=2e-12, rtol=0
+    )
+    np.testing.assert_array_equal(r["images"].to_dataset()["valid"], valid)
 
 
 def volume_phantom():
@@ -335,19 +344,19 @@ def test_3d_known_motion_recovery_on_independent_grids(device):
         max_iterations=180,
         progress=False,
     )
-    assert r.transforms is not None
+    assert "forward" in r
     indices = np.indices(fixed.shape)
     points = position_to_world(fixed) @ np.concatenate(
         (indices, np.ones((1, *fixed.shape))), axis=0
     ).reshape(4, -1)
-    error = ((r.transforms.values - truth) @ points)[:3]
+    error = ((r["forward"].to_dataset()["transform"].values - truth) @ points)[:3]
     ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
     rms = np.sqrt(np.mean(np.sum(error**2, axis=0))) / ell
-    assert rms < 0.25, (rms, r.diagnostics)
-    assert r.diagnostics.objective < -0.995
-    assert r.diagnostics.valid_fraction > 0.99
+    assert rms < 0.25, (rms, r["diagnostics"].to_dataset())
+    assert r["diagnostics"].to_dataset().objective < -0.995
+    assert r["diagnostics"].to_dataset().valid_fraction > 0.99
     assert {"rotation_z", "rotation_y", "rotation_x", "translation_z"} <= set(
-        r.diagnostics
+        r["diagnostics"].to_dataset()
     )
 
 
@@ -371,42 +380,58 @@ def test_3d_batch_and_cpu_cuda_independence(linear_pair_factory, model):
     together = register(
         data, fixed, return_transforms=True, batch_size=2, device="cpu", **options
     )
-    assert together.transforms is not None
+    assert "forward" in together
     alone = register(
         data, fixed, return_transforms=True, batch_size=1, device="cpu", **options
     )
-    assert alone.transforms is not None
-    np.testing.assert_allclose(together.transforms, alone.transforms, atol=1e-8, rtol=0)
-    np.testing.assert_array_equal(
-        together.diagnostics.n_iterations, alone.diagnostics.n_iterations
+    assert "forward" in alone
+    np.testing.assert_allclose(
+        together["forward"].to_dataset()["transform"],
+        alone["forward"].to_dataset()["transform"],
+        atol=1e-8,
+        rtol=0,
     )
-    assert together.registered.shape == (2, *fixed.shape)
-    np.testing.assert_array_equal(together.registered.time, data.time)
-    np.testing.assert_array_equal(together.registered.acquisition, data.acquisition)
-    validate_voxeldata(together.registered)
-    validate_voxeldata(together.valid)
+    np.testing.assert_array_equal(
+        together["diagnostics"].to_dataset().n_iterations,
+        alone["diagnostics"].to_dataset().n_iterations,
+    )
+    assert together["images"].to_dataset()["registered"].shape == (2, *fixed.shape)
+    np.testing.assert_array_equal(
+        together["images"].to_dataset()["registered"].time, data.time
+    )
+    np.testing.assert_array_equal(
+        together["images"].to_dataset()["registered"].acquisition, data.acquisition
+    )
+    validate_voxeldata(together["images"].to_dataset()["registered"])
+    validate_voxeldata(together["images"].to_dataset()["valid"])
     points = position_to_world(fixed) @ np.vstack(
         (np.indices(fixed.shape).reshape(3, -1), np.ones((1, fixed.size)))
     )
     ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
-    truth_error = np.einsum("tij,jp->tip", together.transforms.values - truth, points)[
-        :, :3
-    ]
+    truth_error = np.einsum(
+        "tij,jp->tip",
+        together["forward"].to_dataset()["transform"].values - truth,
+        points,
+    )[:, :3]
     assert np.sqrt(np.mean(np.sum(truth_error**2, axis=1))) / ell < 0.25
     if torch.cuda.is_available():
         cuda = register(data, fixed, return_transforms=True, device="cuda", **options)
-        assert cuda.transforms is not None
+        assert "forward" in cuda
         indices = np.indices(fixed.shape)
         points = position_to_world(fixed) @ np.concatenate(
             (indices, np.ones((1, *fixed.shape))), axis=0
         ).reshape(4, -1)
         error = np.einsum(
-            "tij,jp->tip", cuda.transforms.values - together.transforms.values, points
+            "tij,jp->tip",
+            cuda["forward"].to_dataset()["transform"].values
+            - together["forward"].to_dataset()["transform"].values,
+            points,
         )[:, :3]
         ell = np.linalg.norm(position_to_world(fixed)[:3, :3], axis=0).min()
         assert np.linalg.norm(error, axis=1).max() < 0.01 * ell
         np.testing.assert_array_equal(
-            cuda.diagnostics.n_iterations, together.diagnostics.n_iterations
+            cuda["diagnostics"].to_dataset().n_iterations,
+            together["diagnostics"].to_dataset().n_iterations,
         )
 
 
@@ -428,13 +453,13 @@ def test_3d_reference_and_float64_detail_along_k_are_preserved(model):
         max_iterations=1,
         progress=False,
     )
-    assert r.transforms is not None
-    assert r.registered.dtype == np.float64
-    np.testing.assert_array_equal(r.registered[0], data[0])
-    np.testing.assert_array_equal(r.transforms[0], np.eye(4))
-    assert r.diagnostics.status.values[0] == "reference"
-    assert r.diagnostics.objective.values[1] < -0.99999
-    assert r.diagnostics.status.values[1] != "invalid_metric"
+    assert "forward" in r
+    assert r["images"].to_dataset()["registered"].dtype == np.float64
+    np.testing.assert_array_equal(r["images"].to_dataset()["registered"][0], data[0])
+    np.testing.assert_array_equal(r["forward"].to_dataset()["transform"][0], np.eye(4))
+    assert r["diagnostics"].to_dataset().status.values[0] == "reference"
+    assert r["diagnostics"].to_dataset().objective.values[1] < -0.99999
+    assert r["diagnostics"].to_dataset().status.values[1] != "invalid_metric"
 
 
 def test_common_large_world_origin_does_not_enter_dense_mapping():
@@ -476,13 +501,14 @@ def test_no_overlap_retains_identity_and_uses_original_minimum():
     r = register(
         moving, fixed, return_transforms=True, max_iterations=2, progress=False
     )
-    assert r.diagnostics.status == "insufficient_overlap"
-    assert r.diagnostics.n_iterations == 0
-    assert np.isnan(r.diagnostics.objective)
-    assert not r.valid.any()
-    np.testing.assert_array_equal(r.transforms, np.eye(4))
+    assert r["diagnostics"].to_dataset().status == "insufficient_overlap"
+    assert r["diagnostics"].to_dataset().n_iterations == 0
+    assert np.isnan(r["diagnostics"].to_dataset().objective)
+    assert not r["images"].to_dataset()["valid"].any()
+    np.testing.assert_array_equal(r["forward"].to_dataset()["transform"], np.eye(4))
     np.testing.assert_array_equal(
-        r.registered, np.full(fixed.shape, moving.values.min())
+        r["images"].to_dataset()["registered"],
+        np.full(fixed.shape, moving.values.min()),
     )
 
 
@@ -493,5 +519,5 @@ def test_non_coplanar_needs_seed_and_mixed_grids_use_slice_domain():
         register(tilted, fixed, progress=False)
     volume = grid_data((3, 15, 17), [0, 0, 0], [0.5, 0.4, 0.3])
     result = register(volume, fixed, max_iterations=1, progress=False)
-    assert result.registered.shape == fixed.shape
-    assert result.diagnostics.attrs["metric_domain"] == "fixed_slice"
+    assert result["images"].to_dataset()["registered"].shape == fixed.shape
+    assert result["diagnostics"].to_dataset().attrs["metric_domain"] == "fixed_slice"

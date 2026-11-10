@@ -29,7 +29,7 @@ def test_registration_uses_source_chunks_and_worker_batch_policy(
         device=device,
         return_transforms=True,
     )
-    assert expected.transforms is not None
+    assert "forward" in expected
     choices, batches, tasks = [], [], []
     optimize = linear._optimize
     execute = registration.execute_registration
@@ -57,11 +57,15 @@ def test_registration_uses_source_chunks_and_worker_batch_policy(
         device=device,
         return_transforms=True,
     )
-    assert lazy.registered.chunks is not None
-    assert lazy.registered.chunks[0] == (2, 3)
+    chunks = lazy["images"].to_dataset()["registered"].chunks
+    assert chunks is not None
+    assert chunks[0] == (2, 3)
     assert choices == batches == tasks == []
     image, matrices, diagnostics = dask.compute(
-        lazy.registered, lazy.transforms, lazy.diagnostics, scheduler="synchronous"
+        lazy["images"].to_dataset()["registered"],
+        lazy["forward"].to_dataset()["transform"],
+        lazy["diagnostics"].to_dataset(),
+        scheduler="synchronous",
     )
     assert sorted(tasks) == [2, 3]
     assert sorted(batches) == ([1] * 5 if override else [1, 2, 2])
@@ -71,8 +75,12 @@ def test_registration_uses_source_chunks_and_worker_batch_policy(
         diagnostics.execution_batch_size, [1] * 5 if override else [2, 2, 2, 2, 1]
     )
     assert_array_equal(diagnostics.execution_batch_start, [0, 0, 2, 2, 2])
-    assert_allclose(matrices, expected.transforms, rtol=0, atol=1e-7)
-    assert_allclose(image, expected.registered, rtol=0, atol=1e-6)
+    assert_allclose(
+        matrices, expected["forward"].to_dataset()["transform"], rtol=0, atol=1e-7
+    )
+    assert_allclose(
+        image, expected["images"].to_dataset()["registered"], rtol=0, atol=1e-6
+    )
 
 
 @pytest.mark.parametrize("override", [None, 1])
@@ -143,8 +151,10 @@ def test_registration_infers_auxiliary_chunks_without_moving_time_chunks(
         fixed = data.isel(time=0, drop=True).chunk(j=8)
         expected_chunks = (1, 1, 1)
     result = register(data, fixed, **options)
-    assert result.registered.chunks is not None
-    assert result.registered.chunks[0] == expected_chunks
+    assert result["images"].to_dataset()["registered"].chunks is not None
+    chunks = result["images"].to_dataset()["registered"].chunks
+    assert chunks is not None
+    assert chunks[0] == expected_chunks
     eager_options = {
         name: value.compute() if isinstance(value, xr.DataArray) else value
         for name, value in options.items()
@@ -153,8 +163,8 @@ def test_registration_infers_auxiliary_chunks_without_moving_time_chunks(
         data, None if fixed is None else fixed.compute(), **eager_options
     )
     assert_allclose(
-        result.registered.compute(scheduler="synchronous"),
-        expected.registered,
+        result["images"].to_dataset()["registered"].compute(scheduler="synchronous"),
+        expected["images"].to_dataset()["registered"],
         rtol=0,
         atol=1e-6,
     )

@@ -64,31 +64,48 @@ def test_registration_mixed_units_masks_and_pyramids(
         moving_mask=_in_units(moving_mask, "nm"),
         **options,
     )
-    assert (
-        baseline.forward_transforms is not None
-        and result.forward_transforms is not None
-    )
+    assert "forward" in baseline and "forward" in result
     assert (
         max_pull_difference(
-            result.forward_transforms, baseline.forward_transforms, fixed
+            result["forward"].to_dataset()["transform"],
+            baseline["forward"].to_dataset()["transform"],
+            fixed,
         )
         < 0.001
     )
-    difference = np.linalg.norm(result.registered.values - baseline.registered.values)
-    assert difference / np.linalg.norm(baseline.registered.values) < 1e-5
-    assert_array_equal(result.diagnostics.status, baseline.diagnostics.status)
-    assert_array_equal(
-        result.diagnostics.n_iterations, baseline.diagnostics.n_iterations
+    difference = np.linalg.norm(
+        result["images"].to_dataset()["registered"].values
+        - baseline["images"].to_dataset()["registered"].values
     )
-    assert_array_equal(result.diagnostics.smoothing_sigma, [0.18, 0])
-    assert result.diagnostics.smoothing_sigma.attrs["units"] == "mm"
-    for output in (result.registered, result.valid):
+    assert (
+        difference
+        / np.linalg.norm(baseline["images"].to_dataset()["registered"].values)
+        < 1e-5
+    )
+    assert_array_equal(
+        result["diagnostics"].to_dataset().status,
+        baseline["diagnostics"].to_dataset().status,
+    )
+    assert_array_equal(
+        result["diagnostics"].to_dataset().n_iterations,
+        baseline["diagnostics"].to_dataset().n_iterations,
+    )
+    assert_array_equal(result["diagnostics"].to_dataset().smoothing_sigma, [0.18, 0])
+    assert result["diagnostics"].to_dataset().smoothing_sigma.attrs["units"] == "mm"
+    for output in (
+        result["images"].to_dataset()["registered"],
+        result["images"].to_dataset()["valid"],
+    ):
         assert output.coords["z"].attrs["units"] == "m"
         assert output.xindexes["z"].equals(native_fixed.xindexes["z"])
-    assert result.forward_transforms.attrs["spatial_units"] == "mm"
-    sampled, valid = resample(native_moving, native_fixed, result.forward_transforms)
-    assert_allclose(result.registered, sampled, rtol=0, atol=2e-6)
-    assert_array_equal(result.valid, valid)
+    assert result["forward"].to_dataset()["transform"].attrs["spatial_units"] == "mm"
+    sampled, valid = resample(
+        native_moving, native_fixed, result["forward"].to_dataset()["transform"]
+    )
+    assert_allclose(
+        result["images"].to_dataset()["registered"], sampled, rtol=0, atol=2e-6
+    )
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
 
 
 @pytest.mark.parametrize("unit", SCALES)
@@ -121,13 +138,12 @@ def test_labelled_matrix_units_seed_and_resampling(linear_pair_factory, planar, 
         result = register(
             _in_units(moving, "m"), _in_units(fixed, "µm"), **seed_options, **options
         )
-        assert (
-            baseline.forward_transforms is not None
-            and result.forward_transforms is not None
-        )
+        assert "forward" in baseline and "forward" in result
         assert (
             max_pull_difference(
-                result.forward_transforms, baseline.forward_transforms, fixed
+                result["forward"].to_dataset()["transform"],
+                baseline["forward"].to_dataset()["transform"],
+                fixed,
             )
             < 0.001
         )
@@ -202,13 +218,12 @@ def test_unit_conversion_preserves_large_origin_fit(linear_pair_factory, planar)
     }
     baseline = register(moving, fixed, **options)
     native = register(_in_units(moving, "µm"), _in_units(fixed, "m"), **options)
-    assert (
-        baseline.forward_transforms is not None
-        and native.forward_transforms is not None
-    )
+    assert "forward" in baseline and "forward" in native
     assert (
         max_pull_difference(
-            native.forward_transforms, baseline.forward_transforms, fixed
+            native["forward"].to_dataset()["transform"],
+            baseline["forward"].to_dataset()["transform"],
+            fixed,
         )
         < 0.001
     )

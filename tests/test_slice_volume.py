@@ -42,44 +42,75 @@ def test_slice_volume_directions_use_their_own_native_fixed_grid(
         "progress": False,
     }
     result = register(volume, target, return_transforms=True, **kwargs)
-    assert result.transforms is not None
+    assert "forward" in result
     reverse = register(target, volume, return_transforms=True, **kwargs)
-    assert reverse.transforms is not None
-    assert result.registered.shape == target.shape
-    assert reverse.registered.shape == volume.shape
-    assert result.registered.dtype == reverse.registered.dtype == np.float64
-    assert result.diagnostics.valid_fraction > 0.95
-    assert not np.allclose(
-        reverse.transforms, np.linalg.inv(result.transforms), atol=1e-6, rtol=0
+    assert "forward" in reverse
+    assert result["images"].to_dataset()["registered"].shape == target.shape
+    assert reverse["images"].to_dataset()["registered"].shape == volume.shape
+    assert (
+        result["images"].to_dataset()["registered"].dtype
+        == reverse["images"].to_dataset()["registered"].dtype
+        == np.float64
     )
-    assert result.diagnostics.attrs["metric_domain"] == "fixed_slice"
-    assert reverse.diagnostics.attrs["metric_domain"] == "fixed_volume"
+    assert result["diagnostics"].to_dataset().valid_fraction > 0.95
+    assert not np.allclose(
+        reverse["forward"].to_dataset()["transform"],
+        np.linalg.inv(result["forward"].to_dataset()["transform"]),
+        atol=1e-6,
+        rtol=0,
+    )
+    assert result["diagnostics"].to_dataset().attrs["metric_domain"] == "fixed_slice"
+    assert reverse["diagnostics"].to_dataset().attrs["metric_domain"] == "fixed_volume"
     points = position_to_world(target) @ np.vstack(
         (np.indices(target.shape).reshape(3, -1), np.ones((1, target.size)))
     )
     errors = (
-        np.linalg.norm(((result.transforms.values - truth) @ points)[:3], axis=0) / 0.35
+        np.linalg.norm(
+            ((result["forward"].to_dataset()["transform"].values - truth) @ points)[:3],
+            axis=0,
+        )
+        / 0.35
     )
     assert np.sqrt(np.mean(errors**2)) < 0.25
-    expected, valid = sample(volume, target, result.transforms.values)
-    assert_array_equal(result.valid, valid)
-    assert_allclose(
-        result.registered.values[valid], expected[valid], atol=1e-12, rtol=0
+    expected, valid = sample(
+        volume, target, result["forward"].to_dataset()["transform"].values
     )
-    expected, valid = sample(target, volume, reverse.transforms.values)
-    assert_array_equal(reverse.valid, valid)
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
     assert_allclose(
-        reverse.registered.values[valid], expected[valid], atol=1e-12, rtol=0
+        result["images"].to_dataset()["registered"].values[valid],
+        expected[valid],
+        atol=1e-12,
+        rtol=0,
     )
-    assert np.all(reverse.registered.values[~valid] == target.values.min())
-    assert_allclose(reverse.diagnostics.valid_fraction, valid.mean(), atol=1e-8)
+    expected, valid = sample(
+        target, volume, reverse["forward"].to_dataset()["transform"].values
+    )
+    assert_array_equal(reverse["images"].to_dataset()["valid"], valid)
+    assert_allclose(
+        reverse["images"].to_dataset()["registered"].values[valid],
+        expected[valid],
+        atol=1e-12,
+        rtol=0,
+    )
+    assert np.all(
+        reverse["images"].to_dataset()["registered"].values[~valid]
+        == target.values.min()
+    )
+    assert_allclose(
+        reverse["diagnostics"].to_dataset().valid_fraction, valid.mean(), atol=1e-8
+    )
     for fitted in [result, reverse]:
-        assert fitted.transforms is not None
-        center = np.asarray(fitted.diagnostics.attrs["rotation_center_zyx_mm"])
-        matrix = fitted.transforms.values
+        assert "forward" in fitted
+        center = np.asarray(
+            fitted["diagnostics"].to_dataset().attrs["rotation_center_zyx_mm"]
+        )
+        matrix = fitted["forward"].to_dataset()["transform"].values
         shift = matrix[:3, 3] + (matrix[:3, :3] - np.eye(3)) @ center
         assert_allclose(
-            [float(fitted.diagnostics[f"translation_{axis}"]) for axis in "zyx"],
+            [
+                float(fitted["diagnostics"].to_dataset()[f"translation_{axis}"])
+                for axis in "zyx"
+            ],
             shift,
             atol=1e-12,
             rtol=0,
@@ -87,14 +118,20 @@ def test_slice_volume_directions_use_their_own_native_fixed_grid(
         if model == "affine":
             actual = np.array(
                 [
-                    [float(fitted.diagnostics[f"linear_{row}{col}"]) for col in "zyx"]
+                    [
+                        float(fitted["diagnostics"].to_dataset()[f"linear_{row}{col}"])
+                        for col in "zyx"
+                    ]
                     for row in "zyx"
                 ]
             )
             assert_allclose(actual, matrix[:3, :3], atol=1e-15, rtol=0)
         if model == "rigid":
             vector = np.array(
-                [float(fitted.diagnostics[f"rotation_{axis}"]) for axis in "zyx"]
+                [
+                    float(fitted["diagnostics"].to_dataset()[f"rotation_{axis}"])
+                    for axis in "zyx"
+                ]
             )
             actual = Rotation.from_rotvec(vector[::-1]).as_matrix()[::-1, ::-1]
             assert_allclose(actual, matrix[:3, :3], atol=1e-14, rtol=0)
@@ -117,13 +154,20 @@ def test_slice_volume_cpu_cuda_unchanged_precision_gate(
         register(volume, target, return_transforms=True, device=device, **kwargs)
         for device in DEVICES
     )
-    assert a.transforms is not None and b.transforms is not None
+    assert "forward" in a and "forward" in b
     points = position_to_world(target) @ np.vstack(
         (np.indices(target.shape).reshape(3, -1), np.ones((1, target.size)))
     )
     difference = (
         np.linalg.norm(
-            ((a.transforms.values - b.transforms.values) @ points)[:3], axis=0
+            (
+                (
+                    a["forward"].to_dataset()["transform"].values
+                    - b["forward"].to_dataset()["transform"].values
+                )
+                @ points
+            )[:3],
+            axis=0,
         )
         / 0.35
     )
@@ -216,12 +260,16 @@ def test_nonparallel_slice_planes_need_an_explicit_alignment_choice(model, mode)
         max_iterations=1,
         progress=False,
     )
-    assert result.transforms is not None
-    assert_allclose(result.transforms, truth, atol=1e-12, rtol=0)
-    assert result.diagnostics.objective < -0.999999
+    assert "forward" in result
     assert_allclose(
-        result.registered.values[result.valid.values],
-        fixed.values[result.valid.values],
+        result["forward"].to_dataset()["transform"], truth, atol=1e-12, rtol=0
+    )
+    assert result["diagnostics"].to_dataset().objective < -0.999999
+    assert_allclose(
+        result["images"]
+        .to_dataset()["registered"]
+        .values[result["images"].to_dataset()["valid"].values],
+        fixed.values[result["images"].to_dataset()["valid"].values],
         atol=1e-12,
         rtol=0,
     )
@@ -253,24 +301,31 @@ def test_batched_slice_targets_seeds_failures_and_chunk_independence(
         "progress": False,
     }
     a = register(movie, volume, return_transforms=True, batch_size=1, **kwargs)
-    assert a.transforms is not None
+    assert "forward" in a
     b = register(movie, volume, return_transforms=True, batch_size=3, **kwargs)
-    assert b.transforms is not None
-    assert list(a.diagnostics.status.values) == [
+    assert "forward" in b
+    assert list(a["diagnostics"].to_dataset().status.values) == [
         "max_iterations",
         "max_iterations",
         "invalid_metric",
     ]
-    assert list(a.diagnostics.n_iterations.values) == [3, 3, 0]
-    assert_allclose(a.transforms, b.transforms, atol=1e-10, rtol=0)
+    assert list(a["diagnostics"].to_dataset().n_iterations.values) == [3, 3, 0]
     assert_allclose(
-        a.diagnostics.objective,
-        b.diagnostics.objective,
+        a["forward"].to_dataset()["transform"],
+        b["forward"].to_dataset()["transform"],
+        atol=1e-10,
+        rtol=0,
+    )
+    assert_allclose(
+        a["diagnostics"].to_dataset().objective,
+        b["diagnostics"].to_dataset().objective,
         atol=4 * np.finfo(np.float32).eps,
         rtol=0,
         equal_nan=True,
     )
-    assert_allclose(a.transforms.values[2], seeds[2], atol=1e-9, rtol=0)
+    assert_allclose(
+        a["forward"].to_dataset()["transform"].values[2], seeds[2], atol=1e-9, rtol=0
+    )
     assert_array_equal(movie.values, original)
     assert_array_equal(seeds, np.linalg.inv(np.stack((truth, second, truth))))
 
@@ -290,12 +345,14 @@ def test_mixed_no_overlap_retains_public_seed(slice_volume_pair_factory, model):
             max_iterations=2,
             progress=False,
         )
-        assert result.transforms is not None
-        assert result.diagnostics.status == "insufficient_overlap"
-        assert result.diagnostics.n_iterations == 0
-        assert_allclose(result.transforms, seed, atol=1e-12, rtol=0)
-        assert not result.valid.any()
-        assert np.isnan(result.diagnostics.objective)
+        assert "forward" in result
+        assert result["diagnostics"].to_dataset().status == "insufficient_overlap"
+        assert result["diagnostics"].to_dataset().n_iterations == 0
+        assert_allclose(
+            result["forward"].to_dataset()["transform"], seed, atol=1e-12, rtol=0
+        )
+        assert not result["images"].to_dataset()["valid"].any()
+        assert np.isnan(result["diagnostics"].to_dataset().objective)
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
@@ -312,13 +369,18 @@ def test_reversed_strided_slice_and_volume_grids(slice_volume_pair_factory, mode
         max_iterations=1,
         progress=False,
     )
-    assert result.transforms is not None
-    expected, valid = sample(volume, target, result.transforms.values)
-    assert_array_equal(result.valid, valid)
-    assert_allclose(
-        result.registered.values[valid], expected[valid], atol=1e-12, rtol=0
+    assert "forward" in result
+    expected, valid = sample(
+        volume, target, result["forward"].to_dataset()["transform"].values
     )
-    assert result.diagnostics.objective < -0.999999
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
+    assert_allclose(
+        result["images"].to_dataset()["registered"].values[valid],
+        expected[valid],
+        atol=1e-12,
+        rtol=0,
+    )
+    assert result["diagnostics"].to_dataset().objective < -0.999999
 
 
 @pytest.mark.parametrize("angle", [2.8, np.pi - 5e-7, np.pi])
@@ -337,9 +399,11 @@ def test_plane_seed_can_select_the_opposite_normal_orientation(angle):
         max_iterations=1,
         progress=False,
     )
-    assert result.transforms is not None
-    assert_allclose(result.transforms, pose, atol=1e-12, rtol=0)
-    assert result.diagnostics.objective < -0.999999
+    assert "forward" in result
+    assert_allclose(
+        result["forward"].to_dataset()["transform"], pose, atol=1e-12, rtol=0
+    )
+    assert result["diagnostics"].to_dataset().objective < -0.999999
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
@@ -377,12 +441,17 @@ def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(
         max_iterations=1,
         progress=False,
     )
-    assert result.transforms is not None
-    expected, valid = sample(volume, target, result.transforms.values)
-    assert_allclose(
-        result.registered.values[valid], expected[valid], atol=2e-11, rtol=0
+    assert "forward" in result
+    expected, valid = sample(
+        volume, target, result["forward"].to_dataset()["transform"].values
     )
-    assert result.diagnostics.objective < -0.999999
+    assert_allclose(
+        result["images"].to_dataset()["registered"].values[valid],
+        expected[valid],
+        atol=2e-11,
+        rtol=0,
+    )
+    assert result["diagnostics"].to_dataset().objective < -0.999999
 
 
 def test_integer_mixed_output_retains_rounding_and_original_dtype(
@@ -403,11 +472,16 @@ def test_integer_mixed_output_retains_rounding_and_original_dtype(
         max_iterations=1,
         progress=False,
     )
-    assert result.transforms is not None
-    assert result.registered.dtype == np.uint16
-    values, valid = sample(integer.astype(float), target, result.transforms.values)
+    assert "forward" in result
+    assert result["images"].to_dataset()["registered"].dtype == np.uint16
+    values, valid = sample(
+        integer.astype(float),
+        target,
+        result["forward"].to_dataset()["transform"].values,
+    )
     assert_array_equal(
-        result.registered.values[valid], np.rint(values[valid]).astype(np.uint16)
+        result["images"].to_dataset()["registered"].values[valid],
+        np.rint(values[valid]).astype(np.uint16),
     )
     assert_array_equal(integer.values, original)
 
@@ -456,10 +530,15 @@ def test_mixed_centering_seed_is_direction_consistent(
         "progress": False,
     }
     a = register(volume, target, return_transforms=True, **kwargs)
-    assert a.transforms is not None
+    assert "forward" in a
     b = register(target, volume, return_transforms=True, **kwargs)
-    assert b.transforms is not None
-    assert_allclose(a.transforms, np.linalg.inv(b.transforms), atol=1e-12, rtol=0)
+    assert "forward" in b
+    assert_allclose(
+        a["forward"].to_dataset()["transform"],
+        np.linalg.inv(b["forward"].to_dataset()["transform"]),
+        atol=1e-12,
+        rtol=0,
+    )
 
 
 def test_volume_grid_centers_within_singleton_voxel_extent_are_valid(
@@ -475,15 +554,20 @@ def test_volume_grid_centers_within_singleton_voxel_extent_are_valid(
         max_iterations=1,
         progress=False,
     )
-    assert result.transforms is not None
-    assert result.valid.any()
-    assert not result.valid.values[:12].any()
-    assert not result.valid.values[13:].any()
-    assert result.valid.values[12].any()
-    expected, valid = sample(target, volume, result.transforms.values)
-    assert_array_equal(result.valid, valid)
+    assert "forward" in result
+    assert result["images"].to_dataset()["valid"].any()
+    assert not result["images"].to_dataset()["valid"].values[:12].any()
+    assert not result["images"].to_dataset()["valid"].values[13:].any()
+    assert result["images"].to_dataset()["valid"].values[12].any()
+    expected, valid = sample(
+        target, volume, result["forward"].to_dataset()["transform"].values
+    )
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
     assert_allclose(
-        result.registered.values[valid], expected[valid], atol=1e-12, rtol=0
+        result["images"].to_dataset()["registered"].values[valid],
+        expected[valid],
+        atol=1e-12,
+        rtol=0,
     )
 
 
@@ -502,6 +586,6 @@ def test_parallel_plane_centering_and_translation_model():
         max_iterations=1,
         progress=False,
     )
-    assert result.transforms is not None
-    assert_allclose(result.transforms, af, atol=1e-12, rtol=0)
-    assert result.diagnostics.objective < -0.999999
+    assert "forward" in result
+    assert_allclose(result["forward"].to_dataset()["transform"], af, atol=1e-12, rtol=0)
+    assert result["diagnostics"].to_dataset().objective < -0.999999

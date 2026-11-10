@@ -26,16 +26,22 @@ def test_exported_forward_matches_registration(
         device=device,
         progress=False,
     )
-    assert fitted.forward_transforms is not None
-    assert fitted.inverse_transforms is not None
-    actual, valid = resample(moving, fixed, fitted.forward_transforms, device=device)
-    np.testing.assert_allclose(actual, fitted.registered, rtol=2e-6, atol=2e-6)
-    xr.testing.assert_identical(valid, fitted.valid)
+    assert "forward" in fitted
+    assert "inverse" in fitted
+    actual, valid = resample(
+        moving, fixed, fitted["forward"].to_dataset()["transform"], device=device
+    )
+    np.testing.assert_allclose(
+        actual, fitted["images"].to_dataset()["registered"], rtol=2e-6, atol=2e-6
+    )
+    xr.testing.assert_identical(
+        valid.rename("valid"), fitted["images"].to_dataset()["valid"]
+    )
     assert actual.dtype == moving.dtype
     assert actual.xindexes["z"].equals(fixed.xindexes["z"])
     # Reverse application is executable for every exported transform type.
     reverse, reverse_valid = resample(
-        fixed, moving, fitted.inverse_transforms, device=device
+        fixed, moving, fitted["inverse"].to_dataset()["transform"], device=device
     )
     assert reverse.shape == moving.shape and reverse_valid.dtype == bool
 
@@ -126,14 +132,22 @@ def test_dense_field_broadcast_and_validation(linear_pair_factory, device):
         device=device,
         progress=False,
     )
-    assert fitted.forward_transforms is not None
-    assert fitted.inverse_transforms is not None
+    assert "forward" in fitted
+    assert "inverse" in fitted
     actual, valid = resample(
-        series, fixed, fitted.forward_transforms, batch_size=1, device=device
+        series,
+        fixed,
+        fitted["forward"].to_dataset()["transform"],
+        batch_size=1,
+        device=device,
     )
-    np.testing.assert_allclose(actual, fitted.registered, rtol=2e-6, atol=2e-6)
-    xr.testing.assert_identical(valid, fitted.valid)
-    spatial_field = fitted.forward_transforms.isel(time=0, drop=True)
+    np.testing.assert_allclose(
+        actual, fitted["images"].to_dataset()["registered"], rtol=2e-6, atol=2e-6
+    )
+    xr.testing.assert_identical(
+        valid.rename("valid"), fitted["images"].to_dataset()["valid"]
+    )
+    spatial_field = fitted["forward"].to_dataset()["transform"].isel(time=0, drop=True)
     a, _ = resample(series, fixed, spatial_field, device=device)
     b, _ = resample(
         series,
@@ -142,7 +156,9 @@ def test_dense_field_broadcast_and_validation(linear_pair_factory, device):
         device=device,
     )
     xr.testing.assert_allclose(a, b, rtol=1e-14, atol=1e-14)
-    reverse, _ = resample(fixed, moving, fitted.inverse_transforms, device=device)
+    reverse, _ = resample(
+        fixed, moving, fitted["inverse"].to_dataset()["transform"], device=device
+    )
     np.testing.assert_array_equal(reverse.time, series.time)
     with pytest.raises(ValueError, match="reference grid"):
         resample(moving, fixed.isel(i=slice(1, None)), spatial_field)
@@ -236,11 +252,11 @@ def test_mixed_support_matches_registration_and_scipy(
         progress=False,
         device=device,
     )
-    assert fitted.forward_transforms is not None
+    assert "forward" in fitted
     actual, valid = resample(
         moving,
         reference,
-        fitted.forward_transforms,
+        fitted["forward"].to_dataset()["transform"],
         interpolation=interpolation,
         device=device,
     )
@@ -261,8 +277,10 @@ def test_mixed_support_matches_registration_and_scipy(
     expected[~expected_valid] = moving.values.min()
     np.testing.assert_array_equal(valid.values.ravel(), expected_valid)
     np.testing.assert_allclose(actual.values.ravel(), expected, atol=1e-12)
-    xr.testing.assert_identical(valid, fitted.valid)
-    xr.testing.assert_allclose(actual, fitted.registered)
+    xr.testing.assert_identical(
+        valid.rename("valid"), fitted["images"].to_dataset()["valid"]
+    )
+    xr.testing.assert_allclose(actual, fitted["images"].to_dataset()["registered"])
 
 
 @pytest.mark.parametrize(

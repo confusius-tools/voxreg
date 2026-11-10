@@ -69,7 +69,7 @@ def test_public_default_and_explicit_override(recording_factory, monkeypatch):
     monkeypatch.setattr(registration, "choose_batch_size", choose)
     result = register(moving, max_iterations=1, progress=False)
     assert calls == [True]
-    assert result.diagnostics.attrs["batch_size"] == 2
+    assert result["diagnostics"].to_dataset().attrs["batch_size"] == 2
     result = register(moving, batch_size=1, max_iterations=1, progress=False)
     assert calls == [True]
-    assert result.diagnostics.attrs["batch_size"] == 1
+    assert result["diagnostics"].to_dataset().attrs["batch_size"] == 1

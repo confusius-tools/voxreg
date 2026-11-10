@@ -28,33 +28,37 @@ def assert_mapping_close(data, actual, expected, tolerance_pixels):
 def test_known_rigid_recovery(recording_factory, oblique, strided, scaling):
     data, truth, affine = recording_factory(oblique=oblique, strided=strided)
     result = register(data, return_transforms=True, moving_intensity_scaling=scaling)
-    assert result.transforms is not None
-    validate_voxeldata(result.registered)
-    validate_voxeldata(result.valid)
+    assert "forward" in result
+    validate_voxeldata(result["images"].to_dataset()["registered"])
+    validate_voxeldata(result["images"].to_dataset()["valid"])
     j, i = np.mgrid[6:58:3, 6:74:3]
     positions = np.stack((np.zeros_like(j), j, i, np.ones_like(j))).reshape(4, -1)
     world = affine @ positions
-    error = np.einsum("bij,jp->bip", result.transforms.values - truth, world)[:, :3]
+    error = np.einsum(
+        "bij,jp->bip", result["forward"].to_dataset()["transform"].values - truth, world
+    )[:, :3]
     rms = np.sqrt(np.mean(np.sum(error**2, axis=1), axis=1))
     ell = np.linalg.norm(affine[:3, [2, 1]], axis=0).min()
-    assert np.max(rms) < 0.25 * ell, (rms / ell, result.diagnostics)
-    assert_array_equal(result.registered[0], data[0])
-    assert_array_equal(result.registered.time, data.time)
-    assert_array_equal(result.diagnostics.n_iterations[0], 0)
-    assert result.diagnostics.status[0] == "reference"
-    assert result.registered.attrs["units"] == "power"
-    assert result.valid.dtype == bool
+    assert np.max(rms) < 0.25 * ell, (rms / ell, result["diagnostics"].to_dataset())
+    assert_array_equal(result["images"].to_dataset()["registered"][0], data[0])
+    assert_array_equal(result["images"].to_dataset()["registered"].time, data.time)
+    assert_array_equal(result["diagnostics"].to_dataset().n_iterations[0], 0)
+    assert result["diagnostics"].to_dataset().status[0] == "reference"
+    assert result["images"].to_dataset()["registered"].attrs["units"] == "power"
+    assert result["images"].to_dataset()["valid"].dtype == bool
     for frame in range(1, 3):
-        valid = result.valid.values[frame, 0]
+        valid = result["images"].to_dataset()["valid"].values[frame, 0]
         before = np.corrcoef(data.values[0, 0][valid], data.values[frame, 0][valid])[
             0, 1
         ]
         after = np.corrcoef(
-            data.values[0, 0][valid], result.registered.values[frame, 0][valid]
+            data.values[0, 0][valid],
+            result["images"].to_dataset()["registered"].values[frame, 0][valid],
         )[0, 1]
         assert after > before and after > 0.998
         assert_array_equal(
-            result.registered.values[frame, 0][~valid], data.values[frame].min()
+            result["images"].to_dataset()["registered"].values[frame, 0][~valid],
+            data.values[frame].min(),
         )
 
 
@@ -72,27 +76,38 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
         batch_size=1,
         max_iterations=140,
     )
-    assert_mapping_close(data, combined.transforms, serial.transforms, 1e-5)
-    assert_allclose(combined.registered, serial.registered, atol=2e-4)
+    assert_mapping_close(
+        data,
+        combined["forward"].to_dataset()["transform"],
+        serial["forward"].to_dataset()["transform"],
+        1e-5,
+    )
+    assert_allclose(
+        combined["images"].to_dataset()["registered"],
+        serial["images"].to_dataset()["registered"],
+        atol=2e-4,
+    )
     failed = data.copy(data=data.values.copy())
     failed.values[1] = 0
     with_bad = register(failed, return_transforms=True, max_iterations=140)
-    assert with_bad.transforms is not None
-    assert with_bad.diagnostics.status[1] == "invalid_metric"
-    assert with_bad.diagnostics.n_iterations[1] == 0
-    assert np.isnan(with_bad.diagnostics.objective[1])
-    assert_array_equal(with_bad.transforms[1], np.eye(4))
+    assert "forward" in with_bad
+    assert with_bad["diagnostics"].to_dataset().status[1] == "invalid_metric"
+    assert with_bad["diagnostics"].to_dataset().n_iterations[1] == 0
+    assert np.isnan(with_bad["diagnostics"].to_dataset().objective[1])
+    assert_array_equal(with_bad["forward"].to_dataset()["transform"][1], np.eye(4))
     assert_allclose(
-        with_bad.diagnostics.angle[2], combined.diagnostics.angle[2], atol=1e-4
+        with_bad["diagnostics"].to_dataset().angle[2],
+        combined["diagnostics"].to_dataset().angle[2],
+        atol=1e-4,
     )
     assert_allclose(
-        with_bad.diagnostics.translation_i[2],
-        combined.diagnostics.translation_i[2],
+        with_bad["diagnostics"].to_dataset().translation_i[2],
+        combined["diagnostics"].to_dataset().translation_i[2],
         atol=3e-4,
     )
     assert_allclose(
-        with_bad.diagnostics.translation_j[2],
-        combined.diagnostics.translation_j[2],
+        with_bad["diagnostics"].to_dataset().translation_j[2],
+        combined["diagnostics"].to_dataset().translation_j[2],
         atol=3e-4,
     )
     # Exercise freezing within this budget; ITK's default 1e-8 is more conservative.
@@ -102,7 +117,7 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
         max_iterations=400,
         convergence_minimum_value=1e-6,
     )
-    assert np.all(long.diagnostics.status[1:].values == "converged")
+    assert np.all(long["diagnostics"].to_dataset().status[1:].values == "converged")
     # Continuing the chunk cannot move frames whose own optimizer has stopped.
     longer = register(
         data,
@@ -110,28 +125,40 @@ def test_batch_composition_and_failed_frame_independence(recording_factory):
         max_iterations=450,
         convergence_minimum_value=1e-6,
     )
-    assert_array_equal(long.transforms, longer.transforms)
-    assert_array_equal(long.diagnostics.n_iterations, longer.diagnostics.n_iterations)
+    assert_array_equal(
+        long["forward"].to_dataset()["transform"],
+        longer["forward"].to_dataset()["transform"],
+    )
+    assert_array_equal(
+        long["diagnostics"].to_dataset().n_iterations,
+        longer["diagnostics"].to_dataset().n_iterations,
+    )
 
 
 def test_explicit_fixed_and_low_overlap(recording_factory):
     data, _, _ = recording_factory()
     fixed = data.isel(time=0, drop=True)
     explicit = register(data, return_transforms=True, fixed=fixed)
-    assert explicit.transforms is not None
-    assert explicit.diagnostics.status[0] != "reference"
-    assert_allclose(explicit.transforms[0], np.eye(4), atol=1e-3)
+    assert "forward" in explicit
+    assert explicit["diagnostics"].to_dataset().status[0] != "reference"
+    assert_allclose(
+        explicit["forward"].to_dataset()["transform"][0], np.eye(4), atol=1e-3
+    )
     failed = register(
         data,
         return_transforms=True,
         learning_rate=200,
         max_iterations=3,
     )
-    assert failed.transforms is not None
-    assert np.all(failed.diagnostics.status[1:].values == "insufficient_overlap")
-    assert np.all(failed.diagnostics.valid_fraction.values >= 0.9)
+    assert "forward" in failed
+    assert np.all(
+        failed["diagnostics"].to_dataset().status[1:].values == "insufficient_overlap"
+    )
+    assert np.all(failed["diagnostics"].to_dataset().valid_fraction.values >= 0.9)
     assert_allclose(
-        failed.transforms, np.broadcast_to(np.eye(4), (3, 4, 4)), atol=1e-12
+        failed["forward"].to_dataset()["transform"],
+        np.broadcast_to(np.eye(4), (3, 4, 4)),
+        atol=1e-12,
     )
 
 
@@ -169,8 +196,13 @@ def test_invalid_geometry_constants_and_dtypes(recording_factory):
     data, _, _ = recording_factory()
     fixed = data.isel(time=0, j=slice(1, None), drop=True)
     cropped = register(data, fixed=fixed, max_iterations=2, progress=False)
-    assert cropped.registered.shape[1:] == fixed.shape
-    assert cropped.registered.xindexes["z"].equals(fixed.xindexes["z"])
+    assert cropped["images"].to_dataset()["registered"].shape[1:] == fixed.shape
+    assert (
+        cropped["images"]
+        .to_dataset()["registered"]
+        .xindexes["z"]
+        .equals(fixed.xindexes["z"])
+    )
     with pytest.raises(ValueError, match="constant"):
         register(data.copy(data=np.ones_like(data.values)))
     with pytest.raises(ValueError, match="all-zero"):
@@ -198,11 +230,11 @@ def test_nonzero_constant_frame_is_not_optimized(recording_factory):
     data, _, _ = recording_factory()
     data.values[1] = 1
     result = register(data, return_transforms=True)
-    assert result.transforms is not None
-    assert result.diagnostics.status[1] == "invalid_metric"
-    assert result.diagnostics.n_iterations[1] == 0
-    assert np.isnan(result.diagnostics.objective[1])
-    assert_array_equal(result.transforms[1], np.eye(4))
+    assert "forward" in result
+    assert result["diagnostics"].to_dataset().status[1] == "invalid_metric"
+    assert result["diagnostics"].to_dataset().n_iterations[1] == 0
+    assert np.isnan(result["diagnostics"].to_dataset().objective[1])
+    assert_array_equal(result["forward"].to_dataset()["transform"][1], np.eye(4))
 
 
 def test_empty_and_invalid_time_labels(recording_factory):
@@ -225,6 +257,17 @@ def test_cuda_matches_cpu(recording_factory, batch_size):
         device="cuda",
         batch_size=batch_size,
     )
-    assert_mapping_close(data, cuda.transforms, cpu.transforms, 0.01)
+    assert_mapping_close(
+        data,
+        cuda["forward"].to_dataset()["transform"],
+        cpu["forward"].to_dataset()["transform"],
+        0.01,
+    )
     # Same-coordinate interpolation is tested separately; accepted transforms differ.
-    assert np.mean(cuda.valid.values != cpu.valid.values) < 1e-3
+    assert (
+        np.mean(
+            cuda["images"].to_dataset()["valid"].values
+            != cpu["images"].to_dataset()["valid"].values
+        )
+        < 1e-3
+    )

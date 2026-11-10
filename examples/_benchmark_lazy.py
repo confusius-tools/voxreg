@@ -359,16 +359,21 @@ def execute(config: dict[str, Any], output: Path) -> None:
             progress=False,
             **options,
         )
-        assert (
-            result.forward_transforms is not None
-            and result.inverse_transforms is not None
-        )
+        assert "forward" in result and "inverse" in result
         tree = {
-            "images": storage_view(result.registered).to_dataset(name="image"),
-            "validity": storage_view(result.valid).to_dataset(name="valid"),
-            "diagnostics": result.diagnostics,
-            "forward": result.forward_transforms.to_dataset(name="matrix"),
-            "inverse": result.inverse_transforms.to_dataset(name="matrix"),
+            "images": storage_view(
+                result["images"].to_dataset()["registered"]
+            ).to_dataset(name="image"),
+            "validity": storage_view(result["images"].to_dataset()["valid"]).to_dataset(
+                name="valid"
+            ),
+            "diagnostics": result["diagnostics"].to_dataset(),
+            "forward": result["forward"]
+            .to_dataset()["transform"]
+            .to_dataset(name="matrix"),
+            "inverse": result["inverse"]
+            .to_dataset()["transform"]
+            .to_dataset(name="matrix"),
         }
     else:
         maps = xr.open_zarr(
@@ -535,10 +540,14 @@ def verify(config: dict[str, Any], output: Path, directory: Path) -> dict[str, A
                     progress=False,
                     return_transforms=True,
                 )
-                assert eager.transforms is not None
+                assert "forward" in eager
                 delta = (
                     np.linalg.norm(
-                        ((eager.transforms.values - fitted) @ points)[:3], axis=0
+                        (
+                            (eager["forward"].to_dataset()["transform"].values - fitted)
+                            @ points
+                        )[:3],
+                        axis=0,
                     ).max()
                     / SPACING.min()
                 )

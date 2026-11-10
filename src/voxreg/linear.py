@@ -23,7 +23,6 @@ from voxreg.preparation import PreparedRegistration
 from voxreg.results import (
     STATUS_LABELS,
     LinearFit,
-    RegistrationResult,
     build_output_template,
     build_result,
 )
@@ -409,7 +408,7 @@ def _optimize_pyramid(
 
 def run_linear(
     prepared: PreparedRegistration, *, fit_only: bool = False
-) -> RegistrationResult | LinearFit:
+) -> xr.DataTree | LinearFit:
     """Fit a prepared linear model and assemble native-grid outputs.
 
     Parameters
@@ -421,7 +420,7 @@ def run_linear(
 
     Returns
     -------
-    RegistrationResult or LinearFit
+    xarray.DataTree or LinearFit
         Resampled original intensities and maps, or the complete linear handoff.
     """
     settings = prepared.settings

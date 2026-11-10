@@ -36,12 +36,13 @@ def test_metric_callback_preserves_results_and_reports_frame_clocks(
         ),
         metric_interval=2,
     )
-    for name in ["registered", "valid", "transforms"]:
+    for name in ["images/registered", "images/valid", "forward/transform"]:
+        assert_array_equal(reported[name].values, baseline[name].values)
+    for name in baseline["diagnostics"].to_dataset():
         assert_array_equal(
-            getattr(reported, name).values, getattr(baseline, name).values
+            reported["diagnostics"].to_dataset()[name],
+            baseline["diagnostics"].to_dataset()[name],
         )
-    for name in baseline.diagnostics:
-        assert_array_equal(reported.diagnostics[name], baseline.diagnostics[name])
     assert len(events) == 8
     for offset in [0, 4]:
         frame_indices = events[offset][0]
@@ -89,10 +90,8 @@ def test_metric_callback_arrays_are_owned_and_invalid_metrics_are_nan(
         metric_callback=mutate,
         metric_interval=1,
     )
-    for name in ["registered", "valid", "transforms"]:
-        assert_array_equal(
-            getattr(reported, name).values, getattr(baseline, name).values
-        )
+    for name in ["images/registered", "images/valid", "forward/transform"]:
+        assert_array_equal(reported[name].values, baseline[name].values)
     for frames, steps, metric in seen:
         assert not (frames == 999).any()
         if 1 in frames:

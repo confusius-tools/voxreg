@@ -85,7 +85,7 @@ def test_native_domains_and_nonidentity_seed_match_sitk_value(
         max_iterations=1,
         progress=False,
     )
-    assert result.transforms is not None
+    assert "forward" in result
     source_shape, target_shape, sampled_shape, pivot, decoded = records[0]
     assert source_shape == moving.shape and target_shape == sampled_shape == fixed.shape
     assert_allclose(
@@ -95,13 +95,15 @@ def test_native_domains_and_nonidentity_seed_match_sitk_value(
         rtol=0,
     )
     assert_allclose(decoded[0], seed, atol=1e-12, rtol=0)
-    assert_allclose(result.transforms, seed, atol=1e-12, rtol=0)
-    assert result.registered.shape == fixed.shape
-    assert result.diagnostics.attrs["metric_domain"] == (
+    assert_allclose(
+        result["forward"].to_dataset()["transform"], seed, atol=1e-12, rtol=0
+    )
+    assert result["images"].to_dataset()["registered"].shape == fixed.shape
+    assert result["diagnostics"].to_dataset().attrs["metric_domain"] == (
         "fixed_volume" if moving_slice else "fixed_slice"
     )
     assert (
-        result.diagnostics.attrs["optimized_parameters"]
+        result["diagnostics"].to_dataset().attrs["optimized_parameters"]
         == {"translation": 3, "rigid": 6, "affine": 9}[model]
     )
     evaluator = sitk.ImageRegistrationMethod()
@@ -121,7 +123,9 @@ def test_native_domains_and_nonidentity_seed_match_sitk_value(
             voxeldata_to_sitk_image(confusius_reference(moving)), sitk.sitkFloat64
         ),
     )
-    assert_allclose(result.diagnostics.objective, expected, atol=1e-6, rtol=0)
+    assert_allclose(
+        result["diagnostics"].to_dataset().objective, expected, atol=1e-6, rtol=0
+    )
     assert_array_equal(moving.values, originals[0])
     assert_array_equal(fixed.values, originals[1])
     assert_array_equal(seed, originals[2])
@@ -148,9 +152,12 @@ def test_singleton_and_active_axes_use_half_voxel_support(monkeypatch, device, m
     )
     expected = np.zeros(fixed.shape, dtype=bool)
     expected[:2, :4, :5] = True
-    assert_array_equal(result.valid, expected)
-    assert result.registered.values[0, 0, 0] == moving.values[0, 0, 0]
-    assert result.registered.dtype == moving.dtype
+    assert_array_equal(result["images"].to_dataset()["valid"], expected)
+    assert (
+        result["images"].to_dataset()["registered"].values[0, 0, 0]
+        == moving.values[0, 0, 0]
+    )
+    assert result["images"].to_dataset()["registered"].dtype == moving.dtype
 
 
 @pytest.mark.parametrize("moving_slice", [False, True])

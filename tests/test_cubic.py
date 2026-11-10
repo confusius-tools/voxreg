@@ -215,31 +215,46 @@ def test_cubic_registration_preserves_fitting_and_matches_exported_pull(
     }
     baseline = register(moving, fixed, **options)
     cubic = register(moving, fixed, resample_interpolation="bspline", **options)
-    assert (
-        baseline.forward_transforms is not None and cubic.forward_transforms is not None
-    )
+    assert "forward" in baseline and "forward" in cubic
     assert (
         max_pull_difference(
-            cubic.forward_transforms, baseline.forward_transforms, fixed
+            cubic["forward"].to_dataset()["transform"],
+            baseline["forward"].to_dataset()["transform"],
+            fixed,
         )
         < 0.001
     )
-    assert_array_equal(cubic.diagnostics.status, baseline.diagnostics.status)
     assert_array_equal(
-        cubic.diagnostics.n_iterations, baseline.diagnostics.n_iterations
+        cubic["diagnostics"].to_dataset().status,
+        baseline["diagnostics"].to_dataset().status,
+    )
+    assert_array_equal(
+        cubic["diagnostics"].to_dataset().n_iterations,
+        baseline["diagnostics"].to_dataset().n_iterations,
     )
     assert_allclose(
-        cubic.diagnostics.objective, baseline.diagnostics.objective, rtol=0, atol=2e-6
+        cubic["diagnostics"].to_dataset().objective,
+        baseline["diagnostics"].to_dataset().objective,
+        rtol=0,
+        atol=2e-6,
     )
     actual, valid = resample(
-        moving, fixed, cubic.forward_transforms, interpolation="bspline", device=device
+        moving,
+        fixed,
+        cubic["forward"].to_dataset()["transform"],
+        interpolation="bspline",
+        device=device,
     )
-    assert_allclose(cubic.registered, actual, rtol=0, atol=2e-6)
-    assert_array_equal(cubic.valid, valid)
-    if cubic.stage_diagnostics is not None:
-        assert baseline.stage_diagnostics is not None
+    assert_allclose(
+        cubic["images"].to_dataset()["registered"], actual, rtol=0, atol=2e-6
+    )
+    assert_array_equal(cubic["images"].to_dataset()["valid"], valid)
+    if "stages" in cubic:
+        assert "stages" in baseline
         for a, b in zip(
-            cubic.stage_diagnostics, baseline.stage_diagnostics, strict=True
+            (tuple(node.to_dataset() for node in cubic["stages"].children.values())),
+            (tuple(node.to_dataset() for node in baseline["stages"].children.values())),
+            strict=True,
         ):
             assert_array_equal(a.level_n_iterations, b.level_n_iterations)
             assert_array_equal(a.level_status, b.level_status)

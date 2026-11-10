@@ -51,14 +51,17 @@ def test_input_and_output_share_voxeldata(recording_factory):
     assert np.shares_memory(data.data, external.data)
     assert_allclose(position_to_world(external), position_to_world(data), atol=1e-12)
     result = register(external, batch_size=2, max_iterations=2)
-    for output in [result.registered, result.valid]:
+    for output in [
+        result["images"].to_dataset()["registered"],
+        result["images"].to_dataset()["valid"],
+    ]:
         validate_voxeldata(output)
         assert isinstance(output.xindexes["z"], VoxelToWorldIndex)
         assert output.time.attrs == external.time.attrs
         assert_array_equal(output.vd.voxel_to_world, external.vd.voxel_to_world)
         for dim in external.dims:
             assert_array_equal(output[dim], external[dim])
-    assert_array_equal(result.registered[0], external[0])
+    assert_array_equal(result["images"].to_dataset()["registered"][0], external[0])
 
 
 def test_missing_index_and_stale_coordinates_raise(recording_factory):
@@ -169,8 +172,9 @@ def test_valid_voxeldata_dask_data_preserves_lazy_geometry(recording_factory):
     lazy = data.chunk({"time": 1})
     validate_voxeldata(lazy)
     result = register(lazy, max_iterations=1, progress=False, device="cpu")
-    validate_voxeldata(result.registered)
-    validate_voxeldata(result.valid)
+    validate_voxeldata(result["images"].to_dataset()["registered"])
+    validate_voxeldata(result["images"].to_dataset()["valid"])
     np.testing.assert_array_equal(
-        result.registered.isel(time=0).compute(), data.isel(time=0)
+        result["images"].to_dataset()["registered"].isel(time=0).compute(),
+        data.isel(time=0),
     )

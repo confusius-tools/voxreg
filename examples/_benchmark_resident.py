@@ -92,17 +92,21 @@ def _run(moving, fixed, amplitudes, config, accuracy):
             batch_size=config.get("batch_size"),
             progress=False,
         )
-        output = result.registered.values
+        output = result["images"].to_dataset()["registered"].values
         if "time" not in moving.dims:
             output = output[None]
         details = {
-            "batch_size": result.diagnostics.attrs["batch_size"],
-            "updates": np.atleast_1d(result.diagnostics.n_iterations.values).tolist(),
-            "statuses": np.atleast_1d(result.diagnostics.status.values).tolist(),
+            "batch_size": result["diagnostics"].to_dataset().attrs["batch_size"],
+            "updates": np.atleast_1d(
+                result["diagnostics"].to_dataset().n_iterations.values
+            ).tolist(),
+            "statuses": np.atleast_1d(
+                result["diagnostics"].to_dataset().status.values
+            ).tolist(),
         }
         errors = None
         if accuracy:
-            transforms = result.forward_transforms.values
+            transforms = result["forward"].to_dataset()["transform"].values
             if model != "syn":
                 errors = _linear_rms(
                     transforms.reshape(-1, 4, 4), amplitudes, model, shape

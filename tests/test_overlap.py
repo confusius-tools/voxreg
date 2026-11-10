@@ -31,15 +31,19 @@ def test_aligned_smaller_moving_image_is_not_rejected(shape, model, device):
         progress=False,
         device=device,
     )
-    assert result.transforms is not None
-    assert result.diagnostics.status == "max_iterations"
-    assert 0 < float(result.diagnostics.valid_fraction) < 0.5
-    assert result.diagnostics.objective < -0.999999
-    np.testing.assert_allclose(result.transforms, np.eye(4), atol=1e-12, rtol=0)
-    assert result.registered.dtype == np.float64
+    assert "forward" in result
+    assert result["diagnostics"].to_dataset().status == "max_iterations"
+    assert 0 < float(result["diagnostics"].to_dataset().valid_fraction) < 0.5
+    assert result["diagnostics"].to_dataset().objective < -0.999999
     np.testing.assert_allclose(
-        result.registered.values[result.valid.values],
-        fixed.values[result.valid.values],
+        result["forward"].to_dataset()["transform"], np.eye(4), atol=1e-12, rtol=0
+    )
+    assert result["images"].to_dataset()["registered"].dtype == np.float64
+    np.testing.assert_allclose(
+        result["images"]
+        .to_dataset()["registered"]
+        .values[result["images"].to_dataset()["valid"].values],
+        fixed.values[result["images"].to_dataset()["valid"].values],
         atol=1e-12,
         rtol=0,
     )
@@ -84,9 +88,9 @@ def test_partial_coverage_constant_metric_is_still_invalid(model):
         max_iterations=2,
         progress=False,
     )
-    assert 0 < result.diagnostics.valid_fraction < 0.5
-    assert result.diagnostics.status == "invalid_metric"
-    assert result.diagnostics.n_iterations == 0
+    assert 0 < result["diagnostics"].to_dataset().valid_fraction < 0.5
+    assert result["diagnostics"].to_dataset().status == "invalid_metric"
+    assert result["diagnostics"].to_dataset().n_iterations == 0
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
@@ -104,9 +108,13 @@ def test_no_overlap_keeps_seed_and_original_fill(model):
         max_iterations=2,
         progress=False,
     )
-    assert result.transforms is not None
-    assert result.diagnostics.status == "insufficient_overlap"
-    assert result.diagnostics.n_iterations == 0
-    assert not result.valid.any()
-    np.testing.assert_allclose(result.transforms, seed, atol=1e-12, rtol=0)
-    np.testing.assert_array_equal(result.registered, np.full_like(values, values.min()))
+    assert "forward" in result
+    assert result["diagnostics"].to_dataset().status == "insufficient_overlap"
+    assert result["diagnostics"].to_dataset().n_iterations == 0
+    assert not result["images"].to_dataset()["valid"].any()
+    np.testing.assert_allclose(
+        result["forward"].to_dataset()["transform"], seed, atol=1e-12, rtol=0
+    )
+    np.testing.assert_array_equal(
+        result["images"].to_dataset()["registered"], np.full_like(values, values.min())
+    )

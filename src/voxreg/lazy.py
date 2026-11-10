@@ -20,7 +20,7 @@ from voxreg.geometry import VOXEL_DIMS, validate_registration_geometry
 from voxreg.interpolation import Interpolation
 from voxreg.preparation import RegistrationSettings, resolve_device
 from voxreg.pyramid import validate_schedule
-from voxreg.results import RegistrationResult, build_output_template
+from voxreg.results import assemble_result_tree, build_output_template
 from voxreg.stages import Stage, resolve_stages
 
 _LOCAL_EXECUTION_LOCK = threading.Lock()
@@ -240,7 +240,7 @@ def _run_registration_batch(
     first: int,
     total: int,
     implicit: bool,
-) -> RegistrationResult:
+) -> xr.DataTree:
     """Fit one bounded eager batch at execution time.
 
     Parameters
@@ -258,7 +258,7 @@ def _run_registration_batch(
 
     Returns
     -------
-    RegistrationResult
+    xarray.DataTree
         One shared result for every lazy projection.
     """
     from voxreg.registration import execute_registration
@@ -306,12 +306,12 @@ def _run_registration_batch(
         )
 
 
-def _registration_values(result: RegistrationResult, name: str) -> np.ndarray:
+def _registration_values(result: xr.DataTree, name: str) -> np.ndarray:
     """Project one eager spatial result without repeating fitting.
 
     Parameters
     ----------
-    result : RegistrationResult
+    result : xarray.DataTree
         Shared batch result.
     name : str
         Image, mask or map attribute.
@@ -321,19 +321,27 @@ def _registration_values(result: RegistrationResult, name: str) -> np.ndarray:
     numpy.ndarray
         Bounded eager values for a Dask output block.
     """
-    value = getattr(result, name)
-    assert value is not None
+    path = {
+        "registered": "images/registered",
+        "valid": "images/valid",
+        "forward_transforms": "forward/transform",
+        "inverse_transforms": "inverse/transform",
+    }[name]
+    group, variable = path.split("/")
+    value = result[group].to_dataset()[variable]
+    if "world_component" in value.dims:
+        value = value.transpose("time", *VOXEL_DIMS, "world_component")
     return value.values
 
 
 def _diagnostic_values(
-    result: RegistrationResult, name: str, stage: int | None, first: int
+    result: xr.DataTree, name: str, stage: int | None, first: int
 ) -> np.ndarray:
     """Project lazy diagnostics, including task execution metadata.
 
     Parameters
     ----------
-    result : RegistrationResult
+    result : xarray.DataTree
         Shared eager batch result.
     name : str
         Diagnostic variable or execution-metadata field.
@@ -347,11 +355,7 @@ def _diagnostic_values(
     numpy.ndarray
         Per-frame values or bounded level diagnostics.
     """
-    if stage is None:
-        data = result.diagnostics
-    else:
-        assert result.stage_diagnostics is not None
-        data = result.stage_diagnostics[stage]
+    data = result["diagnostics" if stage is None else f"stages/{stage}"].to_dataset()
     count = data.sizes["time"]
     if name in data:
         values = data[name].values
@@ -564,7 +568,7 @@ def register_lazy(
     fixed: xr.DataArray | None,
     specification: Any,
     settings: RegistrationSettings,
-) -> RegistrationResult:
+) -> xr.DataTree:
     """Construct shared bounded fits without reading spatial data.
 
     Parameters
@@ -580,7 +584,7 @@ def register_lazy(
 
     Returns
     -------
-    RegistrationResult
+    xarray.DataTree
         Lazy images, masks, optional maps and execution diagnostics.
 
     Raises
@@ -739,7 +743,7 @@ def register_lazy(
             attrs = {"spatial_units": "mm"}
         forward.attrs = {**attrs, "convention": "fixed-world-to-moving-world pull"}
         inverse.attrs = {**attrs, "convention": "moving-world-to-fixed-world pull"}
-    return RegistrationResult(
+    return assemble_result_tree(
         registered, valid, forward, diagnostics, inverse, stage_diagnostics
     )
 

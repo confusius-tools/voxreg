@@ -28,11 +28,22 @@ def test_single_stage_preserves_single_model(
     }
     baseline = register(moving, fixed, transform=model, **options)
     staged = register(moving, fixed, transform=(model,), **options)
-    assert baseline.stage_diagnostics is None
-    assert staged.stage_diagnostics is not None and len(staged.stage_diagnostics) == 1
-    for name in ("registered", "valid", "forward_transforms", "inverse_transforms"):
-        xr.testing.assert_identical(getattr(staged, name), getattr(baseline, name))
-    xr.testing.assert_equal(staged.diagnostics, baseline.diagnostics)
+    assert "stages" not in baseline
+    assert (
+        "stages" in staged
+        and len(tuple(node.to_dataset() for node in staged["stages"].children.values()))
+        == 1
+    )
+    for name in (
+        "images/registered",
+        "images/valid",
+        "forward/transform",
+        "inverse/transform",
+    ):
+        xr.testing.assert_identical(staged[name], baseline[name])
+    xr.testing.assert_equal(
+        staged["diagnostics"].to_dataset(), baseline["diagnostics"].to_dataset()
+    )
 
 
 @pytest.mark.parametrize("planar", [True, False])
@@ -64,25 +75,46 @@ def test_stage_overrides_and_manual_handoff(linear_pair_factory, device, planar)
             initial_transform=seed,
             **{**options, **stage._overrides()},
         )
-        seed = manual.forward_transforms
-    assert (
-        actual.forward_transforms is not None and manual.forward_transforms is not None
-    )
-    assert (
-        actual.inverse_transforms is not None and manual.inverse_transforms is not None
+        seed = manual["forward"].to_dataset()["transform"]
+    assert "forward" in actual and "forward" in manual
+    assert "inverse" in actual and "inverse" in manual
+    assert_allclose(
+        actual["forward"].to_dataset()["transform"],
+        manual["forward"].to_dataset()["transform"],
+        rtol=0,
+        atol=2e-12,
     )
     assert_allclose(
-        actual.forward_transforms, manual.forward_transforms, rtol=0, atol=2e-12
+        actual["inverse"].to_dataset()["transform"],
+        manual["inverse"].to_dataset()["transform"],
+        rtol=0,
+        atol=2e-12,
     )
     assert_allclose(
-        actual.inverse_transforms, manual.inverse_transforms, rtol=0, atol=2e-12
+        actual["images"].to_dataset()["registered"],
+        manual["images"].to_dataset()["registered"],
+        rtol=0,
+        atol=2e-12,
     )
-    assert_allclose(actual.registered, manual.registered, rtol=0, atol=2e-12)
-    assert actual.stage_diagnostics is not None
-    assert [d.n_iterations.item() for d in actual.stage_diagnostics] == [2, 5, 4]
-    assert actual.diagnostics.n_iterations == 11
-    assert actual.diagnostics.attrs["stages"] == ["rigid", "affine", "syn"]
-    assert [d.attrs["stage"] for d in actual.stage_diagnostics] == [0, 1, 2]
+    assert "stages" in actual
+    assert [
+        d.n_iterations.item()
+        for d in (
+            tuple(node.to_dataset() for node in actual["stages"].children.values())
+        )
+    ] == [2, 5, 4]
+    assert actual["diagnostics"].to_dataset().n_iterations == 11
+    assert actual["diagnostics"].to_dataset().attrs["stages"] == [
+        "rigid",
+        "affine",
+        "syn",
+    ]
+    assert [
+        d.attrs["stage"]
+        for d in (
+            tuple(node.to_dataset() for node in actual["stages"].children.values())
+        )
+    ] == [0, 1, 2]
 
 
 @pytest.mark.parametrize("terminal", ["affine", "syn"])
@@ -119,10 +151,12 @@ def test_pipeline_samples_original_only_once(
     )
     assert len(samples) == 1
     assert_array_equal(samples[0], moving.values)
-    assert result.forward_transforms is not None
-    output, valid = resample(moving, fixed, result.forward_transforms)
-    assert_allclose(result.registered, output, rtol=0, atol=2e-6)
-    assert_array_equal(result.valid, valid)
+    assert "forward" in result
+    output, valid = resample(moving, fixed, result["forward"].to_dataset()["transform"])
+    assert_allclose(
+        result["images"].to_dataset()["registered"], output, rtol=0, atol=2e-6
+    )
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
     xr.testing.assert_identical(moving, source)
 
 
@@ -152,42 +186,51 @@ def test_motion_stages_isolate_failures_and_preserve_reference(
         )
         assert events[-1] == (6, 6)
         assert all(a[0] < b[0] for a, b in pairwise(events))
-        assert_array_equal(result.registered[0], recording[0])
+        assert_array_equal(result["images"].to_dataset()["registered"][0], recording[0])
         assert_array_equal(
-            result.diagnostics.status, ["reference", "max_iterations", "invalid_metric"]
+            result["diagnostics"].to_dataset().status,
+            ["reference", "max_iterations", "invalid_metric"],
         )
-        assert_array_equal(result.diagnostics.n_iterations, [0, 12, 0])
-        assert result.stage_diagnostics is not None
+        assert_array_equal(result["diagnostics"].to_dataset().n_iterations, [0, 12, 0])
+        assert "stages" in result
         assert_array_equal(
-            result.stage_diagnostics[1].status,
+            result["stages/1"].to_dataset().status,
             ["reference", "max_iterations", "skipped"],
         )
         assert_array_equal(
-            result.stage_diagnostics[1].level_status[2], ["skipped", "skipped"]
+            result["stages/1"].to_dataset().level_status[2],
+            ["skipped", "skipped"],
         )
-        assert_array_equal(result.registered.acquisition, recording.acquisition)
+        assert_array_equal(
+            result["images"].to_dataset()["registered"].acquisition,
+            recording.acquisition,
+        )
         results.append(result)
     first, second = results
-    assert (
-        first.forward_transforms is not None and second.forward_transforms is not None
-    )
+    assert "forward" in first and "forward" in second
     assert_array_equal(
-        first.forward_transforms.isel(time=0),
-        second.forward_transforms.isel(time=0),
+        first["forward"].to_dataset()["transform"].isel(time=0),
+        second["forward"].to_dataset()["transform"].isel(time=0),
     )
     # Float32 fitting can select different reduction kernels for different batches.
     assert_allclose(
-        first.forward_transforms.isel(time=2),
-        second.forward_transforms.isel(time=2),
+        first["forward"].to_dataset()["transform"].isel(time=2),
+        second["forward"].to_dataset()["transform"].isel(time=2),
         rtol=0,
         atol=1e-12,
     )
     assert (
-        max_pull_difference(first.forward_transforms, second.forward_transforms, fixed)
+        max_pull_difference(
+            first["forward"].to_dataset()["transform"],
+            second["forward"].to_dataset()["transform"],
+            fixed,
+        )
         < 0.01
     )
-    intensities = np.asarray(first.registered).reshape(3, -1)
-    difference = intensities - np.asarray(second.registered).reshape(3, -1)
+    intensities = np.asarray(first["images"].to_dataset()["registered"]).reshape(3, -1)
+    difference = intensities - np.asarray(
+        second["images"].to_dataset()["registered"]
+    ).reshape(3, -1)
     assert (
         np.linalg.norm(difference, axis=1) / np.linalg.norm(intensities, axis=1)
     ).max() < 1e-5
@@ -244,11 +287,24 @@ def test_shared_syn_settings_only_apply_to_syn(linear_pair_factory):
         return_transforms=False,
         progress=False,
     )
-    assert result.stage_diagnostics is not None
-    assert result.stage_diagnostics[-1].attrs["cc_radius"] == 3
-    assert result.stage_diagnostics[-1].attrs["update_sigma_voxels"] == 0.8
-    assert result.stage_diagnostics[-1].attrs["total_sigma_voxels"] == 0
-    assert result.forward_transforms is None and result.inverse_transforms is None
+    assert "stages" in result
+    assert (
+        list(result["stages"].children.values())[-1].to_dataset().attrs["cc_radius"]
+        == 3
+    )
+    assert (
+        list(result["stages"].children.values())[-1]
+        .to_dataset()
+        .attrs["update_sigma_voxels"]
+        == 0.8
+    )
+    assert (
+        list(result["stages"].children.values())[-1]
+        .to_dataset()
+        .attrs["total_sigma_voxels"]
+        == 0
+    )
+    assert "forward" not in result and "inverse" not in result
 
 
 @pytest.mark.parametrize("planar", [True, False])
@@ -264,21 +320,28 @@ def test_failed_affine_retains_full_seed_in_terminal_syn(linear_pair_factory, pl
         return_transforms=True,
         progress=False,
     )
-    assert result.stage_diagnostics is not None
-    assert result.stage_diagnostics[0].status == "invalid_metric"
-    assert result.stage_diagnostics[1].status == "skipped"
-    assert result.diagnostics.status == "invalid_metric"
-    assert result.diagnostics.n_iterations == 0
-    assert result.registered.dtype == np.uint16
+    assert "stages" in result
+    assert result["stages/0"].to_dataset().status == "invalid_metric"
+    assert result["stages/1"].to_dataset().status == "skipped"
+    assert result["diagnostics"].to_dataset().status == "invalid_metric"
+    assert result["diagnostics"].to_dataset().n_iterations == 0
+    assert result["images"].to_dataset()["registered"].dtype == np.uint16
     points = position_to_world(fixed) @ np.vstack(
         (np.indices(fixed.shape).reshape(3, -1), np.ones(fixed.size))
     )
     expected = ((seed @ points) - points)[:3].T.reshape(*fixed.shape, 3)
-    assert result.forward_transforms is not None
-    assert_allclose(result.forward_transforms, expected, rtol=0, atol=2e-12)
-    sampled, valid = resample(moving, fixed, result.forward_transforms)
-    assert_array_equal(result.registered, sampled)
-    assert_array_equal(result.valid, valid)
+    assert "forward" in result
+    assert_allclose(
+        result["forward"].to_dataset()["transform"].transpose(..., "world_component"),
+        expected,
+        rtol=0,
+        atol=2e-12,
+    )
+    sampled, valid = resample(
+        moving, fixed, result["forward"].to_dataset()["transform"]
+    )
+    assert_array_equal(result["images"].to_dataset()["registered"], sampled)
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
 
 
 @pytest.mark.parametrize("terminal", ["affine", "syn"])
@@ -295,18 +358,18 @@ def test_moments_pivot_is_initialized_once(linear_pair_factory, terminal):
         return_transforms=True,
         progress=False,
     )
-    assert result.stage_diagnostics is not None
-    first = result.stage_diagnostics[0]
+    assert "stages" in result
+    first = result["stages/0"].to_dataset()
     assert first.attrs["initialization"] == "center_moments"
-    assert "initialization" not in result.stage_diagnostics[1].attrs
+    assert "initialization" not in result["stages/1"].to_dataset().attrs
     if terminal == "affine":
         assert_array_equal(
             first.attrs["rotation_center_zyx_mm"],
-            result.stage_diagnostics[1].attrs["center_zyx_mm"],
+            result["stages/1"].to_dataset().attrs["center_zyx_mm"],
         )
     # The first failure is retained; later stages do not attempt a fresh initialization.
-    assert result.diagnostics.status == "invalid_metric"
-    assert result.stage_diagnostics[1].status == "skipped"
+    assert result["diagnostics"].to_dataset().status == "invalid_metric"
+    assert result["stages/1"].to_dataset().status == "skipped"
 
 
 @pytest.mark.parametrize("planar", [True, False])
@@ -322,7 +385,7 @@ def test_rigid_affine_syn_recovers_physical_truth(linear_pair_factory, device, p
         return_transforms=True,
         progress=False,
     )
-    assert result.forward_transforms is not None
+    assert "forward" in result
     points = position_to_world(fixed) @ np.vstack(
         (np.indices(fixed.shape).reshape(3, -1), np.ones(fixed.size))
     )
@@ -330,6 +393,12 @@ def test_rigid_affine_syn_recovers_physical_truth(linear_pair_factory, device, p
     spacing = np.linalg.norm(
         position_to_world(fixed)[:3, :3][:, np.array(fixed.shape) > 1], axis=0
     ).min()
-    residual = result.forward_transforms.values - expected
+    residual = (
+        result["forward"]
+        .to_dataset()["transform"]
+        .transpose(..., "world_component")
+        .values
+        - expected
+    )
     assert np.sqrt(np.mean(np.sum(residual**2, axis=-1))) / spacing < 0.30
-    assert result.diagnostics.min_jacobian > 0
+    assert result["diagnostics"].to_dataset().min_jacobian > 0

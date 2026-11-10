@@ -58,11 +58,11 @@ def test_original_dtype_and_fractional_sampling(
     data = data.copy(data=original.astype(dtype))
     untouched = data.values.copy()
     result = register(data, resample_interpolation=interpolation, device=device)
-    assert result.registered.dtype == dtype
+    assert result["images"].to_dataset()["registered"].dtype == dtype
     assert_array_equal(data.values, untouched)
-    assert_array_equal(result.registered[0], data[0])
-    assert_array_equal(result.valid[0], True)
-    assert_array_equal(result.registered.time, data.time)
+    assert_array_equal(result["images"].to_dataset()["registered"][0], data[0])
+    assert_array_equal(result["images"].to_dataset()["valid"][0], True)
+    assert_array_equal(result["images"].to_dataset()["registered"].time, data.time)
     j, i = np.indices(data.shape[-2:], dtype=float)
     mapped = np.stack((j - 0.314159, i + 0.271828))
     for frame in [1, 2]:
@@ -73,7 +73,9 @@ def test_original_dtype_and_fractional_sampling(
             mode="nearest",
         )
         expected = np.where(
-            result.valid.values[frame, 0], expected, data.values[frame].min()
+            result["images"].to_dataset()["valid"].values[frame, 0],
+            expected,
+            data.values[frame].min(),
         )
         if np.issubdtype(dtype, np.integer):
             expected = np.rint(expected)
@@ -82,7 +84,10 @@ def test_original_dtype_and_fractional_sampling(
         if dtype == np.float16:
             tolerance = np.finfo(dtype).eps * float(np.abs(expected).max())
         assert_allclose(
-            result.registered.values[frame, 0], expected, rtol=0, atol=tolerance
+            result["images"].to_dataset()["registered"].values[frame, 0],
+            expected,
+            rtol=0,
+            atol=tolerance,
         )
 
 
@@ -94,10 +99,10 @@ def test_float64_low_contrast_preprocessing_and_original_precision(
     data = data.copy(data=1 + data.values.astype(np.float64) * 1e-9)
     assert np.ptp(data.values.astype(np.float32)) == 0
     result = register(data, moving_intensity_scaling=scaling, max_iterations=2)
-    assert result.registered.dtype == np.float64
-    assert_array_equal(result.registered[0], data[0])
-    assert np.all(result.diagnostics.n_iterations[1:] == 2)
-    assert np.isfinite(result.registered).all()
+    assert result["images"].to_dataset()["registered"].dtype == np.float64
+    assert_array_equal(result["images"].to_dataset()["registered"][0], data[0])
+    assert np.all(result["diagnostics"].to_dataset().n_iterations[1:] == 2)
+    assert np.isfinite(result["images"].to_dataset()["registered"]).all()
 
 
 @pytest.mark.parametrize("dtype", [np.float64, np.int16, np.uint16])
@@ -108,23 +113,27 @@ def test_dtype_preserving_fit_recovers_known_motion(recording_factory, dtype):
         values = np.rint(values * 1000)
     data = data.copy(data=values.astype(dtype))
     result = register(data, return_transforms=True)
-    assert result.transforms is not None
+    assert "forward" in result
     affine = position_to_world(data)
     j, i = np.indices(data.shape[-2:])
     points = affine @ np.stack((np.zeros_like(j), j, i, np.ones_like(j))).reshape(4, -1)
-    delta = np.einsum("bij,jp->bip", result.transforms.values - truth, points)[:, :3]
+    delta = np.einsum(
+        "bij,jp->bip",
+        result["forward"].to_dataset()["transform"].values - truth,
+        points,
+    )[:, :3]
     spacing = np.linalg.norm(affine[:3, [1, 2]], axis=0).min()
     assert np.linalg.norm(delta, axis=1).max() / spacing < 0.25
-    assert result.registered.dtype == dtype
-    assert_array_equal(result.registered[0], data[0])
+    assert result["images"].to_dataset()["registered"].dtype == dtype
+    assert_array_equal(result["images"].to_dataset()["registered"][0], data[0])
 
 
 def test_float64_outside_float32_range(recording_factory):
     data, _, _ = recording_factory()
     data = data.copy(data=data.values.astype(np.float64) * 1e100)
     result = register(data, max_iterations=1)
-    assert_array_equal(result.registered[0], data[0])
-    assert np.isfinite(result.registered).all()
+    assert_array_equal(result["images"].to_dataset()["registered"][0], data[0])
+    assert np.isfinite(result["images"].to_dataset()["registered"]).all()
 
 
 @pytest.mark.parametrize("dtype", [np.int64, np.uint64])
@@ -144,10 +153,21 @@ def test_nearest_changes_only_output_not_fitting(recording_factory):
         resample_interpolation="nearest",
         max_iterations=25,
     )
-    assert_array_equal(linear.transforms, nearest.transforms)
-    assert_array_equal(linear.diagnostics.objective, nearest.diagnostics.objective)
-    assert_array_equal(linear.valid, nearest.valid)
-    assert not np.array_equal(linear.registered, nearest.registered)
+    assert_array_equal(
+        linear["forward"].to_dataset()["transform"],
+        nearest["forward"].to_dataset()["transform"],
+    )
+    assert_array_equal(
+        linear["diagnostics"].to_dataset().objective,
+        nearest["diagnostics"].to_dataset().objective,
+    )
+    assert_array_equal(
+        linear["images"].to_dataset()["valid"], nearest["images"].to_dataset()["valid"]
+    )
+    assert not np.array_equal(
+        linear["images"].to_dataset()["registered"],
+        nearest["images"].to_dataset()["registered"],
+    )
 
 
 def test_integer_rounding_ties_and_saturation(recording_factory, monkeypatch):
@@ -164,6 +184,6 @@ def test_integer_rounding_ties_and_saturation(recording_factory, monkeypatch):
 
     monkeypatch.setattr(linear, "sample_rigid", half_values)
     result = register(data, max_iterations=1)
-    assert result.registered.values[1, 0, 0, 0] == -128
-    assert result.registered.values[1, 0, 1, 1] == 126
-    assert_array_equal(result.registered[0], data[0])
+    assert result["images"].to_dataset()["registered"].values[1, 0, 0, 0] == -128
+    assert result["images"].to_dataset()["registered"].values[1, 0, 1, 1] == 126
+    assert_array_equal(result["images"].to_dataset()["registered"][0], data[0])

@@ -32,7 +32,7 @@ from voxreg.preparation import (
     validate_intensity_scaling,
     validate_winsorize_percentiles,
 )
-from voxreg.results import LinearFit, RegistrationResult
+from voxreg.results import LinearFit
 from voxreg.sampling import (
     Plane,
     SpatialGrid,
@@ -86,7 +86,7 @@ def register(
     ]
     | None = None,
     metric_interval: int = 10,
-) -> RegistrationResult:
+) -> xr.DataTree:
     """Register a volume or independent frames onto a fixed physical VoxelData grid.
 
     Parameters
@@ -330,12 +330,15 @@ def register(
 
     Returns
     -------
-    RegistrationResult
-        Registered intensities and validity on the fixed grid, diagnostics, and
-        optional world pull transforms (None by default). Spatial-only input has no synthetic time
-        label: linear transforms are (4, 4), SyN fields are (k, j, i, world_component).
-        inverse_transforms reverse the pull: inverse matrices for linear models,
-        or displacements on the original moving grid for SyN.
+    xarray.DataTree
+        VoxelData images at `images/registered` and `images/valid`, summary
+        diagnostics at `diagnostics`, and optional maps at `forward/transform`
+        and `inverse/transform`. Map groups are absent unless requested.
+        Explicit pipelines retain stage diagnostics at `stages/0`, etc.
+        Spatial-only input has no synthetic time label: linear transforms are
+        (4, 4), SyN fields are (world_component, k, j, i). Inverse fields use
+        the original moving grid. Save the complete tree with `voxeldata.save`
+        to share lazy fitting across all outputs without collecting them in RAM.
         Invalid frames retain their best
         valid transform, or the initial transform if no valid metric was observed.
         Motion diagnostics describe the full transform, not an increment.
@@ -362,7 +365,7 @@ def register(
     A failed frame stops its pipeline after that stage and retains its best valid
     map; subsequent stage diagnostics mark it skipped. Other frames continue.
     Converged and max_iterations statuses allow continuation. Summary status
-    preserves the original failure; stage_diagnostics contains separate datasets
+    preserves the original failure; the stages subtree contains separate datasets
     so stages can have different pyramid schedules without padding or loss
     comparisons between models. An implicit first-frame reference stays unchanged.
     Slice pairs optimize only their intrinsic orthonormal i/j plane, leaving its normal
@@ -473,7 +476,7 @@ def execute_registration(
     fixed: xr.DataArray | None,
     transform: str | Stage | Sequence[str | Stage],
     settings: RegistrationSettings,
-) -> RegistrationResult:
+) -> xr.DataTree:
     """Dispatch one eager recording batch through its complete model pipeline.
 
     Parameters
@@ -489,7 +492,7 @@ def execute_registration(
 
     Returns
     -------
-    RegistrationResult
+    xarray.DataTree
         Complete eager outputs and diagnostics.
 
     Raises
@@ -513,7 +516,7 @@ def execute_registration(
             "transform must be translation, rigid, affine or syn. Euler transforms belong to the rigid family."
         )
     result = run_stage(moving, fixed, transform, settings)
-    assert isinstance(result, RegistrationResult)
+    assert isinstance(result, xr.DataTree)
     return result
 
 
@@ -527,7 +530,7 @@ def run_stage(
     active_frames: npt.NDArray[np.bool_] | None = None,
     center_override: npt.NDArray[np.float64] | None = None,
     validate_only: bool = False,
-) -> RegistrationResult | LinearFit | None:
+) -> xr.DataTree | LinearFit | None:
     """Validate and prepare one model, then dispatch to its fitting engine.
 
     Parameters
@@ -551,7 +554,7 @@ def run_stage(
 
     Returns
     -------
-    RegistrationResult or LinearFit or None
+    xarray.DataTree or LinearFit or None
         Complete outputs, linear handoff, or no result for validation-only calls.
 
     Raises

@@ -15,7 +15,7 @@ from distributed import Client, LocalCluster
 from numpy.testing import assert_allclose, assert_array_equal
 from oracles import max_pull_difference
 from registration_options import RegistrationOptions
-from voxeldata import VoxelToWorldIndex
+from voxeldata import VoxelToWorldIndex, load_array, save
 
 from voxreg import Stage, position_to_world, register, resample
 from voxreg.geometry import validate_registration_geometry
@@ -73,56 +73,74 @@ def test_lazy_registration_matches_eager_with_shared_outputs(
     options["moving_mask"] = mask.chunk(time=1)
     lazy = register(data.chunk(time=1, j=12, i=14), fixed, **options)
     assert calls == []
-    assert lazy.transforms is not None and lazy.inverse_transforms is not None
-    assert eager.transforms is not None and eager.inverse_transforms is not None
+    assert "forward" in lazy and "inverse" in lazy
+    assert "forward" in eager and "inverse" in eager
     for output in (
-        lazy.registered,
-        lazy.valid,
-        lazy.transforms,
-        lazy.inverse_transforms,
+        lazy["images"].to_dataset()["registered"],
+        lazy["images"].to_dataset()["valid"],
+        lazy["forward"].to_dataset()["transform"],
+        lazy["inverse"].to_dataset()["transform"],
     ):
         assert isinstance(output.data, da.Array)
-        assert max(output.data.chunks[0]) == 1
+        assert max(output.data.chunks[output.get_axis_num("time")]) == 1
     outputs = [
-        lazy.registered,
-        lazy.valid,
-        lazy.transforms,
-        lazy.inverse_transforms,
-        lazy.diagnostics,
+        lazy["images"].to_dataset()["registered"],
+        lazy["images"].to_dataset()["valid"],
+        lazy["forward"].to_dataset()["transform"],
+        lazy["inverse"].to_dataset()["transform"],
+        lazy["diagnostics"].to_dataset(),
     ]
-    if lazy.stage_diagnostics:
-        outputs.extend(lazy.stage_diagnostics)
+    if "stages" in lazy:
+        outputs.extend(
+            tuple(node.to_dataset() for node in lazy["stages"].children.values())
+        )
     computed = dask.compute(*outputs, scheduler="synchronous")
     image, valid, forward, inverse, diagnostics = computed[:5]
     assert calls == [1, 1, 1]
     assert (
         max_pull_difference(
             forward,
-            eager.transforms,
+            eager["forward"].to_dataset()["transform"],
             fixed if explicit else data.isel(time=0, drop=True),
         )
         < 0.01
     )
-    assert_allclose(image, eager.registered, rtol=1e-5, atol=1e-5)
-    assert_array_equal(valid, eager.valid)
-    assert_allclose(inverse, eager.inverse_transforms, rtol=0, atol=1e-5)
-    for name in eager.diagnostics.data_vars:
-        if eager.diagnostics[name].dtype.kind in "USiu":
-            assert_array_equal(diagnostics[name], eager.diagnostics[name])
+    assert_allclose(
+        image, eager["images"].to_dataset()["registered"], rtol=1e-5, atol=1e-5
+    )
+    assert_array_equal(valid, eager["images"].to_dataset()["valid"])
+    assert_allclose(
+        inverse, eager["inverse"].to_dataset()["transform"], rtol=0, atol=1e-5
+    )
+    for name in eager["diagnostics"].to_dataset().data_vars:
+        if eager["diagnostics"].to_dataset()[name].dtype.kind in "USiu":
+            assert_array_equal(
+                diagnostics[name], eager["diagnostics"].to_dataset()[name]
+            )
         else:
             assert_allclose(
-                diagnostics[name], eager.diagnostics[name], rtol=1e-5, atol=1e-5
+                diagnostics[name],
+                eager["diagnostics"].to_dataset()[name],
+                rtol=1e-5,
+                atol=1e-5,
             )
     assert_array_equal(diagnostics.execution_device, [device] * 3)
     assert (diagnostics.batch_prepare_seconds >= 0).all()
     assert_allclose(
-        position_to_world(image), position_to_world(eager.registered), atol=0, rtol=0
+        position_to_world(image),
+        position_to_world(eager["images"].to_dataset()["registered"]),
+        atol=0,
+        rtol=0,
     )
     validate_registration_geometry(image)
     validate_registration_geometry(valid)
-    if lazy.stage_diagnostics:
-        assert eager.stage_diagnostics is not None
-        for expected, actual in zip(eager.stage_diagnostics, computed[5:], strict=True):
+    if "stages" in lazy:
+        assert "stages" in eager
+        for expected, actual in zip(
+            (tuple(node.to_dataset() for node in eager["stages"].children.values())),
+            computed[5:],
+            strict=True,
+        ):
             assert_array_equal(actual.status, expected.status)
             assert_allclose(actual.objective, expected.objective, rtol=1e-5, atol=1e-5)
     if not explicit:
@@ -148,14 +166,21 @@ def test_lazy_chunk_independence_failure_isolation_and_reference(
         "progress": False,
     }
     expected = register(data, **options)
-    assert expected.transforms is not None
+    assert "forward" in expected
     lazy = register(data.chunk(time=batch), batch_size=batch, **options)
     image, transforms, diagnostic = dask.compute(
-        lazy.registered, lazy.transforms, lazy.diagnostics, scheduler="synchronous"
+        lazy["images"].to_dataset()["registered"],
+        lazy["forward"].to_dataset()["transform"],
+        lazy["diagnostics"].to_dataset(),
+        scheduler="synchronous",
     )
-    assert_allclose(transforms, expected.transforms, rtol=0, atol=1e-9)
-    assert_allclose(image, expected.registered, rtol=0, atol=1e-6)
-    assert_array_equal(diagnostic.status, expected.diagnostics.status)
+    assert_allclose(
+        transforms, expected["forward"].to_dataset()["transform"], rtol=0, atol=1e-9
+    )
+    assert_allclose(
+        image, expected["images"].to_dataset()["registered"], rtol=0, atol=1e-6
+    )
+    assert_array_equal(diagnostic.status, expected["diagnostics"].to_dataset().status)
     assert_array_equal(
         diagnostic.execution_batch_size,
         [min(batch, 3 - index // batch * batch) for index in range(3)],
@@ -200,7 +225,9 @@ def test_sources_are_deferred_shared_and_only_required_frames_load(
         return_transforms=True,
     )
     assert loaded == fitted == []
-    lazy.registered.isel(time=2).compute(scheduler="synchronous")
+    lazy["images"].to_dataset()["registered"].isel(time=2).compute(
+        scheduler="synchronous"
+    )
     assert sorted(loaded) == [0, 2]
     assert fitted == [[data.time.values[2]]]
 
@@ -258,7 +285,9 @@ def test_deferred_data_errors_and_oversized_source_blocks(recording_factory):
     data.values[2, 0, 1, 1] = np.nan
     lazy = register(data.chunk(time=1), max_iterations=1, progress=False, device="cpu")
     with pytest.raises(ValueError, match="finite"):
-        lazy.registered.isel(time=2).compute(scheduler="synchronous")
+        lazy["images"].to_dataset()["registered"].isel(time=2).compute(
+            scheduler="synchronous"
+        )
     with pytest.raises(TypeError, match="spatial image pairs"):
         register(data.isel(time=0, drop=True).chunk(j=8), data.isel(time=0, drop=True))
 
@@ -363,25 +392,29 @@ def test_chained_resampling_preserves_shared_registration_tasks(
         progress=False,
         device="cpu",
     )
-    assert result.inverse_transforms is not None
+    assert "inverse" in result
     image, valid = resample(
-        result.registered,
+        result["images"].to_dataset()["registered"],
         data.isel(time=0, drop=True),
-        result.inverse_transforms,
+        result["inverse"].to_dataset()["transform"],
         device="cpu",
     )
     computed = dask.compute(
-        image, valid, result.diagnostics, result.valid, scheduler="synchronous"
+        image,
+        valid,
+        result["diagnostics"].to_dataset(),
+        result["images"].to_dataset()["valid"],
+        scheduler="synchronous",
     )
     assert len(calls) == 3
     expected = register(
         data, max_iterations=1, return_transforms=True, progress=False, device="cpu"
     )
-    assert expected.inverse_transforms is not None
+    assert "inverse" in expected
     expected_image, expected_valid = resample(
-        expected.registered,
+        expected["images"].to_dataset()["registered"],
         data.isel(time=0, drop=True),
-        expected.inverse_transforms,
+        expected["inverse"].to_dataset()["transform"],
         device="cpu",
     )
     assert_allclose(computed[0], expected_image, rtol=0, atol=1e-6)
@@ -405,7 +438,7 @@ def test_callbacks_execute_in_tasks_with_global_indices(recording_factory):
         device="cpu",
     )
     assert not metrics and not progress
-    result.registered.compute(scheduler="synchronous")
+    result["images"].to_dataset()["registered"].compute(scheduler="synchronous")
     assert set(metrics) == {0, 1, 2}
     assert sorted(progress) == [(1, 3), (2, 3), (3, 3)]
 
@@ -433,7 +466,9 @@ def test_threaded_execution_bounds_fitting_concurrency(recording_factory, monkey
     result = register(
         data.chunk(time=1), max_iterations=1, progress=False, device="cpu"
     )
-    result.registered.compute(scheduler="threads", num_workers=3)
+    result["images"].to_dataset()["registered"].compute(
+        scheduler="threads", num_workers=3
+    )
     assert counts == {"active": 0, "peak": 1}
 
 
@@ -460,7 +495,7 @@ def test_distributed_worker_execution_and_joint_zarr_storage(
         device="cpu",
         return_transforms=True,
     )
-    assert expected.transforms is not None and lazy.transforms is not None
+    assert "forward" in expected and "forward" in lazy
     with (
         LocalCluster(
             n_workers=2,
@@ -471,40 +506,31 @@ def test_distributed_worker_execution_and_joint_zarr_storage(
         Client(cluster) as client,
     ):
         outputs = client.compute(
-            [lazy.registered, lazy.valid, lazy.transforms, lazy.diagnostics]
+            [
+                lazy["images"].to_dataset()["registered"],
+                lazy["images"].to_dataset()["valid"],
+                lazy["forward"].to_dataset()["transform"],
+                lazy["diagnostics"].to_dataset(),
+            ]
         )
         image, valid, transforms, diagnostics = client.gather(outputs)
-        assert_allclose(image, expected.registered, rtol=0, atol=1e-6)
-        assert_array_equal(valid, expected.valid)
-        assert_allclose(transforms, expected.transforms, rtol=0, atol=1e-9)
+        assert_allclose(
+            image, expected["images"].to_dataset()["registered"], rtol=0, atol=1e-6
+        )
+        assert_array_equal(valid, expected["images"].to_dataset()["valid"])
+        assert_allclose(
+            transforms, expected["forward"].to_dataset()["transform"], rtol=0, atol=1e-9
+        )
         assert_array_equal(diagnostics.execution_device, ["cpu"] * 3)
         events = client.get_events("voxreg-test-callback")
         assert {index for _, event in events for index in event["indices"]} == {0, 1, 2}
-        index = lazy.registered.xindexes["z"]
+        index = lazy["images"].to_dataset()["registered"].xindexes["z"]
         assert isinstance(index, VoxelToWorldIndex)
-        attrs = {
-            "voxel_to_world": index.voxel_to_world.tolist(),
-            "voxel_to_world_units": index.units,
-        }
-        tree = xr.DataTree.from_dict(
-            {
-                "images": lazy.registered.drop_vars(["z", "y", "x"])
-                .assign_attrs(attrs)
-                .to_dataset(name="image"),
-                "validity": lazy.valid.drop_vars(["z", "y", "x"])
-                .assign_attrs(attrs)
-                .to_dataset(name="valid"),
-                "diagnostics": lazy.diagnostics,
-                "forward": lazy.transforms.to_dataset(name="matrix"),
-            }
-        )
-        tree.to_zarr(tmp_path / "result.zarr", compute=False, zarr_format=2).compute()
+        save(lazy, tmp_path / "result.zarr", compute=False, zarr_format=2).compute()
         assert len(client.get_events("voxreg-test-callback")) == 2 * len(events)
-    from voxeldata import load_array
-
-    stored = load_array(tmp_path / "result.zarr", variable="image", group="images")
+    stored = load_array(tmp_path / "result.zarr", variable="registered", group="images")
     stored_valid = load_array(
-        tmp_path / "result.zarr", variable="valid", group="validity"
+        tmp_path / "result.zarr", variable="valid", group="images"
     )
     validate_registration_geometry(stored)
     validate_registration_geometry(stored_valid)
@@ -543,7 +569,7 @@ def test_incremental_storage_retains_bounded_source_volumes(
     recording = base.expand_dims(time=np.arange(frames)).copy(data=source)
     result = register(recording, max_iterations=1, progress=False, device="cpu")
     assert live["read"] == 0
-    result.registered.to_dataset(name="image").to_zarr(
+    result["images"].to_dataset()["registered"].to_dataset(name="image").to_zarr(
         tmp_path / "stream.zarr", compute=False, zarr_format=2
     ).compute(scheduler="synchronous")
     assert live["read"] == frames
@@ -563,8 +589,12 @@ def test_local_parallel_schedulers_preserve_output(recording_factory, scheduler)
     result = register(
         data.chunk(time=1), max_iterations=1, progress=False, device="cpu"
     )
-    actual = result.registered.compute(scheduler=scheduler, num_workers=2)
-    assert_array_equal(actual, expected.registered)
+    actual = (
+        result["images"]
+        .to_dataset()["registered"]
+        .compute(scheduler=scheduler, num_workers=2)
+    )
+    assert_array_equal(actual, expected["images"].to_dataset()["registered"])
 
 
 @pytest.mark.parametrize("model", ["rigid", "syn"])
@@ -580,11 +610,11 @@ def test_distributed_device_execution_and_resampling(recording_factory, device, 
     }
     expected = register(data, **options)
     result = register(data.chunk(time=1), **options)
-    assert result.transforms is not None
+    assert "forward" in result
     image, support = resample(
         data.chunk(time=1),
         data.isel(time=0, drop=True),
-        result.transforms,
+        result["forward"].to_dataset()["transform"],
         device=device,
     )
     with (
@@ -594,10 +624,12 @@ def test_distributed_device_execution_and_resampling(recording_factory, device, 
         Client(cluster) as client,
     ):
         actual, valid, diagnostic = client.gather(
-            client.compute([image, support, result.diagnostics])
+            client.compute([image, support, result["diagnostics"].to_dataset()])
         )
-    assert_allclose(actual, expected.registered, rtol=0, atol=1e-5)
-    assert_array_equal(valid, expected.valid)
+    assert_allclose(
+        actual, expected["images"].to_dataset()["registered"], rtol=0, atol=1e-5
+    )
+    assert_array_equal(valid, expected["images"].to_dataset()["valid"])
     assert_array_equal(diagnostic.execution_device, [device] * 3)
 
 
@@ -613,7 +645,7 @@ def test_auto_device_is_resolved_at_execution_time(recording_factory, monkeypatc
     monkeypatch.setattr(torch.cuda, "is_available", probe)
     lazy = register(data.chunk(time=1), max_iterations=1, progress=False)
     assert not calls
-    diagnostic = lazy.diagnostics.compute(scheduler="synchronous")
+    diagnostic = lazy["diagnostics"].to_dataset().compute(scheduler="synchronous")
     assert calls
     assert_array_equal(
         diagnostic.execution_device, ["cuda" if available else "cpu"] * 3
@@ -636,13 +668,20 @@ def test_unequal_grids_spatial_lazy_fixed_and_optional_maps(
     }
     expected = register(recording.compute(), fixed, **options)
     actual = register(recording, fixed_lazy, **options)
-    assert actual.transforms is None and actual.inverse_transforms is None
+    assert "forward" not in actual and "inverse" not in actual
     image, support, diagnostics = dask.compute(
-        actual.registered, actual.valid, actual.diagnostics, scheduler="synchronous"
+        actual["images"].to_dataset()["registered"],
+        actual["images"].to_dataset()["valid"],
+        actual["diagnostics"].to_dataset(),
+        scheduler="synchronous",
     )
-    assert_allclose(image, expected.registered, rtol=0, atol=1e-9)
-    assert_array_equal(support, expected.valid)
-    assert_array_equal(diagnostics.n_iterations, expected.diagnostics.n_iterations)
+    assert_allclose(
+        image, expected["images"].to_dataset()["registered"], rtol=0, atol=1e-9
+    )
+    assert_array_equal(support, expected["images"].to_dataset()["valid"])
+    assert_array_equal(
+        diagnostics.n_iterations, expected["diagnostics"].to_dataset().n_iterations
+    )
     assert_allclose(position_to_world(image), position_to_world(fixed), atol=0)
 
 
@@ -696,10 +735,10 @@ def test_lazy_initial_seeds_keep_global_implicit_reference_rules(recording_facto
         device="cpu",
         return_transforms=True,
     )
-    assert expected.transforms is not None and result.transforms is not None
+    assert "forward" in expected and "forward" in result
     assert_allclose(
-        result.transforms.compute(scheduler="synchronous"),
-        expected.transforms,
+        result["forward"].to_dataset()["transform"].compute(scheduler="synchronous"),
+        expected["forward"].to_dataset()["transform"],
         rtol=0,
         atol=1e-9,
     )
@@ -713,7 +752,9 @@ def test_lazy_initial_seeds_keep_global_implicit_reference_rules(recording_facto
         device="cpu",
     )
     with pytest.raises(ValueError, match="implicit reference"):
-        invalid.registered.isel(time=0).compute(scheduler="synchronous")
+        invalid["images"].to_dataset()["registered"].isel(time=0).compute(
+            scheduler="synchronous"
+        )
 
 
 def test_resampling_metadata_failures_before_loading(recording_factory):

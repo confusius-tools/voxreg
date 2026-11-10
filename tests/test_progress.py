@@ -51,8 +51,13 @@ def test_batch_progress_is_silent_and_preserves_results(
         (min(first + batch_size, total), total) for first in range(0, total, batch_size)
     ]
     assert len(synchronizations) == baseline_syncs
-    for field in ["registered", "valid", "transforms", "diagnostics"]:
-        xr.testing.assert_equal(getattr(reported, field), getattr(baseline, field))
+    for field in [
+        "images/registered",
+        "images/valid",
+        "forward/transform",
+        "diagnostics",
+    ]:
+        xr.testing.assert_equal(reported[field], baseline[field])
     assert capsys.readouterr().out == ""
     assert not rich_bars
 
@@ -69,9 +74,9 @@ def test_progress_counts_reference_and_failed_frames(recording_factory, rich_bar
         progress=lambda completed, total: updates.append((completed, total)),
     )
     assert updates == [(1, 3), (2, 3), (3, 3)]
-    assert result.diagnostics.status[0] == "reference"
-    assert result.diagnostics.status[1] == "invalid_metric"
-    assert result.diagnostics.n_iterations[1] == 0
+    assert result["diagnostics"].to_dataset().status[0] == "reference"
+    assert result["diagnostics"].to_dataset().status[1] == "invalid_metric"
+    assert result["diagnostics"].to_dataset().n_iterations[1] == 0
     register(data, batch_size=2, max_iterations=3)
     assert rich_bars[0].tasks[0].completed == len(data)
 
@@ -142,8 +147,13 @@ def test_default_rich_progress_preserves_results_and_syncs(
     synchronizations.clear()
     reported = register(data, return_transforms=True, **options)
     assert len(synchronizations) == baseline_syncs
-    for field in ["registered", "valid", "transforms", "diagnostics"]:
-        xr.testing.assert_equal(getattr(reported, field), getattr(quiet, field))
+    for field in [
+        "images/registered",
+        "images/valid",
+        "forward/transform",
+        "diagnostics",
+    ]:
+        xr.testing.assert_equal(reported[field], quiet[field])
     assert len(rich_bars) == 1
     bar = rich_bars[0]
     assert bar.tasks[0].total == bar.tasks[0].completed == len(data)
@@ -188,8 +198,13 @@ def test_spatial_pair_progress_is_auto_quiet(shape, mode, rich_bars):
     quiet = register(data, data, return_transforms=True, progress=False, **options)
     kwargs = {} if mode == "default" else {"progress": mode}
     result = register(data, data, return_transforms=True, **kwargs, **options)
-    for name in ["registered", "valid", "transforms", "diagnostics"]:
-        xr.testing.assert_equal(getattr(result, name), getattr(quiet, name))
+    for name in [
+        "images/registered",
+        "images/valid",
+        "forward/transform",
+        "diagnostics",
+    ]:
+        xr.testing.assert_equal(result[name], quiet[name])
     assert len(rich_bars) == (1 if mode is True else 0)
     if mode is True:
         assert rich_bars[0].tasks[0].completed == 1

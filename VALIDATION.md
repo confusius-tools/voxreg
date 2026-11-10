@@ -194,8 +194,30 @@ test-only conversion to its legacy geometry model.
 The full suite passes with 1672 tests. New IQ Zarr → lazy magnitude → registration
 → Dataset/DataTree Zarr regressions verify one fit per source task, boolean masks,
 values, native geometry, named frames, time metadata and diagnostics. No full
-recording or larger-than-RAM qualification was performed. `RegistrationResult`
-remains unchanged; returning a DataTree is a separate API change.
+recording or larger-than-RAM qualification was performed.
+
+## Native result trees
+
+Registration now returns an `xarray.DataTree`, with related images in one Dataset
+and distinct fixed/moving grids in separate map leaves. The former result class
+and aliases are removed. Eager and lazy paths share the same assembler; exported
+SyN fields satisfy canonical VoxelData dimension order. Direct `vd.save(result)`
+regressions cover rigid, SyN and staged results, including named frames, time
+metadata, diagnostics, one fit per source task and resampling restored maps.
+Distributed tests also save the complete tree without duplicate fits. The full
+suite passes with 1677 tests; all pre-commit checks pass. Small CPU/CUDA lazy
+rigid benchmark runs pass; historical benchmark output layouts are unchanged.
+
+## Lazy graph-construction cost
+
+A metadata-only probe of ALD001 IQ (1,696,700 frames; 50-frame stored chunks)
+measured 96.3 s to construct 33,934 registration tasks, with 3,379 MiB process
+peak RSS including imports. Aligned 300-frame input chunks reduced this to
+16.3 s, 5,656 tasks and 1,264 MiB. Dask task/fitting guards confirmed no signal
+computation occurred. Small-subset profiles identified diagnostic projections as
+the dominant construction cost. These are graph-construction measurements, not
+registration throughput or execution-memory qualification; graph optimization
+remains separate work.
 
 ## Lazy streaming benchmark
 

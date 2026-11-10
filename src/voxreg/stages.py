@@ -12,7 +12,7 @@ import xarray as xr
 from confusius._utils.progress import progress_bar
 
 from voxreg.preparation import RegistrationSettings
-from voxreg.results import LinearFit, RegistrationResult
+from voxreg.results import LinearFit
 
 
 @dataclass(frozen=True)
@@ -173,7 +173,7 @@ def register_stages(
     fixed: xr.DataArray | None,
     specification: Stage | Sequence[str | Stage],
     shared: RegistrationSettings,
-) -> RegistrationResult:
+) -> xr.DataTree:
     """Fit stages eagerly and resample original intensities once.
 
     Parameters
@@ -189,7 +189,7 @@ def register_stages(
 
     Returns
     -------
-    RegistrationResult
+    xarray.DataTree
         Complete outputs, including independent stage diagnostics.
 
     Raises
@@ -254,8 +254,12 @@ def register_stages(
                 center_override=center,
                 fit_only=index < len(stages) - 1,
             )
-            assert isinstance(result, (RegistrationResult, LinearFit))
-            stage_diagnostics = result.diagnostics.copy(deep=True)
+            assert isinstance(result, (xr.DataTree, LinearFit))
+            stage_diagnostics = (
+                result.diagnostics
+                if isinstance(result, LinearFit)
+                else result["diagnostics"].to_dataset()
+            ).copy(deep=True)
             if isinstance(result, LinearFit) and spatial:
                 stage_diagnostics = stage_diagnostics.isel(time=0, drop=True)
             stage_diagnostics.attrs.update(stage=index, transform=stage.transform)
@@ -272,8 +276,8 @@ def register_stages(
             if isinstance(result, LinearFit):
                 seed, center = result.matrices, result.center
 
-    assert isinstance(result, RegistrationResult)
-    summary = result.diagnostics.copy(deep=True)
+    assert isinstance(result, xr.DataTree)
+    summary = result["diagnostics"].to_dataset().copy(deep=True)
     final_status = np.atleast_1d(summary.status.values).copy()
     final_status[failure != ""] = failure[failure != ""]
     summary["status"] = summary.status.copy(
@@ -288,4 +292,7 @@ def register_stages(
         stage_failure_policy="Stop each failed frame; retain its best valid transform; later stages mark it skipped.",
         stage_overhead_seconds=max(0.0, perf_counter() - start - sum(totals.values())),
     )
-    return replace(result, diagnostics=summary, stage_diagnostics=tuple(diagnostics))
+    result["diagnostics"] = xr.DataTree(summary)
+    for index, data in enumerate(diagnostics):
+        result[f"stages/{index}"] = xr.DataTree(data)
+    return result

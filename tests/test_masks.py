@@ -78,10 +78,21 @@ def test_full_masks_preserve_native_fit(linear_pair_factory, device, planar, mod
         moving_mask=moving.copy(data=np.ones_like(moving, dtype=bool)),
         **options,
     )
-    xr.testing.assert_identical(masked.registered, baseline.registered)
-    xr.testing.assert_identical(masked.forward_transforms, baseline.forward_transforms)
-    xr.testing.assert_identical(masked.valid, baseline.valid)
-    assert_array_equal(masked.diagnostics.objective, baseline.diagnostics.objective)
+    xr.testing.assert_identical(
+        masked["images"].to_dataset()["registered"],
+        baseline["images"].to_dataset()["registered"],
+    )
+    xr.testing.assert_identical(
+        masked["forward"].to_dataset()["transform"],
+        baseline["forward"].to_dataset()["transform"],
+    )
+    xr.testing.assert_identical(
+        masked["images"].to_dataset()["valid"], baseline["images"].to_dataset()["valid"]
+    )
+    assert_array_equal(
+        masked["diagnostics"].to_dataset().objective,
+        baseline["diagnostics"].to_dataset().objective,
+    )
 
 
 @pytest.mark.parametrize("model", ["rigid", "syn"])
@@ -100,12 +111,19 @@ def test_roi_fitting_keeps_output_support_distinct(linear_pair_factory, model, p
         return_transforms=True,
         progress=False,
     )
-    assert result.forward_transforms is not None
-    sampled, valid = resample(moving, fixed, result.forward_transforms)
-    assert_allclose(result.registered, sampled, rtol=0, atol=2e-6)
-    assert_array_equal(result.valid, valid)
-    assert result.diagnostics.roi_valid_fraction < result.diagnostics.valid_fraction
-    assert np.isfinite(result.diagnostics.objective)
+    assert "forward" in result
+    sampled, valid = resample(
+        moving, fixed, result["forward"].to_dataset()["transform"]
+    )
+    assert_allclose(
+        result["images"].to_dataset()["registered"], sampled, rtol=0, atol=2e-6
+    )
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
+    assert (
+        result["diagnostics"].to_dataset().roi_valid_fraction
+        < result["diagnostics"].to_dataset().valid_fraction
+    )
+    assert np.isfinite(result["diagnostics"].to_dataset().objective)
 
 
 @pytest.mark.parametrize("model", ["rigid", "syn"])
@@ -121,13 +139,15 @@ def test_empty_roi_fails_explicitly_without_changing_seed(linear_pair_factory, m
         return_transforms=True,
         progress=False,
     )
-    assert result.diagnostics.status == "insufficient_overlap"
-    assert result.diagnostics.n_iterations == 0
-    assert result.diagnostics.roi_valid_fraction == 0
+    assert result["diagnostics"].to_dataset().status == "insufficient_overlap"
+    assert result["diagnostics"].to_dataset().n_iterations == 0
+    assert result["diagnostics"].to_dataset().roi_valid_fraction == 0
     if model == "rigid":
-        assert result.forward_transforms is not None
-        assert_allclose(result.forward_transforms, seed, rtol=0, atol=1e-12)
-    assert result.valid.any()
+        assert "forward" in result
+        assert_allclose(
+            result["forward"].to_dataset()["transform"], seed, rtol=0, atol=1e-12
+        )
+    assert result["images"].to_dataset()["valid"].any()
 
 
 def test_mask_cell_rounding_follows_itk():
@@ -174,31 +194,33 @@ def test_per_frame_masks_isolate_staged_motion_failures(linear_pair_factory, ter
             return_transforms=True,
             progress=False,
         )
-        assert result.stage_diagnostics is not None
+        assert "stages" in result
         assert_array_equal(
-            result.diagnostics.status,
+            result["diagnostics"].to_dataset().status,
             ["reference", "max_iterations", "insufficient_overlap"],
         )
-        assert result.stage_diagnostics[1].status[2] == "skipped"
-        assert_array_equal(result.registered[0], moving[0])
+        assert result["stages/1"].to_dataset().status[2] == "skipped"
+        assert_array_equal(result["images"].to_dataset()["registered"][0], moving[0])
         results.append(result)
     xr.testing.assert_identical(mask, original)
     first, second = results
-    assert (
-        first.forward_transforms is not None and second.forward_transforms is not None
-    )
+    assert "forward" in first and "forward" in second
     assert_array_equal(
-        first.forward_transforms.isel(time=0),
-        second.forward_transforms.isel(time=0),
+        first["forward"].to_dataset()["transform"].isel(time=0),
+        second["forward"].to_dataset()["transform"].isel(time=0),
     )
     assert_allclose(
-        first.forward_transforms.isel(time=2),
-        second.forward_transforms.isel(time=2),
+        first["forward"].to_dataset()["transform"].isel(time=2),
+        second["forward"].to_dataset()["transform"].isel(time=2),
         rtol=0,
         atol=1e-12,
     )
     assert (
-        max_pull_difference(first.forward_transforms, second.forward_transforms, fixed)
+        max_pull_difference(
+            first["forward"].to_dataset()["transform"],
+            second["forward"].to_dataset()["transform"],
+            fixed,
+        )
         < 0.01
     )
 
@@ -230,8 +252,8 @@ def test_masked_global_ncc_agrees_with_itk(linear_pair_factory, planar):
         return_transforms=True,
         progress=False,
     )
-    assert result.forward_transforms is not None
-    matrix = result.forward_transforms.values
+    assert "forward" in result
+    matrix = result["forward"].to_dataset()["transform"].values
     evaluator = sitk.ImageRegistrationMethod()
     evaluator.SetMetricAsCorrelation()
     evaluator.SetMetricUseFixedImageGradientFilter(False)
@@ -255,7 +277,9 @@ def test_masked_global_ncc_agrees_with_itk(linear_pair_factory, planar):
             voxeldata_to_sitk_image(confusius_reference(moving)), sitk.sitkFloat64
         ),
     )
-    assert_allclose(result.diagnostics.objective, expected, rtol=0, atol=2e-6)
+    assert_allclose(
+        result["diagnostics"].to_dataset().objective, expected, rtol=0, atol=2e-6
+    )
 
 
 @pytest.mark.parametrize("moving_slice", [True, False])
@@ -275,11 +299,15 @@ def test_masks_support_native_mixed_domains(slice_volume_pair_factory, moving_sl
         return_transforms=True,
         progress=False,
     )
-    assert result.forward_transforms is not None
-    assert np.isfinite(result.diagnostics.objective)
-    sampled, valid = resample(moving, fixed, result.forward_transforms)
-    assert_allclose(sampled, result.registered, rtol=0, atol=2e-6)
-    assert_array_equal(valid, result.valid)
+    assert "forward" in result
+    assert np.isfinite(result["diagnostics"].to_dataset().objective)
+    sampled, valid = resample(
+        moving, fixed, result["forward"].to_dataset()["transform"]
+    )
+    assert_allclose(
+        sampled, result["images"].to_dataset()["registered"], rtol=0, atol=2e-6
+    )
+    assert_array_equal(valid, result["images"].to_dataset()["valid"])
 
 
 def test_local_ncc_excludes_masked_neighbours_from_statistics():

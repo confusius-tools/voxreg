@@ -43,37 +43,53 @@ def test_auto_registration_matches_explicit_device(
     auto = register(moving, fixed, **options)
     assert calls == ["auto"]
     xr.testing.assert_allclose(
-        auto.registered, explicit.registered, rtol=1e-5, atol=2e-6
+        auto["images"].to_dataset()["registered"],
+        explicit["images"].to_dataset()["registered"],
+        rtol=1e-5,
+        atol=2e-6,
     )
-    xr.testing.assert_identical(auto.valid, explicit.valid)
-    assert (
-        auto.forward_transforms is not None and explicit.forward_transforms is not None
+    xr.testing.assert_identical(
+        auto["images"].to_dataset()["valid"], explicit["images"].to_dataset()["valid"]
     )
+    assert "forward" in auto and "forward" in explicit
+    assert "inverse" in auto and "inverse" in explicit
     assert (
-        auto.inverse_transforms is not None and explicit.inverse_transforms is not None
-    )
-    assert (
-        max_pull_difference(auto.forward_transforms, explicit.forward_transforms, fixed)
+        max_pull_difference(
+            auto["forward"].to_dataset()["transform"],
+            explicit["forward"].to_dataset()["transform"],
+            fixed,
+        )
         < 0.001
     )
     assert (
         max_pull_difference(
-            auto.inverse_transforms, explicit.inverse_transforms, moving
+            auto["inverse"].to_dataset()["transform"],
+            explicit["inverse"].to_dataset()["transform"],
+            moving,
         )
         < 0.001
     )
-    assert auto.diagnostics.attrs["device"] == device
-    for name in explicit.diagnostics.data_vars:
-        if np.issubdtype(explicit.diagnostics[name].dtype, np.floating):
+    assert auto["diagnostics"].to_dataset().attrs["device"] == device
+    for name in explicit["diagnostics"].to_dataset().data_vars:
+        if np.issubdtype(explicit["diagnostics"].to_dataset()[name].dtype, np.floating):
             xr.testing.assert_allclose(
-                auto.diagnostics[name], explicit.diagnostics[name], rtol=1e-5, atol=2e-6
+                auto["diagnostics"].to_dataset()[name],
+                explicit["diagnostics"].to_dataset()[name],
+                rtol=1e-5,
+                atol=2e-6,
             )
         else:
             xr.testing.assert_identical(
-                auto.diagnostics[name], explicit.diagnostics[name]
+                auto["diagnostics"].to_dataset()[name],
+                explicit["diagnostics"].to_dataset()[name],
             )
-    if auto.stage_diagnostics is not None:
-        assert all(stage.attrs["device"] == device for stage in auto.stage_diagnostics)
+    if "stages" in auto:
+        assert all(
+            stage.attrs["device"] == device
+            for stage in (
+                tuple(node.to_dataset() for node in auto["stages"].children.values())
+            )
+        )
 
 
 @pytest.mark.parametrize("interpolation", ["linear", "nearest", "bspline"])
@@ -118,8 +134,8 @@ def test_explicit_cpu_does_not_probe_cuda(linear_pair_factory, monkeypatch, oper
     if operation == "register":
         recording = moving.expand_dims(time=[0])
         result = register(recording, device="cpu", max_iterations=1, progress=False)
-        assert result.diagnostics.attrs["device"] == "cpu"
-        assert_array_equal(result.registered, recording)
+        assert result["diagnostics"].to_dataset().attrs["device"] == "cpu"
+        assert_array_equal(result["images"].to_dataset()["registered"], recording)
     else:
         actual, valid = resample(moving, moving, np.eye(4), device="cpu")
         assert_allclose(actual, moving, rtol=0, atol=1e-12)

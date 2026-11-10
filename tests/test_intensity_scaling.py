@@ -227,19 +227,35 @@ def test_independent_transforms_match_pretransformed_fit_and_native_resampling(
     expected = register(
         data.copy(data=moving_values), fixed.copy(data=fixed_values), **options
     )
-    assert result.transforms is not None and expected.transforms is not None
-    assert_allclose(result.transforms, expected.transforms, rtol=0, atol=1e-11)
+    assert "forward" in result and "forward" in expected
     assert_allclose(
-        result.diagnostics.objective, expected.diagnostics.objective, rtol=0, atol=1e-6
+        result["forward"].to_dataset()["transform"],
+        expected["forward"].to_dataset()["transform"],
+        rtol=0,
+        atol=1e-11,
     )
-    assert_array_equal(result.valid, expected.valid)
-    native, valid = resample(data, fixed, result.transforms, device=device)
-    assert_allclose(result.registered, native, rtol=0, atol=1e-11)
-    assert_array_equal(result.valid, valid)
-    assert result.registered.dtype == data.dtype
-    assert_array_equal(result.registered.time, data.time)
     assert_allclose(
-        position_to_world(result.registered), position_to_world(fixed), atol=0
+        result["diagnostics"].to_dataset().objective,
+        expected["diagnostics"].to_dataset().objective,
+        rtol=0,
+        atol=1e-6,
+    )
+    assert_array_equal(
+        result["images"].to_dataset()["valid"], expected["images"].to_dataset()["valid"]
+    )
+    native, valid = resample(
+        data, fixed, result["forward"].to_dataset()["transform"], device=device
+    )
+    assert_allclose(
+        result["images"].to_dataset()["registered"], native, rtol=0, atol=1e-11
+    )
+    assert_array_equal(result["images"].to_dataset()["valid"], valid)
+    assert result["images"].to_dataset()["registered"].dtype == data.dtype
+    assert_array_equal(result["images"].to_dataset()["registered"].time, data.time)
+    assert_allclose(
+        position_to_world(result["images"].to_dataset()["registered"]),
+        position_to_world(fixed),
+        atol=0,
     )
 
 
@@ -271,14 +287,16 @@ def test_moment_initialization_uses_native_weights(
         "progress": False,
     }
     native = register(data, fixed, **options)
-    assert native.transforms is not None
+    assert "forward" in native
     positions = np.indices(data.shape[1:]).reshape(3, -1)
     weights = data.values.reshape(len(data), -1)
     centroids = (positions @ weights.T / weights.sum(axis=1)).T
     affine = position_to_world(data)
     expected = np.broadcast_to(np.eye(4), (len(data), 4, 4)).copy()
     expected[:, :3, 3] = (centroids - centroids[0]) @ affine[:3, :3].T
-    assert_allclose(native.transforms, expected, rtol=0, atol=1e-12)
+    assert_allclose(
+        native["forward"].to_dataset()["transform"], expected, rtol=0, atol=1e-12
+    )
     scaled = register(
         data,
         fixed,
@@ -286,22 +304,32 @@ def test_moment_initialization_uses_native_weights(
         fixed_intensity_scaling="sqrt" if explicit else None,
         **options,
     )
-    assert scaled.transforms is not None
-    assert_array_equal(scaled.transforms, native.transforms)
-    assert_array_equal(scaled.registered, native.registered)
+    assert "forward" in scaled
+    assert_array_equal(
+        scaled["forward"].to_dataset()["transform"],
+        native["forward"].to_dataset()["transform"],
+    )
+    assert_array_equal(
+        scaled["images"].to_dataset()["registered"],
+        native["images"].to_dataset()["registered"],
+    )
     native_first = (
-        native.stage_diagnostics[0] if native.stage_diagnostics else native.diagnostics
+        native["stages/0"].to_dataset()
+        if ("stages" in native)
+        else native["diagnostics"].to_dataset()
     )
     scaled_first = (
-        scaled.stage_diagnostics[0] if scaled.stage_diagnostics else scaled.diagnostics
+        scaled["stages/0"].to_dataset()
+        if ("stages" in scaled)
+        else scaled["diagnostics"].to_dataset()
     )
     assert_array_equal(
         scaled_first.attrs["rotation_center_zyx_mm"],
         native_first.attrs["rotation_center_zyx_mm"],
     )
     if not explicit:
-        assert_array_equal(scaled.registered[0], data[0])
-        assert_array_equal(scaled.transforms[0], np.eye(4))
+        assert_array_equal(scaled["images"].to_dataset()["registered"][0], data[0])
+        assert_array_equal(scaled["forward"].to_dataset()["transform"][0], np.eye(4))
 
 
 @pytest.mark.parametrize("scaling", ["log1p", "sqrt", 2.0])
@@ -316,9 +344,20 @@ def test_batches_do_not_recondition_frames(recording_factory, scaling):
     }
     serial = register(data, batch_size=1, **options)
     together = register(data, batch_size=3, **options)
-    assert serial.transforms is not None and together.transforms is not None
-    assert_allclose(serial.transforms, together.transforms, rtol=0, atol=1e-7)
+    assert "forward" in serial and "forward" in together
     assert_allclose(
-        serial.diagnostics.objective, together.diagnostics.objective, rtol=0, atol=1e-6
+        serial["forward"].to_dataset()["transform"],
+        together["forward"].to_dataset()["transform"],
+        rtol=0,
+        atol=1e-7,
     )
-    assert_array_equal(serial.diagnostics.status, together.diagnostics.status)
+    assert_allclose(
+        serial["diagnostics"].to_dataset().objective,
+        together["diagnostics"].to_dataset().objective,
+        rtol=0,
+        atol=1e-6,
+    )
+    assert_array_equal(
+        serial["diagnostics"].to_dataset().status,
+        together["diagnostics"].to_dataset().status,
+    )

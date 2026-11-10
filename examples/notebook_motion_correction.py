@@ -19,7 +19,6 @@ from scipy.ndimage import map_coordinates
 from voxeldata import create_voxeldata
 
 from voxreg import (
-    RegistrationResult,
     position_to_world,
     register,
 )
@@ -182,7 +181,7 @@ def sample_matrices(
 
 
 def plot_results(
-    data: xr.DataArray, result: RegistrationResult, reference: dict | None, output: Path
+    data: xr.DataArray, result: xr.DataTree, reference: dict | None, output: Path
 ) -> None:
     """Save motion, voxel trace, raster and worst-disagreement image plots.
 
@@ -190,7 +189,7 @@ def plot_results(
     ----------
     data : xarray.DataArray
         Original recording.
-    result : RegistrationResult
+    result : xarray.DataTree
         Voxreg outputs.
     reference : dict, optional
         Frozen ITK arrays; not required to inspect voxreg alone.
@@ -198,8 +197,11 @@ def plot_results(
         Existing output directory.
     """
     raw = data.values[:, 0]
-    movies = {"Before": raw, "voxreg": result.registered.values[:, 0]}
-    mappings = {"voxreg": result.transforms.values}
+    movies = {
+        "Before": raw,
+        "voxreg": result["images"].to_dataset()["registered"].values[:, 0],
+    }
+    mappings = {"voxreg": result["forward"].to_dataset()["transform"].values}
     if reference is not None:
         movies["ITK"] = reference["registered"][:, 0]
         mappings["ITK"] = reference["transforms"]
@@ -229,11 +231,15 @@ def plot_results(
             ("rms", np.sqrt(np.mean(displacement**2, axis=1))),
         ):
             axes[2].plot(time, np.r_[fd, 0], label=f"{name} {label}")
-    axes[3].plot(time, result.diagnostics.objective, label="voxreg fitting objective")
+    axes[3].plot(
+        time,
+        result["diagnostics"].to_dataset().objective,
+        label="voxreg fitting objective",
+    )
     count_axis = axes[3].twinx()
     count_axis.plot(
         time,
-        result.diagnostics.n_iterations,
+        result["diagnostics"].to_dataset().n_iterations,
         alpha=0.4,
         color="tab:orange",
         label="voxreg steps",
@@ -292,8 +298,12 @@ def plot_results(
     fig.savefig(output / "raster.png", dpi=160)
     plt.close(fig)
     if reference is not None:
-        difference = result.registered.values[:, 0] - movies["ITK"]
-        delta = result.transforms.values - reference["transforms"]
+        difference = (
+            result["images"].to_dataset()["registered"].values[:, 0] - movies["ITK"]
+        )
+        delta = (
+            result["forward"].to_dataset()["transform"].values - reference["transforms"]
+        )
         mapping_difference = (
             np.einsum("tij,jp->tip", delta[:, :3, :3], points) + delta[:, :3, 3, None]
         )
@@ -303,7 +313,7 @@ def plot_results(
             reference["transforms"][frame : frame + 1],
             position_to_world(data),
         )
-        common = itk_valid[0] & result.valid.values[frame, 0]
+        common = itk_valid[0] & result["images"].to_dataset()["valid"].values[frame, 0]
         visible_difference = np.where(common, difference[frame], np.nan)
         fig, axes = plt.subplots(1, 4, figsize=(15, 4), layout="constrained")
         low, high = np.percentile(raw[0], [2, 99.8])
@@ -367,14 +377,16 @@ def main() -> None:
         )
     with args.input.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    status, counts = np.unique(result.diagnostics.status.values, return_counts=True)
+    status, counts = np.unique(
+        result["diagnostics"].to_dataset().status.values, return_counts=True
+    )
     summary = {
         "source": str(args.input.resolve()),
         "sha256": digest,
         "window": [220, 340],
         "shape": list(data.shape),
         "input_dtype": str(data.dtype),
-        "output_dtype": str(result.registered.dtype),
+        "output_dtype": str(result["images"].to_dataset()["registered"].dtype),
         "optimizer": {
             "max_iterations": 100,
             "learning_rate": 0.1,
@@ -393,7 +405,7 @@ def main() -> None:
         "batch_size": args.batch_size,
         "torch_threads": args.threads,
         "load_seconds": load_seconds,
-        "stage_seconds": result.diagnostics.attrs["timings_seconds"],
+        "stage_seconds": result["diagnostics"].to_dataset().attrs["timings_seconds"],
         "statuses": dict(zip(status.tolist(), counts.tolist(), strict=True)),
         "timing_note": "Example diagnostics only; use examples/benchmark_register.py for performance measurements.",
     }
@@ -403,7 +415,9 @@ def main() -> None:
             raise ValueError("Reference source hash does not match input.")
         db = 10 * np.log10(np.maximum(data.values[:, 0] / data.values.max(), 1e-12))
         affine = position_to_world(data)
-        sampled, vox_valid = sample_matrices(db, result.transforms.values, affine)
+        sampled, vox_valid = sample_matrices(
+            db, result["forward"].to_dataset()["transform"].values, affine
+        )
         itk_sampled, itk_valid = sample_matrices(db, reference["transforms"], affine)
         common = vox_valid & itk_valid
         before, vox_scores, itk_scores = [], [], []
@@ -427,7 +441,10 @@ def main() -> None:
             4, -1
         )
         shift = np.einsum(
-            "tij,jp->tip", result.transforms.values - reference["transforms"], points
+            "tij,jp->tip",
+            result["forward"].to_dataset()["transform"].values
+            - reference["transforms"],
+            points,
         )[:, :3]
         comparison["mapping_rms_mm"] = np.sqrt(
             np.mean(np.sum(shift**2, axis=1), axis=1)
@@ -436,7 +453,7 @@ def main() -> None:
             [
                 np.sqrt(np.mean((v[mask] - ref[mask]) ** 2))
                 for v, ref, mask in zip(
-                    result.registered.values[:, 0],
+                    result["images"].to_dataset()["registered"].values[:, 0],
                     reference["registered"][:, 0],
                     common,
                     strict=True,
@@ -458,28 +475,32 @@ def main() -> None:
         )
         summary["reference"] = json.loads(str(reference["metadata"]))
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    result.diagnostics.to_dataframe().to_csv(args.output / "diagnostics.csv")
+    result["diagnostics"].to_dataset().to_dataframe().to_csv(
+        args.output / "diagnostics.csv"
+    )
     geometry = {dim: data[dim].values for dim in data.dims}
     geometry["voxel_to_world"] = position_to_world(data)
     np.savez_compressed(args.output / "input.npz", values=data.values, **geometry)
     np.savez_compressed(
         args.output / "voxreg_result.npz",
-        registered=result.registered.values,
-        valid=result.valid.values,
-        transforms=result.transforms.values,
+        registered=result["images"].to_dataset()["registered"].values,
+        valid=result["images"].to_dataset()["valid"].values,
+        transforms=result["forward"].to_dataset()["transform"].values,
         **geometry,
         **{
             name: variable.values
-            for name, variable in result.diagnostics.data_vars.items()
+            for name, variable in result["diagnostics"].to_dataset().data_vars.items()
         },
         **comparison,
     )
     for name, image in {
         "input": data,
-        "voxreg_registered": result.registered,
-        "voxreg_valid": result.valid,
-        "voxreg_minus_fixed": result.registered.copy(
-            data=result.registered.values - data.values[:1]
+        "voxreg_registered": result["images"].to_dataset()["registered"],
+        "voxreg_valid": result["images"].to_dataset()["valid"],
+        "voxreg_minus_fixed": result["images"]
+        .to_dataset()["registered"]
+        .copy(
+            data=result["images"].to_dataset()["registered"].values - data.values[:1]
         ),
     }.items():
         save_nifti(args.output / f"{name}.nii.gz", image)
@@ -490,7 +511,10 @@ def main() -> None:
         )
         save_nifti(
             args.output / "voxreg_minus_itk.nii.gz",
-            data.copy(data=result.registered.values - reference["registered"]),
+            data.copy(
+                data=result["images"].to_dataset()["registered"].values
+                - reference["registered"]
+            ),
         )
     plot_results(data, result, reference, args.output)
     print(json.dumps(summary, indent=2))
