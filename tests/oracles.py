@@ -8,8 +8,8 @@ from voxeldata import create_voxeldata
 from voxreg import position_to_world
 
 
-def confusius_reference(data: xr.DataArray) -> xr.DataArray:
-    """Copy spatial geometry into the legacy independent reference backend.
+def to_sitk_image(data: xr.DataArray):
+    """Construct an independent SimpleITK image in voxreg's z/y/x frame.
 
     Parameters
     ----------
@@ -18,19 +18,23 @@ def confusius_reference(data: xr.DataArray) -> xr.DataArray:
 
     Returns
     -------
-    xarray.DataArray
-        ConfUSIus image with identical values and physical sample positions in mm.
+    SimpleITK.Image
+        Image with identical values and physical sample positions in mm.
 
     Raises
     ------
     ValueError
         If the input geometry is unsupported by voxreg.
     """
-    from confusius import create_voxeldata as create_reference
+    import SimpleITK as sitk
 
-    return create_reference(
-        data.values, dims=("k", "j", "i"), voxel_to_world=position_to_world(data)
-    )
+    affine = position_to_world(data)
+    spacing = np.linalg.norm(affine[:3, :3], axis=0)
+    image = sitk.GetImageFromArray(data.values.T)
+    image.SetSpacing(spacing.tolist())
+    image.SetOrigin(affine[:3, 3].tolist())
+    image.SetDirection((affine[:3, :3] / spacing).ravel().tolist())
+    return image
 
 
 def voxel(values, affine):

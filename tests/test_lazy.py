@@ -540,8 +540,11 @@ def test_distributed_worker_execution_and_joint_zarr_storage(
 
 
 @pytest.mark.parametrize("frames", [4, 24])
+@pytest.mark.parametrize(
+    "scheduler, workers", [("synchronous", 1), ("threads", 2), ("threads", 4)]
+)
 def test_incremental_storage_retains_bounded_source_volumes(
-    recording_factory, tmp_path, frames
+    recording_factory, tmp_path, frames, scheduler, workers
 ):
     data, _, _ = recording_factory()
     base = data.isel(time=0, drop=True).isel(j=slice(0, 16), i=slice(0, 18))
@@ -569,12 +572,12 @@ def test_incremental_storage_retains_bounded_source_volumes(
     recording = base.expand_dims(time=np.arange(frames)).copy(data=source)
     result = register(recording, max_iterations=1, progress=False, device="cpu")
     assert live["read"] == 0
-    result["images"].to_dataset()["registered"].to_dataset(name="image").to_zarr(
-        tmp_path / "stream.zarr", compute=False, zarr_format=2
-    ).compute(scheduler="synchronous")
+    save(result, tmp_path / "stream.zarr", compute=False, zarr_format=2).compute(
+        scheduler=scheduler, num_workers=workers
+    )
     assert live["read"] == frames
-    assert live["peak"] <= 3
-    stored = xr.open_zarr(tmp_path / "stream.zarr").image
+    assert live["peak"] <= 2 * workers + 1
+    stored = load_array(tmp_path / "stream.zarr", group="images", variable="registered")
     assert_array_equal(stored.isel(time=0), base)
     assert_allclose(
         stored.isel(time=-1), base + (frames - 1) * np.float32(0.001), atol=1e-6

@@ -131,7 +131,7 @@ def _row_group(case, resampling):
 
 
 def _chart(cases, metric, resampling, runs, limit=None):
-    # Matplotlib is already an examples dependency; no browser scripts or CDN.
+    # Matplotlib is a benchmark extra; no browser scripts or CDN.
     from matplotlib import rc_context
     from matplotlib.figure import Figure
 

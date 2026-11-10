@@ -10,7 +10,6 @@ import numpy as np
 import numpy.typing as npt
 import torch
 import xarray as xr
-from confusius._utils.progress import progress_bar
 
 from voxreg.convergence import WindowConvergence
 from voxreg.interpolation import restore_image_dtype
@@ -20,6 +19,7 @@ from voxreg.masks import (
 )
 from voxreg.metrics import Metric, compute_global_ncc
 from voxreg.preparation import PreparedRegistration
+from voxreg.progress import progress_bar
 from voxreg.results import (
     STATUS_LABELS,
     LinearFit,

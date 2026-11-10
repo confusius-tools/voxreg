@@ -1,7 +1,7 @@
 # Registration design
 
 `voxreg.register` fits physical fixed→moving pulls with PyTorch. VoxelData
-provides spatial geometry and I/O; ConfUSIus currently provides progress display.
+provides spatial geometry and I/O; voxreg owns its Rich progress display.
 See the [public API](README.md#voxregregister) for usage and the function's
 [docstring](src/voxreg/registration.py) for all options.
 

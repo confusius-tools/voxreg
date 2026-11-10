@@ -1,4 +1,4 @@
-"""Isolated ANTsPy worker: no Torch/ConfUSIus imports, CLI calls or timed file I/O."""
+"""Isolated ANTsPy worker: no Torch imports, CLI calls or timed file I/O."""
 
 import argparse
 import importlib.metadata
@@ -19,7 +19,6 @@ PACKAGES = (
     "scipy",
     "torch",
     "xarray",
-    "confusius",
     "fireants",
     "SimpleITK",
     "nibabel",

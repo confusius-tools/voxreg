@@ -187,9 +187,15 @@ memory measurements. Multi-host/GPU scaling and performance remain unqualified.
 
 Geometry, construction and I/O use VoxelData's public APIs. General model
 validation is delegated to `validate_voxeldata`; registration retains its stricter
-backend, affine, physical-unit and exact native-index checks. ConfUSIus is still
-used for progress display and independent numerical references, with explicit
-test-only conversion to its legacy geometry model.
+backend, affine, physical-unit and exact native-index checks. Progress display
+is voxreg-owned; tests use direct SimpleITK references without ConfUSIus.
+Local Dask callback tests cover synchronous/threaded/process execution, image-only
+and complete-tree compute/save, repeated computation, silent modes and errors.
+With ConfUSIus absent from the environment, the complete suite passes with
+1698 tests; all pre-commit checks pass. Relocated eager CPU registration/resampling
+and lazy CLI smoke runs pass, and the report renderer accepts their unchanged
+protocols. Only small diagnostic runs were performed; large-memory qualification
+remains pending.
 
 The full suite passes with 1672 tests. New IQ Zarr → lazy magnitude → registration
 → Dataset/DataTree Zarr regressions verify one fit per source task, boolean masks,
@@ -216,12 +222,20 @@ peak RSS including imports. Aligned 300-frame input chunks reduced this to
 16.3 s, 5,656 tasks and 1,264 MiB. Dask task/fitting guards confirmed no signal
 computation occurred. Small-subset profiles identified diagnostic projections as
 the dominant construction cost. These are graph-construction measurements, not
-registration throughput or execution-memory qualification; graph optimization
-remains separate work.
+registration throughput or execution-memory qualification. Graph overhead
+was subsequently reduced by sharing diagnostic projection layers instead of
+creating delayed/from-delayed/concatenation wrappers for every variable/block.
+On a metadata-only 90,000-frame slice with 300-frame chunks, three-call median
+graph construction dropped from 0.752 s to 0.239 s; diagnostic graph layers dropped
+from 1507 to 921. Chunk sizing still controls task count. Small streaming tests
+with 4/24 frames and 1/2/4 local scheduler workers check bounded source retention;
+they do not establish a universal bound for arbitrary upstream graphs. Application
+scheduler limits remain explicit; library-global thread settings are unchanged.
 
 ## Lazy streaming benchmark
 
-`just benchmark-lazy` now stages uncompressed synthetic Zarr data incrementally,
+`just benchmark-register --lazy` / `just benchmark-resample --lazy` stage
+uncompressed synthetic Zarr data incrementally,
 then separates end-to-end timing, process-tree RAM/worker VRAM, and full-frame
 accuracy phases. Temporal chunks target 32/128 MiB for large inputs, aligned to
 whole-volume storage blocks; task-duration samples expose scheduling overhead.

@@ -5,7 +5,7 @@ import pytest
 import SimpleITK as sitk
 import torch
 from numpy.testing import assert_allclose, assert_array_equal
-from oracles import confusius_reference, voxel
+from oracles import to_sitk_image, voxel
 from scipy.spatial.transform import Rotation
 
 from voxreg import linear, position_to_world, register
@@ -58,8 +58,6 @@ def observe_seed(monkeypatch, records):
 def test_native_domains_and_nonidentity_seed_match_sitk_value(
     slice_volume_pair_factory, monkeypatch, device, model, moving_slice
 ):
-    from confusius.registration._utils import voxeldata_to_sitk_image
-
     plane, volume, truth = slice_volume_pair_factory(model)
     common = np.eye(4)
     common[:3, :3] = Rotation.from_rotvec([0.13, -0.2, 0.17]).as_matrix()
@@ -116,12 +114,8 @@ def test_native_domains_and_nonidentity_seed_match_sitk_value(
     transform.SetTranslation(seed[:3, 3])
     evaluator.SetInitialTransform(transform)
     expected = evaluator.MetricEvaluate(
-        sitk.Cast(
-            voxeldata_to_sitk_image(confusius_reference(fixed)), sitk.sitkFloat64
-        ),
-        sitk.Cast(
-            voxeldata_to_sitk_image(confusius_reference(moving)), sitk.sitkFloat64
-        ),
+        sitk.Cast(to_sitk_image(fixed), sitk.sitkFloat64),
+        sitk.Cast(to_sitk_image(moving), sitk.sitkFloat64),
     )
     assert_allclose(
         result["diagnostics"].to_dataset().objective, expected, atol=1e-6, rtol=0

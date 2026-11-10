@@ -300,7 +300,7 @@ def register(
     progress : {"auto"} or bool or callable, default: "auto"
         Auto shows the frame bar only for multiple moving frames, remaining quiet
         for a spatial pair or a single-frame recording. True explicitly displays
-        ConfUSIus's Rich progress bar with frame counts, elapsed time and ETA even
+        voxreg's Rich progress bar with frame counts, elapsed time and ETA even
         for a single pair.
         False or None disables reporting. A callable overrides the bar and
         receives ``(completed_frames, total_frames)`` after each batch's results
@@ -309,6 +309,10 @@ def register(
         Callback exceptions propagate; reporting updates are outside stage timings.
         For pipelines, progress counts completed stage/frame work units, with
         total equal to frame count times stage count, including skipped frames.
+        Local lazy graphs show one bar as complete source chunks finish, counting
+        each fitted frame once across the full pipeline. The display starts at
+        scheduling, after graph preparation. Distributed clients use Dask's own
+        progress tools; callable reports continue to execute on workers.
     metric_callback : callable, optional
         Live optimizer reporting, independent of frame progress. Receives owned
         NumPy arrays ``(frame_indices, n_iterations, objective)`` for each chunk;

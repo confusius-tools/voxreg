@@ -5,41 +5,34 @@ executables or `ANTSPATH` are used. ANTsPy calls the ANTs library in process.
 
 ## Setup and commands
 
-Use the project environment for supervision, voxreg and FireANTs. ANTsPy 0.6.3
-needs its own Python 3.13 environment; do not downgrade project dependencies.
-
-On Linux, the Just recipes create or reuse that environment automatically:
+Two commands cover eager and lazy execution. Run sequentially into fresh output
+directories; defaults are five timed calls and eight threads:
 
 ```bash
-just antspy-venv  # Optional: each benchmark also runs this dependency.
-just benchmark-resample artifacts/benchmark-resample-01
-just benchmark-register artifacts/benchmark-register-01
+just benchmark-register artifacts/register-eager
+just benchmark-resample artifacts/resample-eager
+just benchmark-register artifacts/register-lazy --lazy
+just benchmark-resample artifacts/resample-lazy --lazy
 ```
 
-Run the benchmarks sequentially and use a fresh output directory for each run.
-Additional options can follow the output directory, for example
-`just benchmark-register artifacts/register-diagnostic --runs 1 --configs '*-antspyx'`.
-The defaults are five timed calls and eight threads. The equivalent manual setup
-and commands are:
+Eager mode compares Python APIs with resident inputs. Lazy mode measures voxreg's
+streaming read/compute/Zarr writes; its default is an eight-frame smoke case, and
+large inputs require explicit `--size-gib`. Eager recipes create/reuse an isolated
+Python 3.13 environment with ANTsPy 0.6.3; lazy mode does not install ANTsPy.
+
+Live entry points and helpers live in `benchmarks/`; examples and historical
+research/artifacts remain separate. Inspect modes without running work:
 
 ```bash
-uv sync --extra examples
-uv venv --python 3.13 .venv-antspy
-uv pip install --python .venv-antspy/bin/python 'antspyx==0.6.3'
-
-# Inspect configurations without running them.
-uv run --extra examples python examples/benchmark_register.py --list
-uv run --extra examples python examples/benchmark_resample.py --list
-
-# Run serially, with a fresh output directory for each invocation.
-uv run --extra examples python examples/benchmark_resample.py \
-  --antspy-python "$PWD/.venv-antspy/bin/python" \
-  --runs 5 --threads 8 --output artifacts/benchmark-resample-01
-
-uv run --extra examples python examples/benchmark_register.py \
-  --antspy-python "$PWD/.venv-antspy/bin/python" \
-  --runs 5 --threads 8 --output artifacts/benchmark-register-01
+uv run --extra benchmarks python benchmarks/benchmark_register.py --list
+uv run --extra benchmarks python benchmarks/benchmark_resample.py --list
+uv run --extra benchmarks python benchmarks/benchmark_register.py --lazy --help
 ```
+
+Common optional controls are `--runs` and `--threads`; eager subsets use
+`--configs`, while lazy devices use `--devices`. Use `--help` (or `--lazy --help`)
+for advanced workload/memory overrides. A one-call run is diagnostic, not a
+replacement for the five-call protocol.
 
 Each matrix has **45 configurations**: three workloads × rigid/affine/SyN ×
 voxreg CPU/CUDA, FireANTs CPU/CUDA and ANTsPy CPU. Resampling's SyN configuration
@@ -141,18 +134,19 @@ relabeling existing measurements.
 
 ## Lazy streaming benchmark
 
-`benchmark-lazy` is voxreg-only and initially tests rigid motion, not SyN or
+`benchmark-register --lazy` / `benchmark-resample --lazy` are voxreg-only and
+initially test rigid motion, not SyN or
 cross-backend rankings. It writes seeded analytic float32 volumes incrementally
 into uncompressed, one-volume Zarr blocks; a declared 16-pose cycle bounds
 preparation memory without skipping any frame. Large files are opt-in:
 
 ```bash
 # Eight-frame diagnostic smoke case; no ANTs environment required.
-just benchmark-lazy artifacts/lazy-smoke --operation resample --devices cpu --runs 1
+just benchmark-resample artifacts/lazy-smoke --lazy --devices cpu --runs 1
 
 # Run separately in fresh directories; defaults to five complete calls.
-just benchmark-lazy artifacts/lazy-register-10g --operation register --size-gib 10
-just benchmark-lazy artifacts/lazy-resample-10g --operation resample --size-gib 10
+just benchmark-register artifacts/lazy-register-10g --lazy --size-gib 10
+just benchmark-resample artifacts/lazy-resample-10g --lazy --size-gib 10
 ```
 
 Default large-input Dask chunks target **32/128 MiB**, rounded to whole volumes
@@ -203,7 +197,7 @@ just benchmark-report artifacts/performance-report.html \
 Or run the reporter directly:
 
 ```bash
-uv run --extra examples python examples/benchmark_report.py \
+uv run --extra benchmarks python benchmarks/benchmark_report.py \
   artifacts/benchmark-register-01 artifacts/benchmark-resample-01 \
   --output artifacts/performance-report.html
 ```

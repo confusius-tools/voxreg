@@ -32,8 +32,8 @@ uv sync
 ```
 
 VoxelData provides spatial geometry and I/O; registration itself runs in PyTorch.
-ConfUSIus is currently retained for progress display. CUDA requires a compatible
-GPU and PyTorch installation.
+voxreg owns its Rich progress display and does not depend on ConfUSIus. CUDA
+requires a compatible GPU and PyTorch installation.
 
 ## Quick start
 
@@ -499,12 +499,28 @@ GPU. Local schedulers coordinate via file leases under `~/.cache/voxreg/executio
 distributed workers use scheduler semaphore leases. Use one worker per GPU and
 bounded worker memory; separate schedulers/jobs are not a shared resource manager.
 CPU task concurrency is deliberately conservative rather than an automatic tuner.
+The fitting lease does not limit Dask's input prefetch or library CPU thread pools.
+For bounded local read/write overlap, use application-scoped scheduling:
+
+```python
+import dask
+
+with dask.config.set(scheduler="threads", num_workers=2):
+    vd.save(result, "registration.zarr")
+```
+
+For CPU-only fitting, the synchronous scheduler avoids competing Dask workers
+while PyTorch parallelizes the fit internally. voxreg does not change process-wide
+PyTorch/BLAS thread settings or the application's global Dask worker configuration.
 
 Metric/progress callbacks run in tasks, with global frame indices/work offsets;
 distributed callbacks execute on workers, not the client. They must be serializable.
 Execution order can make progress offsets nonmonotonic; retries/recomputation repeat
-notifications. Default `progress="auto"` is silent for lazy graphs: use Dask progress
-tools, explicit task progress or callbacks. `diagnostics.execution_device`,
+notifications. Default `progress="auto"` shows one Rich frame bar for local Dask
+execution, with the same style as eager registration. It advances when complete
+source chunks finish, including all stages, and starts only after graph preparation.
+`progress=False`/`None` stays silent; a callable overrides the bar. Distributed
+clients use Dask's dashboard/progress tools instead of a client-side Rich bar. `diagnostics.execution_device`,
 `execution_task_size`, `execution_batch_size` and `execution_batch_start` record
 actual execution. The last field is the task's global start; task size counts
 loaded frames while batch size reports each frame's fitting group, including a
@@ -550,8 +566,11 @@ uv run pytest
 uv run prek run --all-files
 
 # List configurations; see BENCHMARK.md before starting the full matrix.
-uv run --extra examples python examples/benchmark_register.py --list
-uv run --extra examples python examples/benchmark_resample.py --list
+uv run --extra benchmarks python benchmarks/benchmark_register.py --list
+uv run --extra benchmarks python benchmarks/benchmark_resample.py --list
+
+# Streaming smoke case; large inputs require --size-gib.
+just benchmark-register artifacts/lazy-smoke --lazy --devices cpu --runs 1
 ```
 
 - [Benchmark guide](BENCHMARK.md): registration/resampling runtime, accuracy and peak memory.

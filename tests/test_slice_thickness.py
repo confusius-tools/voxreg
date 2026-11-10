@@ -1,11 +1,11 @@
 """A singleton voxel occupies its affine-defined cell, not a zero-width plane."""
 
-import confusius as cf
 import numpy as np
 import pytest
+import SimpleITK as sitk
 import torch
 from numpy.testing import assert_allclose, assert_array_equal
-from oracles import confusius_reference
+from oracles import to_sitk_image
 from scipy.spatial.transform import Rotation
 from voxeldata import create_voxeldata
 
@@ -20,7 +20,7 @@ DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 @pytest.mark.parametrize("interpolation", ["linear", "nearest"])
 @pytest.mark.parametrize("oblique", [False, True])
-def test_singleton_slab_matches_cf_without_replicating_pixels(
+def test_singleton_slab_matches_sitk_without_replicating_pixels(
     device, dtype, interpolation, oblique
 ):
     affine = np.diag([0.5, 0.25, 0.125, 1.0])
@@ -57,29 +57,26 @@ def test_singleton_slab_matches_cf_without_replicating_pixels(
     )
     fill = float(source.min())
     actual = torch.where(valid, sampled, fill).cpu().numpy()[0]
-    reference = cf.registration.resample_like(
-        confusius_reference(source),
-        confusius_reference(target),
-        pull,
-        interpolation=interpolation,
-        fill_value=fill,
-        sitk_threads=1,
+    transform = sitk.AffineTransform(3)
+    transform.SetMatrix(pull[:3, :3].ravel())
+    transform.SetTranslation(pull[:3, 3])
+    sampler = sitk.ResampleImageFilter()
+    sampler.SetNumberOfThreads(1)
+    sampler.SetReferenceImage(to_sitk_image(target))
+    sampler.SetTransform(transform)
+    sampler.SetInterpolator(
+        sitk.sitkLinear if interpolation == "linear" else sitk.sitkNearestNeighbor
     )
+    sampler.SetDefaultPixelValue(fill)
+    reference = sitk.GetArrayFromImage(sampler.Execute(to_sitk_image(source))).T
     ones = source.copy(data=np.ones(source.shape))
+    sampler.SetDefaultPixelValue(0.0)
     expected_valid = (
-        cf.registration.resample_like(
-            confusius_reference(ones),
-            confusius_reference(target),
-            pull,
-            interpolation=interpolation,
-            fill_value=0.0,
-            sitk_threads=1,
-        ).values
-        > 0.5
+        sitk.GetArrayFromImage(sampler.Execute(to_sitk_image(ones))).T > 0.5
     )
     assert_array_equal(valid.cpu().numpy()[0], expected_valid)
     assert_allclose(
-        actual, reference.values, atol=1e-5 if dtype == np.float32 else 1e-12, rtol=0
+        actual, reference, atol=1e-5 if dtype == np.float32 else 1e-12, rtol=0
     )
     assert actual.dtype == dtype
     assert valid.any()

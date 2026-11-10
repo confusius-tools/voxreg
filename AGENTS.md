@@ -52,13 +52,12 @@ just pre-commit      # ruff check/format, ty, codespell, numpydoc-validation
 
 Run a single test: `uv run pytest path/to/test_file.py::TestClass::test_method`.
 
-Benchmark recipes are `just benchmark-resample OUTPUT ...`,
-`just benchmark-register OUTPUT ...`, and
-`just benchmark-report OUTPUT RESULT...`. The first two install/reuse an isolated
-Python 3.13 environment with ANTsPy for reference comparisons.
-`just benchmark-lazy OUTPUT --operation register|resample ...` measures streaming
-read/compute/Zarr writes without ANTs; large files require explicit `--size-gib`. Research scripts,
-notebooks, and benchmark notes live in `research/` and `examples/`.
+Benchmark recipes are `just benchmark-register OUTPUT ...` and
+`just benchmark-resample OUTPUT ...`; add `--lazy` for streaming measurements.
+Eager comparisons install/reuse an isolated Python 3.13 ANTsPy environment.
+`just benchmark-report OUTPUT RESULT...` renders eager results; lazy runs include
+reports. Large files require explicit `--size-gib`. Live benchmark code belongs
+in `benchmarks/`; research scripts and notebooks remain in `research/` and `examples/`.
 
 ## Code Architecture
 
@@ -94,8 +93,8 @@ src/voxreg/
   clearly named shared module.
 - Keep public API exports in `voxreg/__init__.py` intentional and minimal. Internal
   optimizer, tensor, and geometry details should not become public API accidentally.
-- Keep benchmark/reference code in `examples/` or `research/`; production registration
-  code belongs in `src/voxreg/`.
+- Keep live benchmark code in `benchmarks/`, examples in `examples/`, and research
+  snapshots in `research/`; production registration code belongs in `src/voxreg/`.
 
 ## Coding Conventions
 

@@ -5,7 +5,7 @@ import pytest
 import torch
 import xarray as xr
 from numpy.testing import assert_allclose, assert_array_equal
-from oracles import confusius_reference, max_pull_difference
+from oracles import max_pull_difference, to_sitk_image
 from registration_options import RegistrationOptions
 from voxeldata import create_voxeldata
 
@@ -239,7 +239,6 @@ def test_mask_validation(linear_pair_factory):
 @pytest.mark.parametrize("planar", [True, False])
 def test_masked_global_ncc_agrees_with_itk(linear_pair_factory, planar):
     import SimpleITK as sitk
-    from confusius.registration._utils import voxeldata_to_sitk_image
 
     fixed, moving, _ = linear_pair_factory(planar, "rigid")
     fixed_mask, moving_mask = _roi(fixed), _roi(moving)
@@ -263,19 +262,11 @@ def test_masked_global_ncc_agrees_with_itk(linear_pair_factory, planar):
     transform.SetMatrix(matrix[:3, :3].ravel())
     transform.SetTranslation(matrix[:3, 3])
     evaluator.SetInitialTransform(transform)
-    evaluator.SetMetricFixedMask(
-        voxeldata_to_sitk_image(confusius_reference(fixed_mask.astype(np.uint8)))
-    )
-    evaluator.SetMetricMovingMask(
-        voxeldata_to_sitk_image(confusius_reference(moving_mask.astype(np.uint8)))
-    )
+    evaluator.SetMetricFixedMask(to_sitk_image(fixed_mask.astype(np.uint8)))
+    evaluator.SetMetricMovingMask(to_sitk_image(moving_mask.astype(np.uint8)))
     expected = evaluator.MetricEvaluate(
-        sitk.Cast(
-            voxeldata_to_sitk_image(confusius_reference(fixed)), sitk.sitkFloat64
-        ),
-        sitk.Cast(
-            voxeldata_to_sitk_image(confusius_reference(moving)), sitk.sitkFloat64
-        ),
+        sitk.Cast(to_sitk_image(fixed), sitk.sitkFloat64),
+        sitk.Cast(to_sitk_image(moving), sitk.sitkFloat64),
     )
     assert_allclose(
         result["diagnostics"].to_dataset().objective, expected, rtol=0, atol=2e-6

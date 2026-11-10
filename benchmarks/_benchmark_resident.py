@@ -106,14 +106,16 @@ def _run(moving, fixed, amplitudes, config, accuracy):
         }
         errors = None
         if accuracy:
-            transforms = result["forward"].to_dataset()["transform"].values
+            transforms = result["forward"].to_dataset()["transform"]
             if model != "syn":
                 errors = _linear_rms(
-                    transforms.reshape(-1, 4, 4), amplitudes, model, shape
+                    transforms.values.reshape(-1, 4, 4), amplitudes, model, shape
                 )
             else:
                 points = _grid(shape)
-                fields = transforms.reshape(len(amplitudes), -1, 3)
+                fields = transforms.transpose(..., "world_component").values.reshape(
+                    len(amplitudes), -1, 3
+                )
                 errors = [
                     _point_rms(points + field.T, points, amplitude, model, shape)
                     for field, amplitude in zip(fields, amplitudes, strict=True)

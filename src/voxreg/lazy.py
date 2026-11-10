@@ -9,16 +9,19 @@ from contextlib import contextmanager
 from dataclasses import fields, replace
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 import dask.array as da
 import numpy as np
 import xarray as xr
 from dask import delayed
+from dask.highlevelgraph import HighLevelGraph, MaterializedLayer
 from filelock import FileLock
 
 from voxreg.geometry import VOXEL_DIMS, validate_registration_geometry
 from voxreg.interpolation import Interpolation
 from voxreg.preparation import RegistrationSettings, resolve_device
+from voxreg.progress import enable_lazy_progress
 from voxreg.pyramid import validate_schedule
 from voxreg.results import assemble_result_tree, build_output_template
 from voxreg.stages import Stage, resolve_stages
@@ -289,7 +292,7 @@ def _run_registration_batch(
             )
 
         settings = replace(settings, progress=report_progress)
-    elif isinstance(progress, str):
+    else:
         settings = replace(settings, progress=False)
     if implicit and first:
         settings = replace(
@@ -475,14 +478,42 @@ def _diagnostics(
         ):
             schema[f"level_{name}"] = (("time", "level"), dtype)
     sizes = {"level": len(factors), "world_component": 3}
+    # One layer per variable avoids constructing and merging a graph per block.
+    prefix = f"voxreg-diagnostics-{uuid4().hex}"
+    base = HighLevelGraph.from_collections(prefix, {}, dependencies=tasks)
+    source_layers = base.dependencies[prefix]
+    layers = {key: value for key, value in base.layers.items() if key != prefix}
+    dependencies = {
+        key: value for key, value in base.dependencies.items() if key != prefix
+    }
+    for name, (dims, _) in schema.items():
+        label = f"{prefix}-{name}"
+        layers[label] = MaterializedLayer(
+            {
+                (label, index, *(0 for _ in dims[1:])): (
+                    _diagnostic_values,
+                    task.key,
+                    name,
+                    stage,
+                    first,
+                )
+                for index, (task, (first, _)) in enumerate(
+                    zip(tasks, ranges, strict=True)
+                )
+            }
+        )
+        dependencies[label] = source_layers
+    graph = HighLevelGraph(layers, dependencies)
     data = xr.Dataset(coords={"time": moving.time})
     for name, (dims, dtype) in schema.items():
-        blocks = []
-        for task, (first, last) in zip(tasks, ranges, strict=True):
-            shape = (last - first,) + tuple(sizes[dim] for dim in dims[1:])
-            projection = delayed(_diagnostic_values)(task, name, stage, first)
-            blocks.append(da.from_delayed(projection, shape=shape, dtype=dtype))
-        data[name] = (dims, da.concatenate(blocks, axis=0))
+        chunks = (tuple(last - first for first, last in ranges),) + tuple(
+            (sizes[dim],) for dim in dims[1:]
+        )
+        data[name] = (
+            dims,
+            # Dask defines its public array constructor in __new__, not __init__.
+            da.Array(graph, f"{prefix}-{name}", chunks=chunks, dtype=dtype),  # ty: ignore[too-many-positional-arguments, unknown-argument]
+        )
     if "world_component" in data.dims:
         data.coords["world_component"] = ["z", "y", "x"]
         data.rotation_center_zyx_mm.attrs["units"] = "mm"
@@ -626,6 +657,12 @@ def register_lazy(
         if settings.fixed_mask is not None
         else None
     )
+    show_progress = settings.progress is True or (
+        settings.progress == "auto" and moving.sizes["time"] > 1
+    )
+    if show_progress:
+        enable_lazy_progress()
+    progress_id = uuid4().hex
     tasks = []
     for first, last in ranges:
         options = shared.copy()
@@ -643,6 +680,11 @@ def register_lazy(
             first,
             moving.sizes["time"],
             implicit,
+            dask_key_name=(
+                f"voxregframes_{progress_id}_{first}_{last}_end"
+                if show_progress
+                else f"voxreg-fit-{progress_id}-{first}"
+            ),
         )
         tasks.append(task)
     template = build_output_template(moving, target, False)

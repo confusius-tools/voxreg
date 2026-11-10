@@ -13,7 +13,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import xarray as xr
-from confusius._utils.progress import progress_bar
 
 from voxreg.convergence import WindowConvergence
 from voxreg.fields import (
@@ -34,6 +33,7 @@ from voxreg.interpolation import restore_image_dtype
 from voxreg.masks import MetricMasks, get_mask_source
 from voxreg.metrics import compute_global_ncc, compute_local_ncc
 from voxreg.preparation import PreparedRegistration
+from voxreg.progress import progress_bar
 from voxreg.results import (
     STATUS_LABELS,
     build_output_template,

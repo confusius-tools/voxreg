@@ -12,9 +12,8 @@ import pytest
 import zarr
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "examples" / "benchmark_lazy.py"
 SPEC = importlib.util.spec_from_file_location(
-    "lazy_benchmark", ROOT / "examples" / "_benchmark_lazy.py"
+    "lazy_benchmark", ROOT / "benchmarks" / "_benchmark_lazy.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 BENCHMARK = importlib.util.module_from_spec(SPEC)
@@ -24,14 +23,14 @@ SPEC.loader.exec_module(BENCHMARK)
 @pytest.mark.parametrize("operation", ["register", "resample"])
 def test_smoke_cli_writes_qualified_phases_without_large_files(tmp_path, operation):
     output = tmp_path / operation
+    script = ROOT / "benchmarks" / f"benchmark_{operation}.py"
     run = subprocess.run(
         [
             sys.executable,
-            str(SCRIPT),
+            str(script),
+            "--lazy",
             "--output",
             str(output),
-            "--operation",
-            operation,
             "--devices",
             "cpu",
             "--runs",
@@ -81,7 +80,7 @@ def test_smoke_cli_writes_qualified_phases_without_large_files(tmp_path, operati
     assert (output / "inputs" / "recording.zarr").is_dir()
     # A fresh invocation must refuse to overwrite this completed evidence.
     again = subprocess.run(
-        [sys.executable, str(SCRIPT), "--output", str(output)],
+        [sys.executable, str(script), "--lazy", "--output", str(output)],
         capture_output=True,
         text=True,
         timeout=30,

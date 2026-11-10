@@ -9,9 +9,9 @@ from typing import Literal, cast
 
 import numpy as np
 import xarray as xr
-from confusius._utils.progress import progress_bar
 
 from voxreg.preparation import RegistrationSettings
+from voxreg.progress import progress_bar
 from voxreg.results import LinearFit
 
 

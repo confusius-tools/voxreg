@@ -1,6 +1,7 @@
 """Temporal source chunks bound tasks independently of eager fitting batches."""
 
 import dask
+import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
@@ -8,6 +9,45 @@ from numpy.testing import assert_allclose, assert_array_equal
 from registration_options import RegistrationOptions
 
 from voxreg import register, resample
+
+
+def test_diagnostic_graph_avoids_per_variable_block_layers(
+    recording_factory, monkeypatch
+):
+    """Diagnostic projections share source layers rather than cloning wrappers."""
+    data, _, _ = recording_factory()
+    base = data.isel(time=0, drop=True).isel(j=slice(0, 12), i=slice(0, 14))
+    frames = 64
+    recording = base.expand_dims(time=np.arange(frames)).copy(
+        data=da.broadcast_to(base.values, (frames, *base.shape)).rechunk(
+            (1, *base.shape)
+        )
+    )
+    result = register(recording, max_iterations=1, device="cpu", progress=False)
+    from voxreg import registration
+
+    calls = []
+    execute = registration.execute_registration
+
+    def record(*args):
+        calls.append(1)
+        return execute(*args)
+
+    monkeypatch.setattr(registration, "execute_registration", record)
+    diagnostics = result["diagnostics"].to_dataset()
+    graph = diagnostics.status.data.__dask_graph__()
+    assert len(graph.layers) < 4 * frames + 40
+    assert_array_equal(
+        diagnostics.status.isel(time=[0, -1]).compute(scheduler="synchronous"),
+        ["reference", "max_iterations"],
+    )
+    assert_array_equal(
+        diagnostics.execution_task_size.isel(time=[0, -1]).compute(
+            scheduler="synchronous"
+        ),
+        [1, 1],
+    )
+    assert len(calls) == 4
 
 
 @pytest.mark.parametrize("chunks", [(2, 3), (0, 2, 3)])

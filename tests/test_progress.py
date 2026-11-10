@@ -2,17 +2,100 @@
 
 from io import StringIO
 
-import confusius._utils.progress as cf_progress
+import dask
+import dask.array as da
 import numpy as np
 import pytest
 import torch
+import voxeldata as vd
 import xarray as xr
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_allclose, assert_array_equal
 from registration_options import RegistrationOptions
 from rich.console import Console
 from voxeldata import create_voxeldata
 
+import voxreg.progress as vr_progress
 from voxreg import linear, register
+
+
+@pytest.mark.parametrize("scheduler", ["synchronous", "threads", "processes"])
+@pytest.mark.parametrize("output", ["image", "tree", "save"])
+def test_lazy_default_progress_is_one_frame_bar(
+    recording_factory, tmp_path, rich_bars, scheduler, output
+):
+    """Local lazy execution counts source frames once through fused graphs."""
+    data, _, _ = recording_factory()
+    data = data.isel(j=slice(0, 12), i=slice(0, 14))
+    result = register(data.chunk(time=2), max_iterations=1, device="cpu")
+    assert not rich_bars
+    with dask.config.set(scheduler=scheduler, num_workers=2):
+        if output == "save":
+            vd.save(result, tmp_path / "result.zarr")
+        elif output == "tree":
+            result.compute()
+        else:
+            result["images"].to_dataset()["registered"].compute()
+    assert len(rich_bars) == 1
+    assert rich_bars[0].tasks[0].completed == rich_bars[0].tasks[0].total == len(data)
+    assert not rich_bars[0].live.is_started
+
+
+@pytest.mark.parametrize("prefix_length", [40, 50, 60])
+def test_lazy_progress_counts_selected_chunk_through_long_fused_keys(
+    recording_factory, rich_bars, prefix_length
+):
+    """Truncated fused names must not introduce partial frame identities."""
+    data, _, _ = recording_factory()
+    base = data.isel(time=0, drop=True).isel(j=slice(0, 12), i=slice(0, 14))
+    recording = base.expand_dims(time=np.arange(1203)).copy(
+        data=da.broadcast_to(base.values, (1203, *base.shape)).rechunk(
+            (300, *base.shape)
+        )
+    )
+    result = register(recording, device="cpu", max_iterations=1)
+    selected = result["images"].to_dataset()["registered"].isel(time=slice(1200, 1203))
+    output = selected.data.map_blocks(
+        np.copy, name="a" * prefix_length, dtype=selected.dtype
+    )
+    assert_allclose(
+        output.compute(scheduler="synchronous"),
+        np.broadcast_to(base.values, selected.shape),
+        rtol=1e-6,
+        atol=0,
+    )
+    assert len(rich_bars) == 1
+    assert rich_bars[0].tasks[0].total == rich_bars[0].tasks[0].completed == 3
+
+
+@pytest.mark.parametrize("progress", [True, False, None])
+def test_lazy_progress_respects_modes_and_recomputation(
+    recording_factory, rich_bars, progress
+):
+    """Explicit lazy modes survive repeated computation without retaining counts."""
+    data, _, _ = recording_factory()
+    result = register(
+        data.chunk(time=2), max_iterations=1, device="cpu", progress=progress
+    )
+    for _ in range(2):
+        result.compute(scheduler="synchronous")
+    assert len(rich_bars) == (2 if progress is True else 0)
+    assert all(bar.finished for bar in rich_bars)
+
+
+def test_lazy_progress_closes_on_error(recording_factory, monkeypatch, rich_bars):
+    """A failed lazy fit leaves an incomplete bar and propagates its error."""
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("lazy optimizer failed")
+
+    data, _, _ = recording_factory()
+    result = register(data.chunk(time=2), device="cpu")
+    monkeypatch.setattr(linear, "_optimize", fail)
+    with pytest.raises(RuntimeError, match="lazy optimizer failed"):
+        result.compute(scheduler="synchronous")
+    assert len(rich_bars) == 1
+    assert not rich_bars[0].finished
+    assert not rich_bars[0].live.is_started
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
@@ -105,7 +188,7 @@ def test_progress_callback_errors_propagate_without_mutating_input(recording_fac
 def rich_bars(monkeypatch):
     """Exercise real Rich rendering without a timer thread or terminal dependency."""
     bars = []
-    original = cf_progress.Progress
+    original = vr_progress.Progress
 
     def create(*args, **kwargs):
         bar = original(
@@ -117,7 +200,7 @@ def rich_bars(monkeypatch):
         bars.append(bar)
         return bar
 
-    monkeypatch.setattr(cf_progress, "Progress", create)
+    monkeypatch.setattr(vr_progress, "Progress", create)
     return bars
 
 
@@ -160,7 +243,7 @@ def test_default_rich_progress_preserves_results_and_syncs(
     assert bar.finished
     assert not bar.live.is_started
     output = bar.console.file.getvalue()
-    assert "Registering frames" in output and "100%" in output
+    assert "Registering frames" in output and "3/3" in output
 
 
 @pytest.mark.parametrize("progress", [False, None])

@@ -135,13 +135,13 @@ def _voxel_inputs(arrays, metadata):
 def _resident(moving, fixed, transforms, config):
     backend = config["backend"]
     device = "cuda" if backend.endswith("cuda") else "cpu"
-    from voxreg.rigid import _choose_batch_size
+    from voxreg.preparation import choose_batch_size
 
     series = moving if "time" in moving.dims else moving.expand_dims(time=[0])
     batch = min(
         series.sizes["time"],
         config["batch_size"]
-        or _choose_batch_size(series, fixed, config["model"], device),
+        or choose_batch_size(series, fixed, config["model"], device),
     )
     if not backend.startswith("fireants"):
         output, valid = resample(

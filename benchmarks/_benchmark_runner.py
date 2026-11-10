@@ -39,7 +39,6 @@ PACKAGES = (
     "numpy",
     "scipy",
     "xarray",
-    "confusius",
     "voxeldata",
     "fireants",
     "SimpleITK",
@@ -96,13 +95,13 @@ def _worker(config_path, mode):
         moving, fixed, amplitudes = _voxel_inputs(arrays, metadata)
         record["input_sha256"] = metadata["input_sha256"]
         record["resident_input_bytes"] = sum(a.nbytes for a in arrays.values())
-        from voxreg.rigid import _choose_batch_size
+        from voxreg.preparation import choose_batch_size
 
         series = moving if "time" in moving.dims else moving.expand_dims(time=[0])
         config["batch_size"] = min(
             series.sizes["time"],
             config["batch_size"]
-            or _choose_batch_size(
+            or choose_batch_size(
                 series, fixed, config["model"], "cuda" if cuda else "cpu"
             ),
         )
@@ -334,6 +333,11 @@ def _main(
     )
     parser.add_argument("--output", type=Path)
     parser.add_argument(
+        "--lazy",
+        action="store_true",
+        help="Use streaming read/compute/Zarr measurement instead",
+    )
+    parser.add_argument(
         "--runs",
         type=int,
         default=5,
@@ -430,10 +434,10 @@ def _main(
         source / "src/voxreg",
         ignore=shutil.ignore_patterns("__pycache__"),
     )
-    (source / "examples").mkdir()
+    (source / "benchmarks").mkdir()
     scripts = [script, *sorted(script.parent.glob("_benchmark_*.py"))]
     for source_script in scripts:
-        shutil.copy2(source_script, source / "examples" / source_script.name)
+        shutil.copy2(source_script, source / "benchmarks" / source_script.name)
     for name in ("pyproject.toml", "uv.lock", "BENCHMARK.md"):
         shutil.copy2(ROOT / name, source / name)
     revision = subprocess.run(
@@ -593,7 +597,7 @@ def _main(
                 )
                 with console.status(f"{case['id']} / {mode}"):
                     row[mode] = _phase(
-                        source / "examples" / script.name,
+                        source / "benchmarks" / script.name,
                         config_path,
                         mode,
                         environment,

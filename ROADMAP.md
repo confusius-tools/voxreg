@@ -48,7 +48,8 @@ Details live in the linked docs rather than being duplicated here:
 - **Lazy recordings/resampling:** shared bounded eager time tasks return lazy
   images, masks, optional linear/dense maps and stage/level diagnostics. Local and
   distributed schedulers, worker-time devices/callbacks and joint DataTree Zarr
-  storage are covered. Tasks follow temporal source chunks; worker fitting batches
+  storage are covered. Local schedulers share voxreg's eager Rich progress style;
+  distributed clients use Dask's progress tools. Tasks follow temporal source chunks; worker fitting batches
   are selected independently or explicitly overridden. Per-image conditioning,
   labels/geometry and implicit references are retained. Full-size memory and
   deployment qualification remains above; see [contracts](README.md#lazy-recordings-and-resampling).

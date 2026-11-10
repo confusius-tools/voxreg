@@ -649,7 +649,7 @@ def worker(config_path: Path, phase: str) -> int:
                         part["stop"] - part["start"]
                         for event in stream.data
                         if str(event["key"]).startswith(
-                            ("_run_registration_batch-", "_run_resampling_batch-")
+                            ("voxreg-fit-", "_run_resampling_batch-")
                         )
                         for part in event["startstops"]
                         if part["action"] == "compute"
@@ -741,6 +741,7 @@ def measure(config_path: Path, phase: str, script: Path) -> dict[str, Any]:
             [
                 sys.executable,
                 str(script),
+                "--lazy",
                 "--worker",
                 str(config_path),
                 "--phase",
@@ -820,31 +821,35 @@ def report(directory: Path, result: dict[str, Any]) -> None:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
     """Run the opt-in disk-backed synthetic registration/resampling benchmark.
 
     Parameters
     ----------
     argv : list of str, optional
         Command arguments; not provided reads the command line.
+    operation : {"register", "resample"}, default: "register"
+        Operation selected by the public benchmark entry point.
 
     Returns
     -------
     int
         Zero for passing or unavailable cases, nonzero for errors/quality failures.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path)
-    parser.add_argument(
-        "--operation", choices=("register", "resample"), default="register"
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        usage="%(prog)s --lazy --output OUTPUT [--size-gib N] [--devices cpu cuda] [--runs N]",
     )
+    advanced = parser.add_argument_group("advanced workload/memory overrides")
+    parser.add_argument("--output", type=Path)
+    parser.set_defaults(operation=operation)
     parser.add_argument(
         "--size-gib",
         type=float,
         help="Opt into large files; omitted runs an eight-frame smoke case",
     )
-    parser.add_argument("--shape", type=int, nargs=3)
-    parser.add_argument(
+    advanced.add_argument("--shape", type=int, nargs=3)
+    advanced.add_argument(
         "--chunk-mib",
         type=float,
         nargs="+",
@@ -854,11 +859,11 @@ def main(argv: list[str] | None = None) -> int:
         "--devices", choices=("cpu", "cuda"), nargs="+", default=["cpu", "cuda"]
     )
     parser.add_argument("--runs", type=int, default=5)
-    parser.add_argument("--iterations", type=int, default=100)
-    parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--worker-memory-gib", type=float, default=4)
     parser.add_argument("--threads", type=int, default=8)
-    parser.add_argument("--batch-size", type=int)
+    advanced.add_argument("--iterations", type=int, default=100)
+    advanced.add_argument("--workers", type=int, default=1)
+    advanced.add_argument("--worker-memory-gib", type=float, default=4)
+    advanced.add_argument("--batch-size", type=int)
     parser.add_argument("--worker", type=Path, help=argparse.SUPPRESS)
     parser.add_argument(
         "--phase", choices=("timing", "memory", "accuracy"), help=argparse.SUPPRESS
@@ -925,9 +930,9 @@ def main(argv: list[str] | None = None) -> int:
     shutil.copytree(
         ROOT / "src", frozen / "src", ignore=shutil.ignore_patterns("__pycache__")
     )
-    (frozen / "examples").mkdir()
-    for name in ("benchmark_lazy.py", "_benchmark_lazy.py"):
-        shutil.copy2(ROOT / "examples" / name, frozen / "examples" / name)
+    (frozen / "benchmarks").mkdir()
+    for name in (f"benchmark_{operation}.py", "_benchmark_lazy.py"):
+        shutil.copy2(ROOT / "benchmarks" / name, frozen / "benchmarks" / name)
     hashes = {
         str(path.relative_to(frozen)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in frozen.rglob("*")
@@ -949,7 +954,6 @@ def main(argv: list[str] | None = None) -> int:
                 "numpy",
                 "scipy",
                 "xarray",
-                "confusius",
                 "voxeldata",
                 "dask",
                 "distributed",
@@ -1009,7 +1013,9 @@ def main(argv: list[str] | None = None) -> int:
                 report(output, result)
                 for phase in ("timing", "memory", "accuracy"):
                     case[phase] = measure(
-                        config_path, phase, frozen / "examples" / "benchmark_lazy.py"
+                        config_path,
+                        phase,
+                        frozen / "benchmarks" / f"benchmark_{operation}.py",
                     )
                     state = case[phase]["status"]
                     if state != "passed":

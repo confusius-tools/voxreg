@@ -407,7 +407,7 @@ def main() -> None:
         "load_seconds": load_seconds,
         "stage_seconds": result["diagnostics"].to_dataset().attrs["timings_seconds"],
         "statuses": dict(zip(status.tolist(), counts.tolist(), strict=True)),
-        "timing_note": "Example diagnostics only; use examples/benchmark_register.py for performance measurements.",
+        "timing_note": "Example diagnostics only; use benchmarks/benchmark_register.py for performance measurements.",
     }
     comparison = {}
     if reference is not None:
