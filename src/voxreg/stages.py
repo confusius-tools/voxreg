@@ -87,13 +87,13 @@ class Stage:
         }
 
 
-def register_stages(
+def resolve_stages(
     moving: xr.DataArray,
     fixed: xr.DataArray | None,
     specification: Stage | Sequence[str | Stage],
     shared: RegistrationSettings,
-) -> RegistrationResult:
-    """Fit original images through stages and resample only at the end.
+) -> tuple[tuple[Stage, RegistrationSettings], ...]:
+    """Resolve and validate every effective stage without fitting images.
 
     Parameters
     ----------
@@ -108,8 +108,8 @@ def register_stages(
 
     Returns
     -------
-    RegistrationResult
-        Complete outputs and independent stage diagnostics, with failed frames frozen.
+    tuple of tuple of Stage and RegistrationSettings
+        Ordered stage specifications and validated effective settings.
 
     Raises
     ------
@@ -118,7 +118,6 @@ def register_stages(
     """
     from voxreg.registration import run_stage
 
-    start = perf_counter()
     stages = (
         (specification,) if isinstance(specification, Stage) else tuple(specification)
     )
@@ -166,6 +165,44 @@ def register_stages(
         run_stage(moving, fixed, stage.transform, options, validate_only=True)
         resolved.append(options)
 
+    return tuple(zip(stages, resolved, strict=True))
+
+
+def register_stages(
+    moving: xr.DataArray,
+    fixed: xr.DataArray | None,
+    specification: Stage | Sequence[str | Stage],
+    shared: RegistrationSettings,
+) -> RegistrationResult:
+    """Fit stages eagerly and resample original intensities once.
+
+    Parameters
+    ----------
+    moving : xarray.DataArray
+        Original spatial image or recording.
+    fixed : xarray.DataArray, optional
+        Explicit reference; not provided uses the first frame.
+    specification : Stage or sequence of str or Stage
+        Increasing-complexity stages and overrides.
+    shared : RegistrationSettings
+        Settings shared by the complete pipeline.
+
+    Returns
+    -------
+    RegistrationResult
+        Complete outputs, including independent stage diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If a stage specification or effective settings are invalid.
+    """
+    from voxreg.registration import run_stage
+
+    start = perf_counter()
+    stages, resolved = zip(
+        *resolve_stages(moving, fixed, specification, shared), strict=True
+    )
     spatial = moving.dims == ("k", "j", "i")
     count = 1 if spatial else moving.sizes["time"]
     active = np.ones(count, dtype=bool)

@@ -25,45 +25,14 @@ time, then stop for user review and a separate commit.
 
 ## Planned capabilities and investigations
 
-### Lazy recordings and resampling with Dask
+### Qualify large lazy recordings
 
-Support `register(recording)` and `resample(recording, ..., transforms)` with lazy
-xarray-backed outputs that can be computed or written incrementally via `to_zarr`.
-Preserve eager NumPy behavior. Each spatial pair fits eagerly within its task;
-one fixed/moving volume pair and working state must fit worker RAM/VRAM.
-
-- **Task boundaries:** bounded eager time batches; shared dependencies for the
-  fixed image or implicit first-frame reference; complete stage/pyramid pipeline
-  per frame within its task. Preserve time labels, reference behavior and
-  independent frame failures.
-- **Chunking:** require or arrange complete spatial volumes per fitting task.
-  Define time chunks versus `batch_size` without inadvertently loading oversized
-  chunks/full recordings. Arbitrary spatial-block or distributed single-volume
-  fitting is separate work.
-- **Lazy outputs:** intensities, validity masks, optional forward/inverse maps and
-  per-frame/stage/level diagnostics. Do not accumulate dense SyN fields across
-  frames; linear matrices also need a lazy path for long recordings.
-- **Validation:** remove whole-recording `.values`/`np.asarray` conversions and
-  eager finite scans from graph construction. Validate geometry, labels and
-  options eagerly; check data within tasks and document deferred failures.
-- **Conditioning:** use the same per-image policy as eager registration, never
-  per-chunk normalization or a recording-wide intensity reference. Results must
-  be invariant to time chunking and execution order.
-- **Shared execution:** share each batch fit across images, maps and diagnostics.
-  Document joint computation/storage without repeated fitting or whole-recording
-  persistence. Progress, callbacks and timings must describe execution, not graph
-  construction. Support distributed workers as well as local schedulers; execute
-  callbacks within tasks with global frame indices and document repeated calls
-  on recomputation.
-- **Resampling:** support lazy images and dense fields, including eager/lazy
-  combinations. Shared transforms apply to all frames; time-labelled transforms
-  select per frame. Load only required image/transform frames, allow incremental
-  Zarr writes, and retain geometry, units, interpolation, support and time alignment.
-- **Resources and proof:** bound concurrent CPU/GPU work and task memory; resolve
-  `device="auto"` within workers at execution time and prevent unbounded jobs on
-  one GPU. Qualify chunk invariance, masks/stages/pyramids, shared/per-frame maps,
-  deferred failures, Zarr round trips and peak memory on recordings larger than
-  RAM before claiming out-of-core support.
+The bounded Dask path is implemented and tested on small inputs. Measure peak
+RAM/VRAM and scheduler/storage prefetch on recordings larger than physical RAM
+before claiming fully qualified out-of-core execution. One eager spatial pair and
+working state must fit each worker; source storage blocks must be bounded too.
+Qualify multi-host/GPU deployment and workload-specific concurrency/performance;
+spatial-block registration and distributed fitting of one volume remain separate.
 
 **Complex IQ is separate:** voxreg currently requires real intensities. Define a
 real fitting representation (e.g. amplitude/power) and phase-preserving resampling
@@ -74,10 +43,18 @@ Time chunking alone does not provide complex-data support.
 
 Details live in the linked docs rather than being duplicated here:
 
+- **Lazy recordings/resampling:** shared bounded eager time tasks return lazy
+  images, masks, optional linear/dense maps and stage/level diagnostics. Local and
+  distributed schedulers, worker-time devices/callbacks and joint DataTree Zarr
+  storage are covered. Tasks follow temporal source chunks; worker fitting batches
+  are selected independently or explicitly overridden. Per-image conditioning,
+  labels/geometry and implicit references are retained. Full-size memory and
+  deployment qualification remains above; see [contracts](README.md#lazy-recordings-and-resampling).
+
 - **Optional fitting winsorization:** independent moving/fixed 0–100 percentile
   pairs, disabled by default. Per-image signed clipping precedes intensity
   transforms and is shared across stages; native moments/output stay unchanged.
-  See [semantics](README.md#fitting-winsorization). Dask execution remains pending.
+  See [semantics](README.md#fitting-winsorization); lazy task parity is tested.
 
 - **Figure 2 DVARS investigation:** valid-support QC resolves the reported spikes;
   no registration change needed. Evidence and remaining interpretation limits are

@@ -85,6 +85,138 @@ def _sample_linear(
     return sampled.to(images.dtype), valid
 
 
+def validate_resampling_metadata(
+    moving: xr.DataArray,
+    reference: xr.DataArray,
+    transforms: npt.ArrayLike | xr.DataArray,
+    interpolation: Interpolation,
+    batch_size: int | None,
+) -> None:
+    """Validate resampling geometry, labels and options without reading voxel data.
+
+    Parameters
+    ----------
+    moving, reference : xarray.DataArray
+        Spatial data or recording and spatial reference geometry.
+    transforms : array-like or xarray.DataArray
+        Shared or per-frame matrices or labelled displacement fields.
+    interpolation : {"linear", "nearest", "bspline"}
+        Final image interpolation.
+    batch_size : int, optional
+        Positive frame batch limit.
+
+    Returns
+    -------
+    None
+        Valid metadata requires no conversion.
+
+    Raises
+    ------
+    TypeError
+        If an image or transform backend/dtype is unsupported.
+    ValueError
+        If geometry, labels, transform metadata or options are invalid.
+    """
+    validate_registration_geometry(moving)
+    validate_registration_geometry(reference)
+    if reference.dims != VOXEL_DIMS:
+        raise ValueError("reference must be spatial VoxelData without time.")
+    if interpolation not in ("linear", "nearest", "bspline"):
+        raise ValueError("interpolation must be linear, nearest or bspline.")
+    if batch_size is not None and (type(batch_size) is not int or batch_size < 1):
+        raise ValueError("batch_size must be None or a positive integer.")
+    if moving.dtype.kind not in "iufb" or (
+        moving.dtype.kind == "f" and moving.dtype.itemsize > 8
+    ):
+        raise TypeError("moving must have real integer or floating-point intensities.")
+    if moving.dtype == np.bool_ and interpolation != "nearest":
+        raise ValueError("Boolean images require nearest interpolation.")
+    for name, data in (("moving", moving), ("transforms", transforms)):
+        if (
+            isinstance(data, xr.DataArray)
+            and "time" in data.dims
+            and (
+                "time" not in data.coords
+                or data.time.dims != ("time",)
+                or not data.get_index("time").is_unique
+            )
+        ):
+            raise ValueError(f"{name} must have unique time labels.")
+    if isinstance(transforms, xr.DataArray):
+        from voxreg.lazy import has_lazy_data
+
+        if not isinstance(transforms.data, np.ndarray) and not has_lazy_data(
+            transforms
+        ):
+            raise TypeError("transforms must be NumPy- or Dask-backed.")
+        if transforms.dtype.kind not in "iuf":
+            raise ValueError("transforms must contain finite real numeric values.")
+        length_scale_to_mm(transforms.attrs.get("spatial_units", "mm"))
+        if (
+            "time" in moving.dims
+            and "time" in transforms.dims
+            and not moving.get_index("time").equals(transforms.get_index("time"))
+        ):
+            raise ValueError("moving and transforms time labels must match exactly.")
+        if "world_component" in transforms.dims:
+            expected = (("time",) if "time" in transforms.dims else ()) + (
+                *VOXEL_DIMS,
+                "world_component",
+            )
+            if transforms.dims != expected or list(
+                transforms.world_component.values
+            ) != ["z", "y", "x"]:
+                raise ValueError(
+                    "Displacements must have dimensions [time,] k/j/i/world_component ordered z/y/x."
+                )
+            scalar = transforms.isel(world_component=0, drop=True)
+            validate_registration_geometry(scalar)
+            if not same_physical_grid(scalar, reference):
+                raise ValueError(
+                    "Displacement field must match the reference grid exactly."
+                )
+            if (
+                transforms.attrs.get("representation") != "displacement"
+                or "spatial_units" not in transforms.attrs
+            ):
+                raise ValueError(
+                    "Fields must declare representation='displacement' and physical spatial_units (for example mm)."
+                )
+            if "units" in transforms.attrs and length_scale_to_mm(
+                transforms.attrs["units"]
+            ) != length_scale_to_mm(transforms.attrs["spatial_units"]):
+                raise ValueError(
+                    "Field units and spatial_units must describe the same length unit."
+                )
+            return
+        if transforms.dims not in (
+            ("world_out", "world_in"),
+            ("time", "world_out", "world_in"),
+        ):
+            raise ValueError("Matrix dimensions must be [time,] world_out/world_in.")
+        for axis in ("world_out", "world_in"):
+            if axis in transforms.coords and list(transforms[axis].values) != [
+                "z",
+                "y",
+                "x",
+                "1",
+            ]:
+                raise ValueError("Matrix axes must be ordered z/y/x/1.")
+        shape = transforms.shape
+    else:
+        shape = np.shape(transforms)
+    if (
+        len(shape) not in (2, 3)
+        or shape[-2:] != (4, 4)
+        or (len(shape) == 3 and shape[0] < 1)
+    ):
+        raise ValueError(
+            "Expected nonempty transform matrices shaped (4, 4) or (N, 4, 4)."
+        )
+    if len(shape) == 3 and "time" in moving.dims and shape[0] != moving.sizes["time"]:
+        raise ValueError("Expected one transform per moving frame.")
+
+
 @torch.no_grad()
 def resample(
     moving: xr.DataArray,
@@ -100,7 +232,7 @@ def resample(
     Parameters
     ----------
     moving : xarray.DataArray
-        Finite real NumPy-backed VoxelData, spatial or time-dependent. Boolean
+        Finite real NumPy- or Dask-backed VoxelData, spatial or time-dependent. Boolean
         images are supported with nearest interpolation. Integers must be in
         [-2**53, 2**53], as for registration.
     reference : xarray.DataArray
@@ -129,9 +261,13 @@ def resample(
     device : {"auto", "cpu", "cuda"}, default: "auto"
         Auto selects CUDA when available, otherwise CPU, once per call. Explicit
         CUDA requires availability. CUDA execution errors, including out-of-memory,
-        propagate without a CPU retry. Results are NumPy-backed on CPU in all cases.
+        propagate without a CPU retry. Dask source images/maps return lazy outputs;
+        auto resolution occurs at worker execution, not graph construction.
     batch_size : int, optional
-        Positive frame batch limit; omitted uses the registration memory policy.
+        Positive eager frame batch limit; not provided uses the registration memory
+        policy, inside workers for lazy calls. Lazy task sizes follow source time
+        chunks independently of this limit. Spatial blocks are assembled within
+        each task; temporal chunks must fit worker RAM.
 
     Returns
     -------
@@ -152,23 +288,17 @@ def resample(
         Also raised when cubic overshoot cannot be represented finitely in the
         moving image's floating-point dtype.
     """
-    validate_registration_geometry(moving)
-    validate_registration_geometry(reference)
-    if reference.dims != VOXEL_DIMS:
-        raise ValueError("reference must be spatial VoxelData without time.")
-    if interpolation not in ("linear", "nearest", "bspline"):
-        raise ValueError("interpolation must be linear, nearest or bspline.")
+    validate_resampling_metadata(
+        moving, reference, transforms, interpolation, batch_size
+    )
+    from voxreg.lazy import has_lazy_data, resample_lazy
+
+    if has_lazy_data(moving, transforms):
+        return resample_lazy(
+            moving, reference, transforms, interpolation, device, batch_size
+        )
     device = resolve_device(device)
-    if batch_size is not None and (type(batch_size) is not int or batch_size < 1):
-        raise ValueError("batch_size must be None or a positive integer.")
     integer = np.issubdtype(moving.dtype, np.integer)
-    boolean = moving.dtype == np.bool_
-    if not (
-        integer or boolean or moving.dtype.kind == "f" and moving.dtype.itemsize <= 8
-    ):
-        raise TypeError("moving must have real integer or floating-point intensities.")
-    if boolean and interpolation != "nearest":
-        raise ValueError("Boolean images require nearest interpolation.")
     if not np.isfinite(moving.values).all():
         raise ValueError("moving intensities must be finite.")
     if integer and (
@@ -178,69 +308,12 @@ def resample(
 
     labeled = isinstance(transforms, xr.DataArray)
     field = labeled and "world_component" in transforms.dims
-    if labeled:
-        if not isinstance(transforms.data, np.ndarray):
-            raise TypeError("transforms must be NumPy-backed.")
-        length_scale_to_mm(transforms.attrs.get("spatial_units", "mm"))
-        if "time" in transforms.dims:
-            if (
-                "time" not in transforms.coords
-                or transforms.time.dims != ("time",)
-                or not transforms.get_index("time").is_unique
-            ):
-                raise ValueError("transforms must have unique time labels.")
-            if "time" in moving.dims and not moving.get_index("time").equals(
-                transforms.get_index("time")
-            ):
-                raise ValueError(
-                    "moving and transforms time labels must match exactly."
-                )
-        for axis in ("world_in", "world_out"):
-            if axis in transforms.dims and list(transforms[axis].values) != [
-                "z",
-                "y",
-                "x",
-                "1",
-            ]:
-                raise ValueError("Matrix axes must be ordered z/y/x/1.")
     values = np.asarray(transforms)
     if values.dtype.kind not in "iuf" or not np.isfinite(values).all():
         raise ValueError("transforms must contain finite real numeric values.")
     if field:
         assert isinstance(transforms, xr.DataArray)
-        expected = (("time",) if "time" in transforms.dims else ()) + (
-            *VOXEL_DIMS,
-            "world_component",
-        )
-        if transforms.dims != expected or list(transforms.world_component.values) != [
-            "z",
-            "y",
-            "x",
-        ]:
-            raise ValueError(
-                "Displacements must have dimensions [time,] k/j/i/world_component ordered z/y/x."
-            )
-        scalar = transforms.isel(world_component=0, drop=True)
-        validate_registration_geometry(scalar)
-        if not same_physical_grid(scalar, reference):
-            raise ValueError(
-                "Displacement field must match the reference grid exactly."
-            )
-        if (
-            transforms.attrs.get("representation") != "displacement"
-            or "spatial_units" not in transforms.attrs
-        ):
-            raise ValueError(
-                "Fields must declare representation='displacement' and physical spatial_units (for example mm)."
-            )
         scale = length_scale_to_mm(transforms.attrs["spatial_units"])
-        if (
-            "units" in transforms.attrs
-            and length_scale_to_mm(transforms.attrs["units"]) != scale
-        ):
-            raise ValueError(
-                "Field units and spatial_units must describe the same length unit."
-            )
         if scale != 1:
             with np.errstate(over="ignore", invalid="ignore"):
                 values = np.asarray(values, dtype=np.float64) * scale
@@ -251,11 +324,6 @@ def resample(
         count = transforms.sizes.get("time", 1)
         shared = "time" not in transforms.dims
     else:
-        if labeled and transforms.dims not in (
-            ("world_out", "world_in"),
-            ("time", "world_out", "world_in"),
-        ):
-            raise ValueError("Matrix dimensions must be [time,] world_out/world_in.")
         shared = values.ndim == 2
         count = 1 if shared else len(values) if values.ndim == 3 else 0
         if count < 1:

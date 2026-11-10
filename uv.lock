@@ -6044,6 +6044,9 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "confusius" },
+    { name = "dask", extra = ["array"] },
+    { name = "distributed" },
+    { name = "filelock" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (platform_machine == 'x86_64' and sys_platform == 'darwin')" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64') or (python_full_version >= '3.12' and sys_platform != 'darwin')" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -6078,6 +6081,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "confusius", specifier = ">=0.8.0" },
+    { name = "dask", extras = ["array"], specifier = ">=2026.8.0" },
+    { name = "distributed", specifier = ">=2026.8.0" },
+    { name = "filelock", specifier = ">=3.20" },
     { name = "matplotlib", marker = "extra == 'examples'", specifier = ">=3.11.2" },
     { name = "nibabel", marker = "extra == 'examples'", specifier = ">=5.4.2" },
     { name = "numpy", specifier = ">=2.3.4" },

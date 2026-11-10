@@ -3,9 +3,70 @@
 from dataclasses import replace
 
 import numpy as np
+import numpy.typing as npt
 import torch
+import xarray as xr
 
 from voxreg.geometry import length_scale_to_mm, position_to_world
+
+
+def validate_initial_transform_metadata(
+    value: npt.ArrayLike | xr.DataArray | None, moving: xr.DataArray
+) -> None:
+    """Check seed shape, units and labels without reading lazy matrix values.
+
+    Parameters
+    ----------
+    value : array-like or xarray.DataArray, optional
+        Shared or per-frame linear seed.
+    moving : xarray.DataArray
+        Recording defining frame labels and count.
+
+    Returns
+    -------
+    None
+        Valid seed metadata needs no conversion.
+
+    Raises
+    ------
+    ValueError
+        If shape, units, labels or pull conventions are invalid.
+    """
+    if value is None:
+        return
+    shape = np.shape(value)
+    if shape not in ((4, 4), (moving.sizes["time"], 4, 4)):
+        raise ValueError("initial_transform must have shape (4, 4) or (N, 4, 4).")
+    if isinstance(value, xr.DataArray):
+        if value.dims not in (
+            ("world_out", "world_in"),
+            ("time", "world_out", "world_in"),
+        ):
+            raise ValueError("initial_transform has unsupported labeled dimensions.")
+        for axis in ("world_out", "world_in"):
+            if axis in value.coords and not np.array_equal(
+                value[axis], ["z", "y", "x", "1"]
+            ):
+                raise ValueError("initial_transform world axes must be z/y/x/1.")
+        if (
+            "time" in value.dims
+            and "time" in value.coords
+            and not value.get_index("time").equals(moving.get_index("time"))
+        ):
+            raise ValueError(
+                "initial_transform time labels must match moving in order."
+            )
+        if (
+            "convention" in value.attrs
+            and value.attrs["convention"] != "fixed-world-to-moving-world pull"
+        ):
+            raise ValueError(
+                "initial_transform convention must be 'fixed-world-to-moving-world pull'."
+            )
+        try:
+            length_scale_to_mm(value.attrs.get("spatial_units", "mm"))
+        except ValueError as error:
+            raise ValueError(f"initial_transform spatial_units: {error}") from error
 
 
 def configure_transform(grid, fixed, transform):

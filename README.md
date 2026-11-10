@@ -53,8 +53,9 @@ a single image pair, pass `voxreg.register(moving, fixed)`. Both `register` and
 `resample` default to `device="auto"`: CUDA when available, otherwise CPU. Use
 `device="cpu"` or `device="cuda"` to select explicitly. CUDA execution errors
 propagate, including out-of-memory errors; there is no CPU retry. Results remain
-NumPy-backed on CPU. Registration records the resolved choice in
-`result.diagnostics.attrs["device"]`, including each stage's diagnostics.
+NumPy-backed on CPU for eager calls; Dask inputs retain lazy outputs.
+Eager registration records the device in `result.diagnostics.attrs["device"]`;
+lazy diagnostics expose worker-resolved `execution_device` per frame.
 
 ## `voxreg.register`
 
@@ -72,7 +73,7 @@ result = voxreg.register(
 
 | Argument | Purpose |
 | --- | --- |
-| `moving`, `fixed` | NumPy-backed VoxelData with physical length units: `(k, j, i)` images or `(time, k, j, i)` recordings. `fixed` is spatial-only and required for a single image. |
+| `moving`, `fixed` | VoxelData with physical length units: eager `(k, j, i)` pairs or NumPy/Dask `(time, k, j, i)` recordings. `fixed` is spatial-only and required for a single image. |
 | `transform` | `"translation"`, `"rigid"` (default), `"affine"`, `"syn"`, a `Stage`, or a sequence of model names/`Stage` specifications. Slices use `k=1`; volumes have at least two samples on each axis. |
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
 | `fixed_mask`, `moving_mask` | Optional boolean ROI VoxelData in their own physical grids. Fixed mask is spatial-only; moving mask can be shared or per-frame with matching time labels. Masks restrict fitting at every stage and level. |
@@ -81,7 +82,7 @@ result = voxreg.register(
 | `metric` | Default `None` retains global squared NCC for linear models and local squared NCC for SyN. Explicit `"ncc"` selects global NCC, `"local_ncc"` selects SyN local NCC, and `"mi"` selects mutual information. |
 | `mi_bins`, `mi_sigma` | MI histogram bins (default `32`, range `2`–`256`) and Gaussian standard deviation in bin widths (default `0.5`, range `0.1`–`10`). |
 | `resample_interpolation` | Final resampling of original intensities: `"linear"` (default), `"nearest"` or cubic `"bspline"`. Fitting always uses linear interpolation. |
-| `batch_size` | Maximum frames fitted together; automatic by default. Full returned images still occupy CPU memory. |
+| `batch_size` | Eager fitting batch limit, chosen automatically inside workers for lazy calls. Lazy task sizes follow temporal source chunks independently; an explicit limit can be smaller than a chunk. |
 | `max_iterations` | Per-frame update limit at each level: an integer (default `100`) or one integer per level. Inspect diagnostics rather than assuming convergence. |
 | `shrink_factors`, `smoothing_sigmas` | Explicit coarse→fine downsampling factors and Gaussian image smoothing standard deviations in mm. Defaults `(1,)` and `(0.0,)` retain native-resolution fitting. |
 | `syn_cc_radius` | SyN local NCC radius in voxels; default `2` gives a rectangular window of width `5`. |
@@ -107,8 +108,8 @@ fixed grid and inverse displacements on the moving grid. Both attributes are
 
 Pass original linear intensities when using `center_moments`; logarithms and other
 nonlinear preprocessing change its centroid weights. Noncoplanar slice pairs
-need compatible initialization. SyN does not support mixed slice/volume inputs;
-Dask-backed inputs are not supported.
+need compatible initialization. SyN does not support mixed slice/volume inputs.
+See [lazy execution](#lazy-recordings-and-resampling) for Dask contracts.
 
 For all options, including optimizer controls and callbacks, use
 `help(voxreg.register)` or read the [API docstring](src/voxreg/registration.py).
@@ -245,7 +246,7 @@ result = voxreg.register(
 )
 ```
 
-Masks must be NumPy-backed boolean VoxelData with supported physical length units.
+Masks must be NumPy- or Dask-backed boolean VoxelData with supported physical length units.
 Convert binary integer masks explicitly with `mask.astype(bool)`. Their shape,
 spacing, origin and orientation may differ from the images. The fixed mask is
 spatial-only; a spatial moving mask broadcasts across recording frames, while
@@ -415,6 +416,106 @@ The reference must be spatial-only; for a recording use a spatial frame as the
 reference. Displacement fields must match that grid exactly. Original dtype and
 time labels are retained; use `interpolation="nearest"` for labels or masks.
 See `help(voxreg.resample)` for broadcasting, batching and support conventions.
+
+## Lazy recordings and resampling
+
+Dask-backed recordings, fixed images, masks or seeds make `register` return lazy
+images, validity, diagnostics and optional maps. Spatial registration pairs remain
+eager: compute those images first. `resample` also supports lazy spatial images,
+shared/per-frame matrices and dense fields, including eager/lazy combinations.
+A lazy reference image alone does not force lazy resampling: its intensities are
+unused. Geometry, option types and time labels are checked without reading pixels;
+finite values, integer ranges, moments and numeric transform checks occur in tasks
+and may fail at compute/write time.
+
+```python
+import dask
+import xarray as xr
+
+result = voxreg.register(
+    recording.chunk(time=16), fixed,
+    device="auto", return_transforms=True,
+)
+images, valid, diagnostics = dask.compute(
+    result.registered, result.valid, result.diagnostics,
+)
+```
+
+Each task handles one temporal source chunk and runs its full stage/pyramid
+pipeline eagerly. The worker chooses a CPU/GPU fitting batch size using the
+existing memory policy. For example, a 16-frame input chunk can be fitted in
+batches of 4; `batch_size=4` forces that fitting limit without rechunking input.
+The fixed/reference image is a shared dependency;
+per-image conditioning and winsorization do not depend on time chunks. Optional
+maps and every stage/level diagnostic project the same fit. Compute related
+outputs **jointly** to avoid repeating registration; separate `.compute()` or
+writes rerun it unless you persist results. `.compute()` of a whole image still
+requires RAM for that complete output; incremental writes do not.
+
+Task boundaries follow moving temporal chunks, or time-chunked maps/masks/seeds
+when the moving input has none. Spatial-image broadcasting follows map chunks,
+not a synthetic full-recording chunk. Without any temporal Dask source, task sizes
+fall back to an explicit `batch_size` or one frame. Auxiliary time chunks larger
+than the largest primary task chunk are rejected; align them at the data source.
+Spatial chunks are assembled into complete volumes within each task. **Rechunking
+cannot avoid reading a larger underlying storage/loader block**. The complete
+source chunk and task outputs must fit worker RAM; only the fitting batch and its
+working state must fit VRAM. Input dependencies can be prefetched by the scheduler; bound
+worker threads, workers per host and storage blocks as well as task size. Dense
+SyN fields remain per-task, not accumulated in one global eager result.
+
+Synchronous, threaded, multiprocessing and distributed Dask execution are supported.
+Device auto selection occurs in workers; there is no CPU retry after CUDA errors.
+Fitting/resampling concurrency is conservatively one task per host CPU or physical
+GPU. Local schedulers coordinate via file leases under `~/.cache/voxreg/execution`;
+distributed workers use scheduler semaphore leases. Use one worker per GPU and
+bounded worker memory; separate schedulers/jobs are not a shared resource manager.
+CPU task concurrency is deliberately conservative rather than an automatic tuner.
+
+Metric/progress callbacks run in tasks, with global frame indices/work offsets;
+distributed callbacks execute on workers, not the client. They must be serializable.
+Execution order can make progress offsets nonmonotonic; retries/recomputation repeat
+notifications. Default `progress="auto"` is silent for lazy graphs: use Dask progress
+tools, explicit task progress or callbacks. `diagnostics.execution_device`,
+`execution_task_size`, `execution_batch_size` and `execution_batch_start` record
+actual execution. The last field is the task's global start; task size counts
+loaded frames while batch size reports each frame's fitting group, including a
+smaller final group. Lazy
+`batch_*_seconds` timings exclude input loading/scheduler waits and repeat per frame;
+deduplicate by batch start rather than summing them over frames. Data-dependent
+centers are lazy `rotation_center_zyx_mm` variables instead of eager attributes.
+All-zero moving task batches against a nonconstant fixed image produce per-frame
+invalid-metric statuses rather than aborting otherwise independent frames.
+
+For incremental Zarr writes, store affine metadata and restore VoxelData with
+`confusius.io.load`; plain `xarray.open_zarr` does not rebuild custom indexes:
+
+```python
+def storage_view(image):
+    index = image.xindexes["z"]
+    return image.drop_vars(["z", "y", "x"]).assign_attrs(
+        voxel_to_world=index.voxel_to_world.tolist(),
+        voxel_to_world_units=index.units,
+    )
+
+tree = xr.DataTree.from_dict({
+    "images": storage_view(result.registered).to_dataset(name="image"),
+    "validity": storage_view(result.valid).to_dataset(name="valid"),
+    "diagnostics": result.diagnostics,
+})
+tree.to_zarr("registration.zarr", compute=False).compute()
+# confusius.io.load("registration.zarr", group="images", variable="image").
+```
+
+Use **one DataTree/Dataset write** for related outputs. Separate
+`to_zarr(compute=False)` calls can independently optimize/clone the fitting graphs,
+even when later passed together to `dask.compute`; that can repeat registration.
+Add map/stage datasets as sibling DataTree groups to retain different spatial grids.
+
+Small CPU/CUDA and distributed tests cover bounded source loading and Zarr round
+trips. They are not a measured full-recording peak-RAM/VRAM qualification on data
+larger than physical RAM; benchmark that workload before production deployment.
+Complex IQ and distributed fitting of one spatial volume remain unsupported.
 
 ## Development and benchmarks
 

@@ -9,7 +9,9 @@ See the [public API](README.md#voxregregister) for usage and the function's
 
 - Moving data is `(k, j, i)` or `(time, k, j, i)`; fixed data is spatial-only.
   A recording without explicit fixed uses its first frame, preserved exactly.
-- Inputs are finite, real, NumPy-backed VoxelData with ConfUSIus length units.
+- Eager fitting inputs are finite real NumPy-backed VoxelData with ConfUSIus
+  length units. Dask recordings execute as bounded eager time tasks; metadata
+  validation remains eager and data-dependent checks are deferred.
   Native spatial coordinates
   are uniform, monotonic integers; offsets, crops, strides and reversal are supported.
 - Fixed/moving shapes, spacings, origins and orientations may differ. Geometry
@@ -286,7 +288,7 @@ Coefficients are prepared once per native source batch. Per-frame offsets and
 scales preserve small contrast around large DC values and protect intermediate
 solves from overflow. Preparation and evaluation stay in torch float64 on the
 selected device. Source-sized coefficient storage and bounded query chunks
-limit temporary gather storage; outputs remain eager. There is no CUDA-to-CPU
+limit temporary gather storage within each eager frame batch. There is no CUDA-to-CPU
 interpolation fallback. Integer knots return original samples exactly.
 
 Cubic stencil extension does not change geometric support or outside fills.
@@ -295,8 +297,8 @@ range. Integer cubic samples within `32 * float64_epsilon * max(1, abs(value))`
 of a half-integer are snapped to that half-integer before nearest-even rounding
 and dtype clipping; this stabilizes exact ties against coefficient roundoff.
 Floating outputs are not snapped. Fitting and displacement-field interpolation
-remain linear. CPU/CUDA interpolation oracle checks pass; performance and a clean
-full CUDA suite remain unqualified. See [current validation](VALIDATION.md#intensity-scaling).
+remain linear. CPU/CUDA interpolation oracle checks pass; performance remains
+unqualified. See [current validation](VALIDATION.md).
 
 Output uses the fixed grid and moving intensity dtype/units/time labels. Spatial
 pairs acquire no synthetic time axis. Out-of-bounds output is filled with the
@@ -305,18 +307,39 @@ is opt-in: linear matrices or complete forward/inverse SyN displacement fields
 on the fixed/moving grids, respectively.
 
 Public registration and resampling default to `device="auto"`. A shared
-preparation helper resolves that choice once per public call using CUDA
-availability, before batch sizing or device allocations. Explicit CPU does not
+preparation helper resolves that choice once per eager public call, or within each
+lazy task, using CUDA availability before device allocations. Explicit CPU does not
 query CUDA availability; unavailable explicit CUDA raises. Prepared registration
-settings carry only a concrete CPU/CUDA choice, shared across all stages. Linear
-and SyN diagnostics, including pipeline summary and per-stage datasets, record
-that choice in `attrs["device"]`. Resampling retains its image/mask return contract.
+settings carry only a concrete CPU/CUDA choice, shared across all stages. Eager
+linear/SyN diagnostics record that choice in `attrs["device"]`; lazy summary/stage
+datasets expose per-frame `execution_device`. Resampling retains its image/mask
+return contract.
 CUDA execution errors and out-of-memory failures propagate; there is no retry or
-implicit CPU migration. Outputs remain NumPy-backed on CPU. Existing benchmark
-adapters retain explicit devices. Lazy execution is not implemented yet; its
-future worker-local resolution and GPU concurrency policy remain roadmap work.
+implicit CPU migration. Eager outputs remain NumPy-backed on CPU; lazy results
+project Dask blocks from one shared eager task per bounded time batch. Existing
+benchmark adapters retain explicit devices.
 
-Automatic batching uses a CPU cap and conservative CUDA memory estimates;
+`lazy.py` assembles complete source volumes, masks and maps without whole-recording
+conversion, then reuses the eager model/stage dispatcher. Raw delayed array blocks
+preserve shared graph keys through chained resampling; independently optimizing
+xarray collections would clone fits. A shared reference dependency preserves
+global first-frame behavior. Geometry/labels/options are validated before task
+creation; numeric seeds, finite scans, moments and conditioning run within tasks.
+Task-local devices, batch sizes, centers and timings are lazy diagnostic variables,
+not prematurely computed attributes. Callbacks run on workers with global indices.
+
+Lazy tasks follow the moving image's temporal chunks, falling back to time-chunked
+maps/masks/seeds or an explicit batch size/one frame without temporal chunks.
+Worker-local eager batching uses the existing CPU/CUDA policy unless explicitly
+overridden, independently of task size. Auxiliary chunks cannot exceed the largest
+primary task chunk; storage/prefetch memory remains scheduler-dependent.
+Local file leases and distributed scheduler semaphores conservatively serialize
+work per host CPU/physical GPU. One DataTree Zarr write shares images, masks, maps
+and diagnostics without persisting the recording. Independent deferred Zarr writes
+can clone fitting graphs. See [execution and storage contracts](README.md#lazy-recordings-and-resampling);
+larger-than-RAM peak-memory qualification remains pending.
+
+Eager automatic batching uses a CPU cap and conservative CUDA memory estimates;
 `batch_size` overrides it. It is not an autotuner or an OOM retry. Full CPU outputs
 and optional dense exports are not bounded by the batch size. Two equal-grid
 float64 SyN world fields alone cost 12× float32 image storage.
@@ -359,6 +382,7 @@ precision, optimizers, masks, convergence or output conventions.
 | [geometry.py](src/voxreg/geometry.py) | VoxelData validation and array-position geometry |
 | [transforms.py](src/voxreg/transforms.py) | Linear parameterization, scaling and seed constraints |
 | [resampling.py](src/voxreg/resampling.py) | Offline world-pull application on CPU/CUDA |
+| [lazy.py](src/voxreg/lazy.py) | Shared bounded Dask tasks, diagnostic projections and execution limits |
 | [interpolation.py](src/voxreg/interpolation.py) | Final-image cubic coefficients, evaluation and dtype restoration |
 | [sampling.py](src/voxreg/sampling.py) | Physical pull sampling and matrix conversion |
 | [registration.py](src/voxreg/registration.py) | Public API, validation, preparation and single-model/stage dispatch |

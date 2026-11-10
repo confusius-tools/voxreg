@@ -2,6 +2,7 @@
 
 from typing import cast
 
+import dask.array as da
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
@@ -53,13 +54,13 @@ def validate_registration_geometry(data: xr.DataArray) -> None:
     Parameters
     ----------
     data : xarray.DataArray
-        NumPy-backed spatial or time-dependent VoxelData. Boolean masks are also
+        NumPy- or Dask-backed spatial or time-dependent VoxelData. Boolean masks are also
         accepted here; registration validates intensity types separately.
 
     Raises
     ------
     TypeError
-        If the input is not a NumPy-backed DataArray or native indices are not integers.
+        If the input has an unsupported array backend or noninteger native indices.
     ValueError
         If geometry, dimensions, units or coordinates are unsupported.
     """
@@ -71,8 +72,8 @@ def validate_registration_geometry(data: xr.DataArray) -> None:
         )
     if any(size == 0 for size in data.shape):
         raise ValueError("VoxelData dimensions must be nonempty.")
-    if not isinstance(data.data, np.ndarray):
-        raise TypeError("This prototype requires NumPy-backed VoxelData.")
+    if not isinstance(data.data, (np.ndarray, da.Array)):
+        raise TypeError("Expected NumPy- or Dask-backed VoxelData.")
     index = data.xindexes.get("z")
     if not isinstance(index, VoxelToWorldIndex) or any(
         data.xindexes.get(world) is not index for world in WORLD_DIMS

@@ -167,9 +167,13 @@ def test_units_and_unsupported_dimensions():
         validate_registration_geometry(poses)
 
 
-def test_valid_confusius_dask_data_is_not_supported(recording_factory):
+def test_valid_confusius_dask_data_preserves_lazy_geometry(recording_factory):
     data, _, _ = recording_factory()
     lazy = data.chunk({"time": 1})
     validate_voxeldata(lazy)
-    with pytest.raises(TypeError, match="NumPy-backed"):
-        register(lazy)
+    result = register(lazy, max_iterations=1, progress=False, device="cpu")
+    validate_voxeldata(result.registered)
+    validate_voxeldata(result.valid)
+    np.testing.assert_array_equal(
+        result.registered.isel(time=0).compute(), data.isel(time=0)
+    )

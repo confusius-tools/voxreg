@@ -27,8 +27,9 @@ class RegistrationSettings:
     """Carry shared registration settings between the entry point and stages.
 
     This internal execution record owns no image data and defines no workflow
-    presets. Attribute names and units match the public register API; device is
-    already resolved to CPU or CUDA. Stage overrides create a new record with
+    presets. Attribute names and units match the public register API; eager engines
+    receive resolved CPU/CUDA devices, while lazy graphs defer auto selection.
+    Stage overrides create a new record with
     dataclasses.replace.
     """
 
@@ -60,7 +61,7 @@ class RegistrationSettings:
     syn_total_sigma: float = 0.5
     convergence_window_size: int = 50
     convergence_minimum_value: float = 1e-06
-    device: Literal["cpu", "cuda"] = "cpu"
+    device: Literal["auto", "cpu", "cuda"] = "cpu"
     progress: Literal["auto"] | bool | Callable[[int, int], None] | None = "auto"
     metric_callback: (
         Callable[
@@ -70,6 +71,7 @@ class RegistrationSettings:
         | None
     ) = None
     metric_interval: int = 10
+    allow_zero_moving: bool = False
 
 
 @dataclass(frozen=True)
@@ -295,6 +297,7 @@ def prepare_fitting_images(
     implicit_fixed: bool = False,
     moving_winsorize_percentiles: Sequence[float] | None = None,
     fixed_winsorize_percentiles: Sequence[float] | None = None,
+    allow_zero_moving: bool = False,
 ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     """Prepare float32 fitting images while preserving double/integer contrast.
 
@@ -317,6 +320,10 @@ def prepare_fitting_images(
         Lower/upper percentiles in [0, 100], independently per native image before
         intensity transforms. Bounds include values outside masks; interpolation
         is NumPy's linear method. Clipping is disabled when not provided.
+
+    allow_zero_moving : bool, default: False
+        Whether to allow an all-zero moving batch against a nonconstant fixed
+        image, so lazy batches retain per-frame invalid-metric isolation.
 
     Returns
     -------
@@ -354,7 +361,7 @@ def prepare_fitting_images(
     )
     fit_raw = raw.astype(preprocessing_dtype, copy=False)
     target_raw = target_raw.astype(preprocessing_dtype, copy=False)
-    if not np.any(fit_raw):
+    if not allow_zero_moving and not np.any(fit_raw):
         raise ValueError("An all-zero recording cannot be registered.")
     fit_raw = _winsorize_intensities(
         fit_raw, moving_winsorize_percentiles, spatial_axes, "moving"

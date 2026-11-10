@@ -22,6 +22,9 @@ classifiers = [
 ]
 dependencies = [
     "confusius>=0.8.0",
+    "dask[array]>=2026.8.0",
+    "distributed>=2026.8.0",
+    "filelock>=3.20",
     "numpy>=2.3.4",
     "scipy>=1.16.3",
     "torch>=2.14.1",

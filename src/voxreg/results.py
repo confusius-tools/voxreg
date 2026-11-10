@@ -30,6 +30,7 @@ class RegistrationResult:
     ----------
     registered : xarray.DataArray
         Original intensities resampled on the fixed grid, retaining moving dtype.
+        Dask inputs retain lazy time blocks shared with maps and diagnostics.
         Integer output is rounded to nearest-even and clipped to its type range.
     valid : xarray.DataArray
         Boolean VoxelData mask of valid moving-image sample centers.
@@ -46,8 +47,12 @@ class RegistrationResult:
         For staged calls, n_iterations sums all stages, while objective and
         model-specific variables describe the final model. stage_diagnostics
         retains the original counts and statuses of each stage separately.
-        attrs["device"] records the resolved CPU/CUDA execution choice in the
-        summary and in each stage dataset.
+        Eager attrs["device"] records the resolved CPU/CUDA choice. Lazy results
+        expose execution_device, execution_task_size, execution_batch_size and
+        execution_batch_start variables. Tasks follow source chunks; fitting batch
+        sizes can be smaller. Timings in batch_*_seconds repeat per task frame. Compute or
+        store related outputs jointly to avoid repeated fitting; one DataTree
+        write preserves sharing across image, map and diagnostic groups.
     inverse_transforms : xarray.DataArray, optional
         None unless register(return_transforms=True). Linear models: inverse
         world z/y/x pull matrices. SyN: complete moving-world-to-fixed-world

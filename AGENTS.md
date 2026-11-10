@@ -6,7 +6,8 @@ This file guides AI coding agents working in this repository.
 
 voxreg is a Python library for batched physical-space image registration of VoxelData
 arrays, including translation, rigid, affine, and symmetric normalization (SyN)
-registration, resampling, and motion correction. Registration fitting runs in PyTorch on
+registration, resampling, and motion correction. Dask recordings execute as bounded
+eager time batches. Registration fitting runs in PyTorch on
 CPU or CUDA; spatial data and geometry use VoxelData.
 
 This is a **research prototype**. Anatomical registration quality is not yet validated.
@@ -17,7 +18,8 @@ they improve the design.
 
 **VoxelData** is a canonical `xarray.DataArray` model for spatially referenced voxel
 data. voxreg accepts NumPy-backed VoxelData images with dimensions `(k, j, i)` and
-recordings with dimensions `(time, k, j, i)`. A VoxelData array has native voxel indices
+NumPy- or Dask-backed recordings with dimensions `(time, k, j, i)`. Lazy resampling
+also supports spatial images and labelled maps. A VoxelData array has native voxel indices
 `k`/`j`/`i` last and a `VoxelToWorldIndex` attached to `z`/`y`/`x` that derives world
 coordinates from voxel indices and the voxel-to-world affine. Geometry and transform
 values in voxreg use **z/y/x, mm**.
@@ -28,13 +30,14 @@ VoxelData and `create_voxeldata` to construct it. Do not add plain-coordinate fa
 or code that silently accepts a spatial DataArray without its `VoxelToWorldIndex`.
 Invalid spatial inputs should raise a descriptive exception.
 
-VoxelData images passed to registration must be NumPy-backed and have supported
-physical length units (m, cm, mm, um/µm or nm). Internal geometry is normalized to
+VoxelData images must have supported physical length units (m, cm, mm, um/µm or nm). Internal geometry is normalized to
 mm while spatial outputs retain reference-grid coordinate units. Registration supports spatial images `(k, j, i)` and recordings
 `(time, k, j, i)`; masks follow the shapes and time-label rules documented by
 `voxreg.register`. Output images and masks remain VoxelData on their documented output
 grids. Keep geometry conversions at explicit boundaries and preserve coordinate, affine,
-and time-label semantics.
+and time-label semantics. Lazy tasks use complete eager volumes, per-image
+conditioning and task-time callbacks. Tasks follow temporal source chunks, which
+must fit worker RAM; fitting batches are selected independently inside workers. Preserve shared computation across lazy images, masks, maps and diagnostics.
 
 ## Commands
 
@@ -67,6 +70,7 @@ src/voxreg/
 ├── pyramid.py      # physical multi-resolution image and field levels
 ├── resampling.py   # public physical-space resampling
 ├── registration.py # public registration API, validation, preparation and dispatch
+├── lazy.py         # shared bounded Dask tasks, projections and concurrency limits
 ├── preparation.py  # shared settings, prepared inputs, conditioning and batch policy
 ├── results.py      # result containers, shared statuses and native output assembly
 ├── linear.py       # translation/rigid/affine fitting and pyramid refinement

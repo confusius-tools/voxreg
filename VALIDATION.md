@@ -149,8 +149,39 @@ implicit references, float32/float64/integer frames, batch independence, signed
 outliers, endpoint percentiles, invalid bounds, percentile overflow and constant
 image handling are covered. Frozen-optimizer cases verify native centroid weights
 through stages. The full CUDA-enabled suite passes: 1532 passed; all pre-commit
-checks pass. No real-data clipping preset, performance or lazy-execution
-qualification is claimed; Dask support remains separate roadmap work.
+checks passed at that point. No real-data clipping preset or performance
+qualification is claimed; lazy parity is covered below.
+
+## Lazy execution
+
+The full CUDA-enabled suite passes with 1652 tests, including 120 focused lazy
+checks; all pre-commit checks pass. This supersedes the earlier full-run timeout
+under high host load. Public APIs are compared against eager outputs for all
+models, staged pyramids, unequal/oblique/strided grids, masks, clipping/log1p,
+implicit/explicit references and lazy seeds. Source reads are deferred and selected
+by frame; shared images/maps/diagnostics and chained resampling fit once per batch.
+CPU/CUDA matrices and shared/per-frame dense maps retain units, dtype, interpolation
+and support. Invalid geometry/options/labels fail at graph construction; numeric
+seed/intensity failures are deferred. Zero batches retain frame failure isolation.
+
+Temporal chunks define tasks independently of fitting batches. Tests verify
+irregular and empty chunks, moving versus auxiliary chunk inference, spatial/map
+broadcasting, and explicit fitting limits smaller than input chunks. Worker-side
+batch-policy probes demonstrate that selection occurs at execution, not graph
+construction. Task sizes and each frame's actual fitting-group size are recorded
+separately, including smaller final groups; numerical agreement gates are unchanged.
+
+Tests exercise synchronous, threaded, multiprocessing and distributed execution,
+including separate worker processes, worker callbacks and task-time auto devices.
+Local fitting concurrency is checked explicitly; distributed tasks use one
+scheduler semaphore lease per host CPU/physical GPU. Joint DataTree Zarr writes
+are checked for one fit per batch and round-trip native geometry with ConfUSIus
+loading. Independent deferred writes can clone graphs and repeat fitting, so the
+storage recipe deliberately uses one writer. Live-source tracking for 4 versus
+24 frames verifies bounded retained volumes during incremental storage; it is not
+a measured larger-than-physical-RAM or full VRAM qualification. Source storage
+blocks, worker concurrency and scheduler prefetch still require workload-specific
+memory measurements. Multi-host/GPU scaling and performance remain unqualified.
 
 ## Acceptance
 
@@ -220,6 +251,8 @@ alone does not demonstrate better spatial registration.
   Small ROIs can vanish at coarse levels or yield unreliable local statistics.
   Shared masks apply to all stages; soft masks and stage-specific ROI overrides
   are not implemented. Mask support does not establish anatomical correspondence.
-- Batching does not bound full CPU inputs/outputs or optional dense exports.
+- Eager batching does not bound full CPU inputs/outputs or optional dense exports.
+  Lazy execution bounds eager fitting tasks, but complete-volume working state,
+  storage blocks and scheduler prefetch must fit worker memory.
 - Synthetic results do not establish anatomical accuracy. CUDA, other platforms,
   large volumes and full recordings require their own measurements.

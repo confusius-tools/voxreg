@@ -42,6 +42,7 @@ from voxreg.sampling import (
 from voxreg.stages import Stage
 from voxreg.transforms import (
     configure_transform,
+    validate_initial_transform_metadata,
 )
 
 
@@ -91,7 +92,9 @@ def register(
     Parameters
     ----------
     moving : xarray.DataArray
-        Finite real NumPy-backed VoxelData, (k, j, i) or (time, k, j, i).
+        Finite real VoxelData: NumPy-backed (k, j, i) image pairs or NumPy/Dask
+        (time, k, j, i) recordings. Dask-backed images/masks/seeds return lazy
+        recording results; spatial registration pairs remain eager.
         World coordinates may use ConfUSIus length units (m, cm, mm, um/µm, nm);
         fixed, moving and masks may use different units. Geometry is normalized
         to mm. Output images retain the fixed grid's native coordinates and units.
@@ -234,7 +237,11 @@ def register(
         None (default) chooses automatically: CPU uses up to 32 frames; CUDA uses
         available VRAM (including reusable Torch cache), the larger image size and
         a conservative method-specific working-set estimate with 50% headroom.
-        Performance caps are 256 for CUDA linear slice pairs, 32 for SyN or volumes;
+        Lazy tasks follow source time chunks; this option controls fitting batches
+        within each task, not input chunk size. Not provided uses the existing
+        CPU/CUDA policy inside workers. Without temporal Dask chunks, task sizes
+        fall back to this explicit value or one frame.
+        Eager performance caps are 256 for CUDA linear slice pairs, 32 for SyN or volumes;
         automatic CUDA batches round down to a power of two. diagnostics.attrs
         records the selected batch_size. This is not a runtime autotuner or a
         guarantee against OOM under concurrent allocations; one frame must fit.
@@ -287,7 +294,9 @@ def register(
         CPU bypasses CUDA selection; unavailable explicit CUDA is an error.
         CUDA execution errors, including out-of-memory, propagate without a CPU
         retry. The concrete device is recorded in diagnostics.attrs["device"]
-        and in each stage's diagnostics. Outputs remain NumPy-backed on CPU.
+        and in each stage's diagnostics for eager calls. Lazy calls resolve devices
+        in workers and report per-frame execution_device variables. Lazy outputs
+        stay Dask-backed; no CUDA errors are retried on CPU.
     progress : {"auto"} or bool or callable, default: "auto"
         Auto shows the frame bar only for multiple moving frames, remaining quiet
         for a spatial pair or a single-frame recording. True explicitly displays
@@ -444,11 +453,50 @@ def register(
         syn_total_sigma=syn_total_sigma,
         convergence_window_size=convergence_window_size,
         convergence_minimum_value=convergence_minimum_value,
-        device=resolve_device(device),
+        device=device,
         progress=progress,
         metric_callback=metric_callback,
         metric_interval=metric_interval,
     )
+    from voxreg.lazy import has_lazy_data, register_lazy
+
+    if has_lazy_data(
+        moving, fixed, fixed_mask, moving_mask, initial_transform, initialization
+    ):
+        return register_lazy(moving, fixed, transform, settings)
+    settings = replace(settings, device=resolve_device(device))
+    return execute_registration(moving, fixed, transform, settings)
+
+
+def execute_registration(
+    moving: xr.DataArray,
+    fixed: xr.DataArray | None,
+    transform: str | Stage | Sequence[str | Stage],
+    settings: RegistrationSettings,
+) -> RegistrationResult:
+    """Dispatch one eager recording batch through its complete model pipeline.
+
+    Parameters
+    ----------
+    moving : xarray.DataArray
+        Eager native recording or spatial image.
+    fixed : xarray.DataArray, optional
+        Shared native reference; not provided selects the first frame.
+    transform : str or Stage or sequence of str or Stage
+        Model pipeline.
+    settings : RegistrationSettings
+        Effective eager settings with a resolved device.
+
+    Returns
+    -------
+    RegistrationResult
+        Complete eager outputs and diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If a model or effective settings are invalid.
+    """
     if isinstance(transform, Stage) or (
         isinstance(transform, Sequence) and not isinstance(transform, (str, bytes))
     ):
@@ -593,10 +641,12 @@ def run_stage(
             raise TypeError(
                 f"{name} intensities must be real integer or floating-point values up to float64."
             )
-        if not np.isfinite(data.values).all():
+        if not validate_only and not np.isfinite(data.values).all():
             raise ValueError(f"{name} intensities must be finite.")
-        if integer and (
-            int(data.values.min()) < -(2**53) or int(data.values.max()) > 2**53
+        if (
+            not validate_only
+            and integer
+            and (int(data.values.min()) < -(2**53) or int(data.values.max()) > 2**53)
         ):
             raise ValueError(
                 f"{name} integers must lie within [-2**53, 2**53] for exact floating-point representation."
@@ -681,12 +731,8 @@ def run_stage(
         raise TypeError("metric_callback must be callable or None.")
     if type(metric_interval) is not int or metric_interval < 1:
         raise ValueError("metric_interval must be a positive integer.")
-    if validate_only:
-        return None
-    if batch_size is None:
-        batch_size = choose_batch_size(moving, fixed, transform, device)
-    if isinstance(progress, str):
-        progress = moving.sizes["time"] > 1
+    if device not in ("auto", "cpu", "cuda"):
+        raise ValueError("device must be auto, cpu or cuda.")
     if initialization is not None and initial_transform is not None:
         raise ValueError("Use initialization or initial_transform, not both.")
     if initialization is not None:
@@ -705,12 +751,19 @@ def run_stage(
                     "initialization must be a model-compatible (4, 4) or (N, 4, 4) matrix, or a named mode."
                 )
             initial_transform, initialization = initialization, None
+    if initialization == "align_planes" and (
+        fixed.sizes["k"] != 1 or moving.sizes["k"] != 1
+    ):
+        raise ValueError("align_planes is only defined for two k=1 slices.")
+    validate_initial_transform_metadata(initial_transform, moving)
+    if validate_only:
+        return None
+    if batch_size is None:
+        batch_size = choose_batch_size(moving, fixed, transform, device)
+    if isinstance(progress, str):
+        progress = moving.sizes["time"] > 1
     center = center_override
     if initialization is not None:
-        if initialization == "align_planes" and (
-            fixed.sizes["k"] != 1 or moving.sizes["k"] != 1
-        ):
-            raise ValueError("align_planes is only defined for two k=1 slices.")
         mode = "center_geometry" if initialization == "align_planes" else initialization
         fixed_position = compute_center_positions(fixed, mode, "fixed")[0]
         moving_positions = compute_center_positions(moving, mode, "moving")
@@ -756,35 +809,6 @@ def run_stage(
     )
     initial = None
     if initial_transform is not None:
-        if isinstance(initial_transform, xr.DataArray):
-            if initial_transform.dims not in (
-                ("world_out", "world_in"),
-                ("time", "world_out", "world_in"),
-            ):
-                raise ValueError(
-                    "initial_transform has unsupported labeled dimensions."
-                )
-            for axis in ("world_out", "world_in"):
-                if axis in initial_transform.coords and not np.array_equal(
-                    initial_transform[axis], ["z", "y", "x", "1"]
-                ):
-                    raise ValueError("initial_transform world axes must be z/y/x/1.")
-            if (
-                "time" in initial_transform.dims
-                and "time" in initial_transform.coords
-                and not initial_transform.get_index("time").equals(
-                    moving.get_index("time")
-                )
-            ):
-                raise ValueError(
-                    "initial_transform time labels must match moving in order."
-                )
-            for key, expected in (("convention", "fixed-world-to-moving-world pull"),):
-                if (
-                    key in initial_transform.attrs
-                    and initial_transform.attrs[key] != expected
-                ):
-                    raise ValueError(f"initial_transform {key} must be {expected!r}.")
         initial = recover_initial_parameters(
             initial_transform, plane, moving.sizes["time"]
         )
@@ -805,6 +829,7 @@ def run_stage(
         implicit_fixed=implicit_fixed,
         moving_winsorize_percentiles=moving_winsorize_percentiles,
         fixed_winsorize_percentiles=fixed_winsorize_percentiles,
+        allow_zero_moving=settings.allow_zero_moving,
     )
     timings = {
         "prepare": perf_counter() - start,
