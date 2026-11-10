@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import hashlib
 import html
 import importlib.metadata
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import time
 import traceback
+from itertools import product
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,7 @@ import psutil
 import torch
 import xarray as xr
 import zarr
+from _benchmark_cache import evict_input_cache
 from distributed import Client, LocalCluster, get_task_stream
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
@@ -38,7 +41,7 @@ from voxeldata import create_voxeldata, load_array
 from voxreg import register, resample
 from voxreg.preparation import choose_batch_size
 
-PROTOCOL = "voxreg-lazy-benchmark-v1"
+PROTOCOL = "voxreg-lazy-benchmark-v2"
 """Streaming protocol, separate from resident cross-backend comparisons."""
 SPACING = np.array([0.2, 0.1, 0.1])
 """Synthetic world z/y/x voxel spacing in millimetres."""
@@ -142,7 +145,7 @@ def stage_inputs(
     dict
         Affine, byte counts, payload digest and input provenance.
     """
-    directory.mkdir()
+    directory.mkdir(parents=True)
     affine = np.diag([*SPACING, 1.0])
     affine[:3, 3] = -(np.array(shape) - 1) * SPACING / 2
     group = zarr.open_group(directory / "recording.zarr", mode="w", zarr_format=2)
@@ -284,6 +287,23 @@ def configure_worker(config: dict[str, Any]) -> dict[str, Any]:
             cudnn_allow_tf32=torch.backends.cudnn.allow_tf32,
         )
     return result
+
+
+def count_worker_tasks(dask_worker: Any) -> int:
+    """Collect completed results and count retained Dask task data.
+
+    Parameters
+    ----------
+    dask_worker : distributed.Worker
+        Benchmark worker supplied by `Client.run`.
+
+    Returns
+    -------
+    int
+        Retained in-memory or spilled task keys; zero is required before eviction.
+    """
+    gc.collect()
+    return len(dask_worker.data)
 
 
 def gpu_peaks() -> dict[str, Any]:
@@ -602,7 +622,12 @@ def worker(config_path: Path, phase: str) -> int:
     """
     config = json.loads(config_path.read_text())
     directory = config_path.parent
-    record: dict[str, Any] = {"phase": phase, "status": "running"}
+    record: dict[str, Any] = {
+        "phase": phase,
+        "status": "running",
+        "cache_evictions": [],
+        "measurement_active": False,
+    }
     write_json(directory / f"{phase}.json", record)
     output = directory / f"{phase}.zarr"
     try:
@@ -631,13 +656,49 @@ def worker(config_path: Path, phase: str) -> int:
             calls = config["runs"] if phase == "timing" else 1
             times = []
             for index in range(calls):
-                started = time.perf_counter()
-                if phase == "accuracy":
-                    with get_task_stream(client=client) as stream:
-                        execute(config, output)
+                # Released futures may take a moment to disappear from worker caches.
+                for _ in range(100):
+                    cached = client.run(count_worker_tasks)
+                    if not any(cached.values()):
+                        break
+                    time.sleep(0.05)
                 else:
-                    execute(config, output)
-                seconds = time.perf_counter() - started
+                    record["retained_worker_tasks"] = cached
+                    raise RuntimeError(
+                        "Cold-input check failed: previous Dask task data is still retained."
+                    )
+                eviction = {
+                    **evict_input_cache(Path(config["inputs"])),
+                    "worker_cached_tasks": cached,
+                }
+                record["cache_evictions"].append(eviction)
+                write_json(directory / f"{phase}.json", record)
+                if not eviction["verified"]:
+                    raise RuntimeError(
+                        f"Cold-input verification failed: {eviction['resident_pages_after']} resident pages remain. "
+                        "Use disk-backed inputs; tmpfs or pinned pages cannot be qualified as cold."
+                    )
+                if phase == "memory":
+                    record["baseline_process_tree_rss_bytes"] = process_tree_rss(
+                        os.getpid()
+                    )
+                record["measurement_active"] = True
+                write_json(directory / f"{phase}.json", record)
+                started = time.perf_counter()
+                try:
+                    if phase == "accuracy":
+                        with get_task_stream(client=client) as stream:
+                            execute(config, output)
+                    else:
+                        execute(config, output)
+                finally:
+                    seconds = time.perf_counter() - started
+                    record["measurement_active"] = False
+                    if phase == "memory":
+                        record["end_process_tree_rss_bytes"] = process_tree_rss(
+                            os.getpid()
+                        )
+                    write_json(directory / f"{phase}.json", record)
                 if phase == "timing":
                     times.append(seconds)
                     record["wall_seconds"] = times
@@ -736,6 +797,7 @@ def measure(config_path: Path, phase: str, script: Path) -> dict[str, Any]:
         "MKL_NUM_THREADS": str(config["threads"]),
     }
     peak = 0
+    result_path = config_path.parent / f"{phase}.json"
     with (config_path.parent / f"{phase}.log").open("w") as log:
         process = subprocess.Popen(
             [
@@ -754,14 +816,15 @@ def measure(config_path: Path, phase: str, script: Path) -> dict[str, Any]:
         )
         try:
             while process.poll() is None:
-                if phase == "memory":
-                    peak = max(peak, process_tree_rss(process.pid))
+                if phase == "memory" and result_path.exists():
+                    state = json.loads(result_path.read_text())
+                    if state.get("measurement_active"):
+                        peak = max(peak, process_tree_rss(process.pid))
                 time.sleep(0.02 if phase == "memory" else 0.2)
         except BaseException:
             os.killpg(process.pid, signal.SIGTERM)
             process.wait()
             raise
-    result_path = config_path.parent / f"{phase}.json"
     record = (
         json.loads(result_path.read_text())
         if result_path.exists()
@@ -769,11 +832,75 @@ def measure(config_path: Path, phase: str, script: Path) -> dict[str, Any]:
     )
     record["exit_code"] = process.returncode
     if phase == "memory":
+        baseline = record.get("baseline_process_tree_rss_bytes", 0)
+        peak = max(peak, baseline, record.get("end_process_tree_rss_bytes", 0))
         record["peak_process_tree_rss_bytes"] = peak
+        record["peak_rss_increment_bytes"] = peak - baseline
     if process.returncode and record["status"] != "quality_failed":
         record["status"] = "error"
     write_json(result_path, record)
     return record
+
+
+def summarize_scaling(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compare passing input sizes only within an identical execution policy.
+
+    Parameters
+    ----------
+    cases : list of dict
+        Completed or in-progress benchmark cases.
+
+    Returns
+    -------
+    list of dict
+        Descriptive input/absolute/incremental RSS scaling; no automatic memory
+        qualification or larger-than-RAM claim is inferred from these ratios.
+    """
+    groups: dict[tuple, list[dict[str, Any]]] = {}
+    policy_fields = (
+        "device",
+        "chunk_frames",
+        "effective_batch_size",
+        "workers",
+        "worker_memory_bytes",
+        "threads",
+    )
+    for case in cases:
+        memory = case.get("memory", {})
+        if case["status"] != "passed" or any(
+            memory.get(name) is None
+            for name in (
+                "peak_process_tree_rss_bytes",
+                "baseline_process_tree_rss_bytes",
+            )
+        ):
+            continue
+        policy = tuple(case["config"].get(name) for name in policy_fields)
+        groups.setdefault(policy, []).append(case)
+    summaries = []
+    for policy, group in groups.items():
+        if len(group) < 2:
+            continue
+        group.sort(key=lambda case: case["config"]["input_image_bytes"])
+        sizes = [case["config"]["input_image_bytes"] for case in group]
+        peaks = [case["memory"]["peak_process_tree_rss_bytes"] for case in group]
+        baselines = [
+            case["memory"]["baseline_process_tree_rss_bytes"] for case in group
+        ]
+        increments = [case["memory"]["peak_rss_increment_bytes"] for case in group]
+        summaries.append(
+            {
+                **dict(zip(policy_fields, policy, strict=True)),
+                "input_bytes": sizes,
+                "baseline_rss_bytes": baselines,
+                "peak_rss_bytes": peaks,
+                "peak_rss_increment_bytes": increments,
+                "input_growth_ratio": sizes[-1] / sizes[0],
+                "peak_rss_growth_ratio": peaks[-1] / peaks[0] if peaks[0] else None,
+                "rss_increment_growth_bytes": increments[-1] - increments[0],
+            }
+        )
+    return summaries
 
 
 def report(directory: Path, result: dict[str, Any]) -> None:
@@ -791,6 +918,7 @@ def report(directory: Path, result: dict[str, Any]) -> None:
     None
         JSON and HTML reports are written without changing earlier artifacts.
     """
+    result["scaling"] = summarize_scaling(result["cases"])
     write_json(directory / "results.json", result)
     rows = []
     for case in result["cases"]:
@@ -800,24 +928,35 @@ def report(directory: Path, result: dict[str, Any]) -> None:
             if timing
             else "—"
         )
-        peak_bytes = case.get("memory", {}).get("peak_process_tree_rss_bytes")
-        peak = f"{peak_bytes / 2**30:.3f}" if peak_bytes is not None else "—"
-        rate = (
-            result["inputs"]["image_bytes"] / 2**30 / float(np.median(timing))
-            if timing
-            else 0
+        memory = case.get("memory", {})
+        peak = memory.get("peak_process_tree_rss_bytes")
+        baseline = memory.get("baseline_process_tree_rss_bytes")
+        rss = (
+            f"{baseline / 2**30:.3f} → {peak / 2**30:.3f} (+{memory['peak_rss_increment_bytes'] / 2**30:.3f})"
+            if peak is not None and baseline is not None
+            else "—"
         )
-        rate_label = f"{rate:.3f}" if timing else "—"
+        size = case["config"]["input_image_bytes"] / 2**30
+        rate_label = (
+            f"{size / float(np.median(timing)):.3f}"
+            if timing and case["status"] == "passed"
+            else "—"
+        )
         first = f"{timing[0]:.3f}" if timing else "—"
         chunk = case["config"]["chunk_bytes"] / 2**20
         rows.append(
-            f"<tr><td>{html.escape(case['id'])}</td><td>{case['status']}</td><td>{chunk:.2f}</td><td>{duration}</td><td>{first}</td><td>{rate_label}</td><td>{peak}</td></tr>"
+            f"<tr><td>{html.escape(case['id'])}</td><td>{case['status']}</td><td>{size:.3f}</td><td>{chunk:.2f}</td><td>{duration}</td><td>{first}</td><td>{rate_label}</td><td>{rss}</td></tr>"
         )
+    scaling = "".join(
+        f"<li>{html.escape(summary['device'])}, chunk {summary['chunk_frames']} frames, batch {summary['effective_batch_size']}: input {summary['input_growth_ratio']:.2f}×; peak RSS {summary['peak_rss_growth_ratio']:.2f}×; incremental RSS growth {summary['rss_increment_growth_bytes'] / 2**30:.3f} GiB.</li>"
+        for summary in result["scaling"]
+        if summary["peak_rss_growth_ratio"] is not None
+    )
     (directory / "report.html").write_text(
-        "<!doctype html><meta charset=utf-8><title>Lazy voxreg benchmark</title><style>body{font:16px system-ui;margin:2em}td,th{padding:.6em;border-bottom:1px solid #ddd;text-align:left}table{border-collapse:collapse}</style><h1>Lazy voxreg benchmark</h1><p>Read → compute → one DataTree Zarr write. No cold-cache claim. Nonpassing cases are not qualified throughput.</p><table><tr><th>Case</th><th>Status</th><th>Chunk MiB</th><th>Median [min–max], s</th><th>First call, s</th><th>Input GiB/s</th><th>Peak process-tree RSS, GiB</th></tr>"
+        "<!doctype html><meta charset=utf-8><title>Lazy voxreg benchmark</title><style>body{font:16px system-ui;margin:2em}td,th{padding:.6em;border-bottom:1px solid #ddd;text-align:left}table{border-collapse:collapse}</style><h1>Cold-input lazy voxreg benchmark</h1><p>Verified cold input file pages → compute → one buffered DataTree Zarr write. Eviction/verification is outside timing. Nonpassing cases are not qualified throughput.</p><table><tr><th>Case</th><th>Status</th><th>Input GiB</th><th>Chunk MiB</th><th>Median [min–max], s</th><th>First call, s</th><th>Input GiB/s</th><th>RSS baseline → peak (+increment), GiB</th></tr>"
         + "".join(rows)
-        + f"</table><p>Overall status: {html.escape(result['status'])}. Diagnostic: {result['diagnostic']}. Logical input: {result['inputs']['image_bytes'] / 2**30:.3f} GiB.</p>"
-        + "<p>See results.json for first-call times, input/output bytes, GPU peaks, settings, accuracy and task-duration samples. RSS sums count shared pages repeatedly; GPU peaks are per worker, not a concurrent device-wide sum.</p>"
+        + f"</table><p>Overall status: {html.escape(result['status'])}. Diagnostic: {result['diagnostic']}.</p><h2>Fixed-policy size scaling</h2><ul>{scaling}</ul>"
+        + "<p>Scaling is descriptive, not proof of larger-than-RAM operation. See results.json for inputs, cache verification, GPU peaks, accuracy and task durations. RSS sums count shared pages repeatedly; GPU peaks are per worker, not a concurrent device-wide sum. File-page eviction does not clear storage-controller caches or make output writes durable.</p>"
     )
 
 
@@ -838,7 +977,7 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
     """
     parser = argparse.ArgumentParser(
         description=__doc__,
-        usage="%(prog)s --lazy --output OUTPUT [--size-gib N] [--devices cpu cuda] [--runs N]",
+        usage="%(prog)s --lazy --output OUTPUT [--size-gib 1 4] [--devices cpu cuda] [--runs N]",
     )
     advanced = parser.add_argument_group("advanced workload/memory overrides")
     parser.add_argument("--output", type=Path)
@@ -846,14 +985,15 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
     parser.add_argument(
         "--size-gib",
         type=float,
-        help="Opt into large files; omitted runs an eight-frame smoke case",
+        nargs="+",
+        help="Explicit input-size sweep, e.g. 1 4 GiB; omitted runs eight smoke frames",
     )
     advanced.add_argument("--shape", type=int, nargs=3)
     advanced.add_argument(
         "--chunk-mib",
         type=float,
         nargs="+",
-        help="Dask chunk targets; large default: 32 128 MiB, rounded to volumes",
+        help="Dask chunk targets; sized-input default: 128 MiB, fixed across sizes",
     )
     parser.add_argument(
         "--devices", choices=("cpu", "cuda"), nargs="+", default=["cpu", "cuda"]
@@ -878,25 +1018,33 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
             parser.error(f"--{name} must be positive")
     if args.batch_size is not None and args.batch_size < 1:
         parser.error("--batch-size must be positive")
-    for name in ("size_gib", "worker_memory_gib"):
-        value = getattr(args, name)
-        if value is not None and (not math.isfinite(value) or value <= 0):
-            parser.error(f"--{name.replace('_', '-')} must be finite and positive")
-        if value is not None and value > sys.maxsize / 2**30:
-            parser.error(f"--{name.replace('_', '-')} exceeds supported byte sizes")
+    for name, values in (
+        ("size-gib", args.size_gib or []),
+        ("worker-memory-gib", [args.worker_memory_gib]),
+    ):
+        if any(not math.isfinite(value) or value <= 0 for value in values):
+            parser.error(f"--{name} must be finite and positive")
+        if any(value > sys.maxsize / 2**30 for value in values):
+            parser.error(f"--{name} exceeds supported byte sizes")
+    if sys.platform != "linux" or not hasattr(os, "posix_fadvise"):
+        parser.error(
+            "Verified cold-input lazy benchmarks require Linux fadvise/mincore."
+        )
     shape = tuple(args.shape or ((32, 128, 128) if args.size_gib else (1, 24, 32)))
     if any(size < 2 for size in shape[1:]) or shape[0] < 1:
         parser.error("shape must be a k=1 plane or 3D volume with spatial axes >= 2")
     volume_bytes = math.prod(shape) * 4
     if volume_bytes > sys.maxsize:
         parser.error("shape exceeds supported volume byte sizes")
-    frames = (
-        max(2, math.ceil(args.size_gib * 2**30 / volume_bytes)) if args.size_gib else 8
+    frame_counts = (
+        sorted(
+            {max(2, math.ceil(size * 2**30 / volume_bytes)) for size in args.size_gib}
+        )
+        if args.size_gib
+        else [8]
     )
     targets = args.chunk_mib or (
-        [32, 128]
-        if args.size_gib
-        else [2 * volume_bytes / 2**20, 4 * volume_bytes / 2**20]
+        [128] if args.size_gib else [2 * volume_bytes / 2**20, 4 * volume_bytes / 2**20]
     )
     if any(
         not math.isfinite(value) or value <= 0 or value > sys.maxsize / 2**20
@@ -905,7 +1053,7 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
         parser.error("--chunk-mib targets must be finite and positive")
     chunk_frames = sorted(
         {
-            min(frames, max(1, math.ceil(value * 2**20 / volume_bytes)))
+            min(frame_counts[0], max(1, math.ceil(value * 2**20 / volume_bytes)))
             for value in targets
         }
     )
@@ -921,9 +1069,12 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
     ancestor = output.parent
     while not ancestor.exists():
         ancestor = ancestor.parent
-    if shutil.disk_usage(ancestor).free < frames * volume_bytes * 2.5 + 256 * 2**20:
+    required_disk = (
+        sum(frame_counts) + 1.5 * max(frame_counts)
+    ) * volume_bytes + 256 * 2**20
+    if shutil.disk_usage(ancestor).free < required_disk:
         parser.error(
-            "insufficient free disk for input plus one temporary result and safety margin"
+            "insufficient free disk for retained inputs plus one temporary result and safety margin"
         )
     output.mkdir(parents=True)
     frozen = output / "sources"
@@ -931,7 +1082,11 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
         ROOT / "src", frozen / "src", ignore=shutil.ignore_patterns("__pycache__")
     )
     (frozen / "benchmarks").mkdir()
-    for name in (f"benchmark_{operation}.py", "_benchmark_lazy.py"):
+    for name in (
+        f"benchmark_{operation}.py",
+        "_benchmark_lazy.py",
+        "_benchmark_cache.py",
+    ):
         shutil.copy2(ROOT / "benchmarks" / name, frozen / "benchmarks" / name)
     hashes = {
         str(path.relative_to(frozen)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -943,8 +1098,19 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
         "operation": args.operation,
         "scope": "voxreg rigid synthetic disk-backed recordings; no cross-backend ranking",
         "diagnostic": args.runs != 5 or args.size_gib is None,
-        "inputs": {"image_bytes": frames * volume_bytes},
-        "preparation_seconds": None,
+        "inputs": [
+            {
+                "id": f"n{frames}",
+                "frames": frames,
+                "image_bytes": frames * volume_bytes,
+                "larger_than_host_ram": frames * volume_bytes
+                > psutil.virtual_memory().total,
+                "larger_than_total_worker_limits": frames * volume_bytes
+                > args.workers * args.worker_memory_gib * 2**30,
+            }
+            for frames in frame_counts
+        ],
+        "preparation_seconds": 0.0,
         "source_sha256": hashes,
         "versions": {
             name: importlib.metadata.version(name)
@@ -964,33 +1130,36 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
             "platform": platform.platform(),
             "physical_ram_bytes": psutil.virtual_memory().total,
         },
-        "cache_policy": "OS caches are not flushed; source generation and earlier phases may warm caches. Writes use OS buffering, without forced durable-media fsync.",
-        "timing_boundary": "open input metadata, build graph, read, compute and finish one DataTree Zarr write; imports/cluster/device initialization and output deletion excluded",
+        "cache_policy": "Before every pass: fsync benchmark-owned input files, advise DONTNEED, verify zero resident file pages with Linux mincore; fail closed. No global cache clearing. Output writes remain OS-buffered, without forced durable-media fsync.",
+        "timing_boundary": "open input metadata, build graph, read, compute and finish one DataTree Zarr write; imports/cluster/device initialization, input flushing/eviction/verification and output deletion excluded",
         "chunk_guidance_source": "https://docs.dask.org/en/stable/array-chunks.html",
         "gpu_memory_note": "Per-worker allocated/reserved peaks exclude CUDA driver/context and non-Torch allocations; peaks from different processes are not simultaneous device totals.",
-        "larger_than_host_ram": frames * volume_bytes > psutil.virtual_memory().total,
-        "larger_than_total_worker_limits": frames * volume_bytes
-        > args.workers * args.worker_memory_gib * 2**30,
         "cases": [],
         "status": "preparing",
     }
     report(output, result)
     try:
-        started = time.perf_counter()
-        result["inputs"] = stage_inputs(output / "inputs", shape, frames)
-        result["preparation_seconds"] = time.perf_counter() - started
-        result["status"] = "running"
-        report(output, result)
-        for device in dict.fromkeys(args.devices):
-            for chunk in chunk_frames:
-                name = f"{args.operation}-rigid-{device}-t{chunk}"
+        pinned_batches: dict[tuple[str, int], int] = {}
+        for input_metadata in result["inputs"]:
+            frames = input_metadata["frames"]
+            inputs = output / "inputs" / input_metadata["id"]
+            started = time.perf_counter()
+            input_metadata.update(stage_inputs(inputs, shape, frames))
+            result["preparation_seconds"] += time.perf_counter() - started
+            result["status"] = "running"
+            report(output, result)
+            for device, chunk in product(dict.fromkeys(args.devices), chunk_frames):
+                policy = (device, chunk)
+                name = f"{args.operation}-rigid-{device}-t{chunk}-n{frames}"
                 directory = output / name
                 directory.mkdir()
                 config = {
                     "id": name,
                     "operation": args.operation,
                     "device": device,
-                    "inputs": str(output / "inputs"),
+                    "inputs": str(inputs),
+                    "input_frames": frames,
+                    "input_image_bytes": input_metadata["image_bytes"],
                     "runs": args.runs,
                     "iterations": args.iterations,
                     "threads": args.threads,
@@ -1002,6 +1171,8 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
                     "chunk_targets_mib": targets,
                     "guidance": "Dask: commonly 10MB–1GB, tasks >100ms, fit comfortably in RAM, align storage; smoke sizes are exceptions",
                 }
+                if policy in pinned_batches:
+                    config["effective_batch_size"] = pinned_batches[policy]
                 config_path = directory / "config.json"
                 write_json(config_path, config)
                 case: dict[str, Any] = {
@@ -1022,9 +1193,15 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
                         case["status"] = state
                         break
                     if phase == "timing":
-                        config["effective_batch_size"] = case[phase][
-                            "effective_batch_size"
-                        ]
+                        batch = case[phase]["effective_batch_size"]
+                        if policy in pinned_batches and pinned_batches[policy] != batch:
+                            case.update(
+                                status="error",
+                                error="Fitting batch changed across input sizes",
+                            )
+                            break
+                        pinned_batches[policy] = batch
+                        config["effective_batch_size"] = batch
                         write_json(config_path, config)
                 else:
                     case["status"] = "passed"

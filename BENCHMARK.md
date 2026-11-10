@@ -16,8 +16,9 @@ just benchmark-resample artifacts/resample-lazy --lazy
 ```
 
 Eager mode compares Python APIs with resident inputs. Lazy mode measures voxreg's
-streaming read/compute/Zarr writes; its default is an eight-frame smoke case, and
-large inputs require explicit `--size-gib`. Eager recipes create/reuse an isolated
+cold-input read/compute/buffered-Zarr writes on Linux disk-backed stores; its
+default is an eight-frame smoke case. Explicit `--size-gib 1 4` runs the routine
+input-size/memory-scaling comparison. Eager recipes create/reuse an isolated
 Python 3.13 environment with ANTsPy 0.6.3; lazy mode does not install ANTsPy.
 
 Live entry points and helpers live in `benchmarks/`; examples and historical
@@ -134,50 +135,61 @@ relabeling existing measurements.
 
 ## Lazy streaming benchmark
 
-`benchmark-register --lazy` / `benchmark-resample --lazy` are voxreg-only and
-initially test rigid motion, not SyN or
-cross-backend rankings. It writes seeded analytic float32 volumes incrementally
-into uncompressed, one-volume Zarr blocks; a declared 16-pose cycle bounds
-preparation memory without skipping any frame. Large files are opt-in:
+Lazy mode is voxreg-only rigid registration or known-map resampling, not SyN or
+cross-backend rankings. Seeded float32 volumes are staged incrementally into
+uncompressed one-volume Zarr blocks. A 16-pose cycle bounds preparation memory;
+every frame is still processed. Sizes are explicitly opt-in:
 
 ```bash
 # Eight-frame diagnostic smoke case; no ANTs environment required.
 just benchmark-resample artifacts/lazy-smoke --lazy --devices cpu --runs 1
 
-# Run separately in fresh directories; defaults to five complete calls.
-just benchmark-register artifacts/lazy-register-10g --lazy --size-gib 10
-just benchmark-resample artifacts/lazy-resample-10g --lazy --size-gib 10
+# Routine fixed-policy size sweeps; five timing calls per size by default.
+# Use cpu instead, or omit --devices to run both CPU and CUDA.
+just benchmark-register artifacts/lazy-register --lazy --size-gib 1 4 --devices cuda
+just benchmark-resample artifacts/lazy-resample --lazy --size-gib 1 4 --devices cuda
 ```
 
-Default large-input Dask chunks target **32/128 MiB**, rounded to whole volumes
-and aligned with storage. This follows [Dask's guidance](https://docs.dask.org/en/stable/array-chunks.html):
-fit comfortably in memory, commonly 10 MB–1 GB, and tasks substantially longer
-than 100 ms. Reports include actual chunk bytes and bounded task-duration
-samples, not a claim that these sizes are optimal. Smoke chunks are deliberately
-smaller. Overrides: `--chunk-mib`, `--shape K J I`, `--workers`,
-`--worker-memory-gib`, `--threads`, `--batch-size`, `--devices` and `--iterations`.
-Fitting batches are selected in workers, then pinned across phases; default
-registration is 100 updates without early stopping.
+Sized inputs default to **128 MiB** temporal chunks, aligned to whole volumes;
+smoke chunks are smaller. Chunk size, fitting batch, threads and worker limits
+stay fixed across compared input sizes. Worker-selected batches are pinned from
+the first timing phase. Registration retains 100 updates without early stopping.
+Advanced overrides remain available through `--lazy --help`; chunk sizing follows
+[Dask's memory/storage/task-duration guidance](https://docs.dask.org/en/stable/array-chunks.html),
+not a universal optimal-size claim.
+
+Before **every pass**, completed Dask task data must be released. The runner
+fsyncs its own input files, requests `POSIX_FADV_DONTNEED`, then verifies zero
+resident file pages using Linux `mincore`. Eviction and verification are outside
+timing, with per-pass evidence recorded. Unsupported or incomplete eviction
+fails the case; there is no warm-cache fallback. Symlinks and unowned files are
+rejected. No root privileges or global cache clearing are used. **tmpfs is not a
+cold-input store**; use a disk-backed output directory. This verifies input file
+pages, not cold directory metadata, CPU/GPU caches or storage-controller caches.
 
 Fresh timing/memory/accuracy processes measure **open → graph → read → compute →
-one DataTree Zarr write**. Cluster/device initialization, generation and deletion
-of successful temporary outputs are excluded; peak process-tree RSS is sampled
-only during the memory phase. Per-worker allocated/reserved VRAM peaks are not
+one DataTree Zarr write**. Cluster/device initialization, input preparation/cache
+handling and successful-output deletion are excluded. No untimed operation warm-up
+is added. Memory reports baseline, peak and peak-minus-baseline process-tree RSS;
+20 ms sampling covers the operation, not cache preparation, and can miss short peaks. Per-worker allocated/reserved VRAM peaks are not
 simultaneous device-wide totals. Every stored frame is checked against physical
 truth (registration RMS ≤0.30 voxels) and SciPy pulls (relative RMSE <1e-5), with
 support/geometry/time checks and selected eager comparisons. Failed outputs and
 bounded failure evidence are retained; successful temporary outputs are removed
 to avoid retaining five copies. Sources, inputs, settings, logs, `results.json`
 and a separate `report.html` remain. The resident reporter does not combine this
-`voxreg-lazy-benchmark-v1` protocol with its older matrices.
+`voxreg-lazy-benchmark-v2` protocol with its eager matrices. Existing buffered-input
+v1 results are preserved and must not be relabelled as cold-input measurements.
 
-**10 GiB is a streaming test, not necessarily larger than host RAM.** Use an
-explicit larger size (e.g. `--size-gib 40` on a 32 GiB host) for that qualification;
-the report records both host RAM and worker memory limits. Keep sufficient disk
-for inputs plus one result, avoid competing heavy jobs, and do not describe these
-runs as cold-cache or durable-media latency measurements: OS caches are not
-flushed and writes use normal OS buffering without forced fsync. Worker-loss
-retries are disabled; no OOM retry or automatic chunk shrinking occurs.
+Compare 1/4 GiB RSS growth under the same execution policy; reports summarize
+passing cases without inferring an automatic memory-scaling pass/fail. A small
+size sweep provides evidence of bounded processing, not proof of execution
+beyond physical RAM. An explicitly oversized input is an optional stronger
+qualification, not a routine requirement. Reports record host RAM and worker
+limits. Retained inputs plus one temporary result must fit disk. Avoid competing
+jobs or concurrent reads of the input stores. Output writes remain buffered,
+without forced durable-media fsync. Worker-loss retries are disabled; no OOM
+retry or automatic chunk shrinking occurs.
 
 ## Reports
 

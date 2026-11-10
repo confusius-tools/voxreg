@@ -1,5 +1,8 @@
 """Small, deterministic physical registration fixtures."""
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import numpy as np
 import pytest
 import torch
@@ -9,6 +12,15 @@ from scipy.spatial.transform import Rotation
 from voxeldata import create_voxeldata
 
 from voxreg import position_to_world
+
+
+@pytest.fixture
+def benchmark_disk_dir():
+    """Provide a fresh owned directory outside potentially memory-backed /tmp."""
+    root = Path(__file__).resolve().parents[1] / "artifacts"
+    root.mkdir(exist_ok=True)
+    with TemporaryDirectory(prefix=".cold-input-test-", dir=root) as directory:
+        yield Path(directory)
 
 
 @pytest.fixture(autouse=True, scope="session")

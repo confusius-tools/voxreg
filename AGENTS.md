@@ -56,7 +56,9 @@ Benchmark recipes are `just benchmark-register OUTPUT ...` and
 `just benchmark-resample OUTPUT ...`; add `--lazy` for streaming measurements.
 Eager comparisons install/reuse an isolated Python 3.13 ANTsPy environment.
 `just benchmark-report OUTPUT RESULT...` renders eager results; lazy runs include
-reports. Large files require explicit `--size-gib`. Live benchmark code belongs
+reports. Lazy measurements require verified cold input file pages on Linux disk;
+`--size-gib 1 4` runs a fixed-policy memory-scaling sweep. GiB-scale files remain
+explicitly opt-in. Live benchmark code belongs
 in `benchmarks/`; research scripts and notebooks remain in `research/` and `examples/`.
 
 ## Code Architecture

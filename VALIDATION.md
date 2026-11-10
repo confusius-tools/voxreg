@@ -192,7 +192,7 @@ is voxreg-owned; tests use direct SimpleITK references without ConfUSIus.
 Local Dask callback tests cover synchronous/threaded/process execution, image-only
 and complete-tree compute/save, repeated computation, silent modes and errors.
 With ConfUSIus absent from the environment, the complete suite passes with
-1698 tests; all pre-commit checks pass. Relocated eager CPU registration/resampling
+1709 tests; all pre-commit checks pass. Relocated eager CPU registration/resampling
 and lazy CLI smoke runs pass, and the report renderer accepts their unchanged
 protocols. Only small diagnostic runs were performed; large-memory qualification
 remains pending.
@@ -234,19 +234,22 @@ scheduler limits remain explicit; library-global thread settings are unchanged.
 
 ## Lazy streaming benchmark
 
-`just benchmark-register --lazy` / `just benchmark-resample --lazy` stage
-uncompressed synthetic Zarr data incrementally,
-then separates end-to-end timing, process-tree RAM/worker VRAM, and full-frame
-accuracy phases. Temporal chunks target 32/128 MiB for large inputs, aligned to
-whole-volume storage blocks; task-duration samples expose scheduling overhead.
-Public CLI tests and corruption checks cover inputs, images, support and geometry.
-The full suite passes with 1670 tests; all pre-commit checks pass.
+Current lazy protocol v2 requires verified cold input file pages before every
+pass: release completed Dask task data, fsync owned input files, advise eviction,
+and check Linux `mincore` residency. Cache handling is outside timing; unsupported
+or incomplete eviction aborts without executing a warm fallback. Tests cover
+actual disk eviction, unrelated-file isolation, symlink/ownership rejection,
+phase failure evidence and mocked-clock timing exclusion. Tiny CLI runs cover
+registration/resampling and a real two-size sweep. Synthetic 1/4 GiB planning
+tests pin chunk/batch/worker policies without generating those large inputs.
+Baseline, peak and incremental process-tree RSS and fixed-policy scaling are
+reported descriptively, not as automatic out-of-core qualification.
 
-Small CPU/CUDA rigid registration and resampling runs pass, including 3D volumes;
-frozen local evidence is in `artifacts/benchmark-lazy-register-smoke-20261110-092112/`
-and `artifacts/benchmark-lazy-resample-smoke-20261110-091227/`. These one-call runs
-are diagnostic, not five-call throughput or larger-than-RAM qualification. No
-10–40 GiB dataset was generated. See [protocol and commands](BENCHMARK.md#lazy-streaming-benchmark).
+Historical buffered-input v1 smoke evidence remains unchanged in
+`artifacts/benchmark-lazy-register-smoke-20261110-092112/` and
+`artifacts/benchmark-lazy-resample-smoke-20261110-091227/`. Do not relabel these as
+cold-input results. No GiB-scale input or larger-than-RAM qualification was run
+for v2 development. See [protocol and commands](BENCHMARK.md#lazy-streaming-benchmark).
 
 ## Acceptance
 

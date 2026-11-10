@@ -569,8 +569,10 @@ uv run prek run --all-files
 uv run --extra benchmarks python benchmarks/benchmark_register.py --list
 uv run --extra benchmarks python benchmarks/benchmark_resample.py --list
 
-# Streaming smoke case; large inputs require --size-gib.
+# Linux disk-backed smoke case; no GiB-scale files by default.
 just benchmark-register artifacts/lazy-smoke --lazy --devices cpu --runs 1
+# Routine cold-input memory-scaling sweep (explicit file generation).
+just benchmark-register artifacts/lazy-sweep --lazy --size-gib 1 4 --devices cuda
 ```
 
 - [Benchmark guide](BENCHMARK.md): registration/resampling runtime, accuracy and peak memory.
