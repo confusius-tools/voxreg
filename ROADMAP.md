@@ -8,19 +8,22 @@ benchmark commands are implemented. [README](README.md) owns supported behavior;
 [VALIDATION](VALIDATION.md) owns evidence and limits. Anatomical registration
 quality is not yet validated.
 
+The initial coruscant eager comparisons and fixed-policy cold-input 1/4 GiB
+rigid sweeps are reviewed. The input-sized serialized-graph bug is fixed;
+[PERFORMANCE](PERFORMANCE.md#coruscant-baseline) records results and remaining limits.
+
 ## Next priorities
 
-1. **Benchmark throughput and memory scaling.** Review eager comparisons and run
-   [cold-input lazy size sweeps](BENCHMARK.md#lazy-streaming-benchmark), normally
-   1/4 GiB under a fixed chunk/batch/worker policy. Compare peak RAM/VRAM and
-   throughput; inputs larger than physical RAM are an optional stronger check.
-   Include coruscant results when available. Preserve frozen sources/settings and
-   failures; do not pool incompatible hosts, revisions or protocols.
-2. **Profile the SyN runtime gap to FireANTs.** Use the baseline to choose one
-   measured bottleneck: optimizer work, batching, sampling or graph overhead.
-   Preserve the [0.30-voxel registration gate](research/syn/REFERENCE.md), numerical
-   safety and complete workloads. Report non-passing cases rather than retuning
-   thresholds or shortening work to manufacture speedups. See [PERFORMANCE](PERFORMANCE.md).
+1. **Resolve 3D SyN accuracy qualification.** Current volume-pair and recording
+   cases fail the 0.30-voxel truth gate: voxreg is about 0.306 on CPU/CUDA;
+   FireANTs also fails, while ANTsPy passes. Diagnose the optimizer/settings and
+   capture behavior without relaxing gates or retuning only to the benchmark.
+2. **Attribute the SyN runtime gap before optimizing.** Local profiling and small
+   prototypes are complete, but no worthwhile safe optimization was established.
+   Use diagnostic ablations to separate additional validation/finalization work
+   from avoidable overhead; the profiled spans do not causally explain the gap.
+   Preserve numerical safety, precision and complete workloads. See
+   [PERFORMANCE](PERFORMANCE.md) and the [profile](research/syn/PROFILE-20261111.md).
 3. **Broaden real-data qualification.** Evaluate pair, motion and atlas workflows
    on native grids with explicit quality limits. Qualify intensity scaling and
    winsorization, MI bandwidth/convergence/runtime, and pyramid capture range and
@@ -29,6 +32,11 @@ quality is not yet validated.
 
 ## Deferred or evidence-driven
 
+- **Extended memory qualification:** larger-than-host-RAM input is an optional
+  stronger check. Current 1/4 GiB evidence covers one GPU, rigid fitting and known-map
+  resampling, not arbitrary recordings, lazy SyN or a universal memory bound.
+  Rerun relevant benchmarks after meaningful changes; preserve frozen settings
+  and failures without pooling incompatible hosts, revisions or protocols.
 - **Complex IQ:** define a real fitting representation and phase-preserving
   resampling of original complex data. Spatial interpolation is not temporal
   phase correction; lazy chunking alone does not provide complex support.

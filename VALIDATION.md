@@ -251,6 +251,38 @@ Historical buffered-input v1 smoke evidence remains unchanged in
 cold-input results. No GiB-scale input or larger-than-RAM qualification was run
 for v2 development. See [protocol and commands](BENCHMARK.md#lazy-streaming-benchmark).
 
+## Coruscant benchmark qualification
+
+The 2026-11-12 review checks eager revision `052488f` and lazy revision `2b1c787`
+separately. Recorded source hashes match those implementations; eager phase input
+hashes and batch policies agree. All eager phases execute successfully: 37/45
+registration cases pass accuracy and 45/45 resampling cases pass. The eight
+registration failures are voxreg/FireANTs 3D SyN pairs and recordings on CPU/CUDA.
+Voxreg's worst truth RMS is about 0.3064 voxels, above the unchanged 0.30 gate;
+ANTsPy passes these cases. These failures remain unqualified, not speed wins.
+
+The serialization fix replaces broadcast NumPy placeholder data with coordinate
+metadata and reconstructs bounded input blocks in workers. Public disk-backed
+registration/resampling regressions check graph serialization size, deferred
+reads, eager numerical agreement, geometry, time labels and attributes. The full
+CUDA-enabled suite passes with 1711 tests; all pre-commit hooks pass.
+
+Both fixed-policy 1/4 GiB CUDA rigid-registration and known-map-resampling sweeps
+complete. All 28 passes verify zero resident input file pages and zero retained
+worker task data before execution. Accuracy checks cover all 512/2048 frames:
+registration worst truth RMS is 0.01543 voxels, relative intensity RMSE is
+3.76e-7 or less, and sampled eager agreement is 0.002392 voxels, below 0.01.
+Known-map resampling relative intensity RMSE is below 2.52e-8, with exact eager
+agreement on sampled frames. Both operations have zero support mismatches and
+invalid statuses; input payload hashes agree with their manifests.
+
+[Performance](PERFORMANCE.md#coruscant-baseline) records timing, memory and artifact
+paths. Memory scales much more slowly than input size, but both inputs fit host
+RAM. Brief worker pauses remain in 4 GiB registration; complete-volume working
+state and scheduling still need workload-specific limits. This does not qualify
+lazy SyN, arbitrary upstream graphs, multi-GPU/host deployment or anatomical
+registration quality. Interrupted/stalled attempts are retained separately.
+
 ## Acceptance
 
 [BENCHMARK.md](BENCHMARK.md) defines the measurement boundaries:
