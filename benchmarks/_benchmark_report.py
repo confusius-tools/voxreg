@@ -14,6 +14,7 @@ from pathlib import Path
 
 _PROTOCOLS = {
     "voxreg-benchmark-v3": "Registration",
+    "voxreg-benchmark-v4": "Registration",
     "voxreg-resample-benchmark-v3": "Resampling",
 }
 _COLORS = {

@@ -11,6 +11,12 @@ with identical staged inputs. Pin voxreg/FireANTs batching across phases;
 ANTsPy processes one frame at a time. Keep hosts, revisions and operations
 separate. Failed accuracy gates cannot qualify as speed improvements.
 
+Registration benchmarks now use **200 fixed outer updates** on all backends
+(eager registration v4; lazy v3). ANTs accuracy logs verify actual counts with a
+convergence window larger than the budget; timing/memory omit verbose logging.
+The coruscant baseline below used the earlier 100-update policy and is not a
+measurement of this new configuration. Production registration defaults are unchanged.
+
 ## Current implementation
 
 - Compact physical sampling maps, cached CPU queries and single-volume partitioning.
@@ -72,6 +78,17 @@ batching and accuracy gates. Both volume CUDA arms fail the 0.30-voxel gate and
 remain unqualified. Small cache/batching/buffer prototypes did not establish a
 worthwhile safe improvement; no production optimization was promoted.
 
+## Fixed-work pilot
+
+The 200-update CPU 3D-pair pilot verifies all three actual accuracy counts as 200.
+With native SyN rates (voxreg/FireANTs 0.1, ANTsPy 0.2), truth RMS is 0.232014
+for voxreg, 0.303709 for FireANTs and 0.183072 for ANTsPy. The ANTs-only accuracy
+recheck is in `artifacts/fixed-count-200-native-rate-pilot/`; its previous
+step-0.1 pilot reached 0.204105. FireANTs remains above the unchanged 0.30 gate. One timed call per backend is
+only diagnostic; no new speed ranking or full-matrix qualification is claimed.
+See `artifacts/fixed-count-200-pilot/report.html` and
+[validation](VALIDATION.md#fixed-work-200-update-benchmark-pilot).
+
 ## Next measurements
 
 Resolve 3D SyN accuracy before claiming qualified volume performance. Attribute
@@ -79,5 +96,6 @@ remaining SyN costs with controlled diagnostics, then retain changes only when
 repeated measurements improve runtime without weakening accuracy, support or
 precision. Rerun affected workloads after changes rather than repeating the
 completed matrices without a new question.
-ANTsPy uses its Python API and retains its own optimizer and convergence;
-matching iteration budgets does not establish algorithmic equivalence.
+ANTsPy uses its Python API and retains its own optimizer, with metric-convergence
+stopping disabled for the fixed-work benchmark. Matching outer iteration counts
+does not establish algorithmic equivalence or equal inner inversion work.

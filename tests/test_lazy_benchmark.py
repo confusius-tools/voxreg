@@ -143,7 +143,7 @@ def test_smoke_cli_writes_qualified_phases_without_large_files(
     )
     assert run.returncode == 0, run.stdout + run.stderr
     result = json.loads((output / "results.json").read_text())
-    assert result["protocol"] == "voxreg-lazy-benchmark-v2"
+    assert result["protocol"] == "voxreg-lazy-benchmark-v3"
     assert result["diagnostic"] is True
     assert result["status"] == "passed"
     metadata = result["inputs"][0]
@@ -242,6 +242,7 @@ def test_size_sweep_pins_policy_without_allocating_large_inputs(tmp_path, monkey
     assert [case["chunk_frames"] for case in measured] == [64] * 6
     assert [case["chunk_bytes"] for case in measured] == [128 * 2**20] * 6
     assert all(case["runs"] == 5 for case in measured)
+    assert {case["iterations"] for case in measured} == {200}
     assert "effective_batch_size" not in measured[0]
     assert all(case["effective_batch_size"] == 7 for case in measured[1:])
     result = json.loads((output / "results.json").read_text())

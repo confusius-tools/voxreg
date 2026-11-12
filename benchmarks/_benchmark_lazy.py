@@ -41,7 +41,7 @@ from voxeldata import create_voxeldata, load_array
 from voxreg import register, resample
 from voxreg.preparation import choose_batch_size
 
-PROTOCOL = "voxreg-lazy-benchmark-v2"
+PROTOCOL = "voxreg-lazy-benchmark-v3"
 """Streaming protocol, separate from resident cross-backend comparisons."""
 SPACING = np.array([0.2, 0.1, 0.1])
 """Synthetic world z/y/x voxel spacing in millimetres."""
@@ -1000,7 +1000,7 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
     )
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--threads", type=int, default=8)
-    advanced.add_argument("--iterations", type=int, default=100)
+    advanced.add_argument("--iterations", type=int, default=200)
     advanced.add_argument("--workers", type=int, default=1)
     advanced.add_argument("--worker-memory-gib", type=float, default=4)
     advanced.add_argument("--batch-size", type=int)

@@ -72,24 +72,36 @@ flags. Public voxreg APIs do not change application-wide precision settings.
 ### Registration settings
 
 All fits use a supplied fixed image, identity initialization and one resolution.
-voxreg and FireANTs request 100 updates with early stopping disabled. Their linear
-objectives use masked squared global NCC; SyN uses radius-2 local CC with update
+All three backends request **200 outer updates**, with metric-convergence stopping
+disabled. Exhausting this fixed work budget is expected, not proof of convergence.
+Their linear objectives use masked squared global NCC; SyN uses radius-2 local CC with update
 sigma 1.5 and total sigma 0.5 voxels. FireANTs uses Adam, learning rate 0.01 for
-linear fits and 0.1 for SyN. voxreg retains its production optimizer and
+linear fits and 0.1 for SyN. Native learning rates are retained: voxreg uses 0.1,
+FireANTs uses 0.01 for linear models and 0.1 for SyN, and ANTsPy uses 0.25 for
+linear models and its default 0.2 for SyN. These rates have different optimizer
+and coordinate meanings; other native presets are not substituted.
+voxreg retains its production optimizer and
 [precision contract](DESIGN.md#precision-output-and-execution).
 
-ANTsPy calls `ants.registration` with `singleprecision=True`:
+ANTsPy uses the `ants.registration` Python argument-list interface, not an
+external executable. Native image pointers avoid adding image-file writes:
 
-- **Rigid/affine:** `Rigid` / `Affine`, global correlation (`GC`), sampling rate
-  1.0, `aff_iterations=(100,)`, shrink `(1,)`, image smoothing `(0,)`.
-- **SyN:** `SyNOnly`, `reg_iterations=(100,)`, `grad_step=0.1`, `flow_sigma=2.25`,
-  `total_sigma=0.25`, `syn_metric="CC"`, `syn_sampling=2`. The variances correspond
-  to field smoothing sigmas 1.5 and 0.5 voxels; there is no affine prefix.
+- **Rigid/affine:** `Rigid[0.25]` / `Affine[0.25]`, global correlation (`GC`),
+  regular sampling rate 1.0, shrink 1, image smoothing 0.
+- **SyN:** `SyN[0.2,2.25,0.25]`, dense `CC` radius 2, shrink 1, image smoothing 0,
+  no affine-fitting stage. The variances correspond nominally to field smoothing
+  sigmas 1.5 and 0.5 voxels; the implementations are not identical.
 
-ANTsPy convergence remains enabled: its budget is **at most 100 updates**, not a
-claim of 100 observed updates. The Python API does not return iteration counts;
-workers record unknown counts rather than invent them. Its GC/CC, boundary rules,
-regularization and optimizer are approximate counterparts, not identical methods.
+All ANTs stages use single precision and a convergence window of 201, larger than
+200 updates, so the native metric-convergence test cannot stop fitting early.
+Accuracy-phase native logs must contain every update in order for every fitted
+frame; a missing/short count fails the case. Timing/memory calls do not enable
+verbose count logging, and do not claim directly observed counts. The configured
+fixed-count policy is identical in every phase. Its GC/CC, boundary rules,
+regularization and optimizer remain approximate counterparts, not identical methods.
+FireANTs also uses its configured schedule for final inverse optimization; ANTs
+refines inverse fields within outer iterations. Equal outer counts are not equal
+computational work. The production `register` default remains 100 updates.
 
 Complete fixed→moving pulls are scored through `ants.apply_transforms_to_points`
 over **every fixed-grid centre**, explicitly applying the returned forward list
@@ -127,7 +139,9 @@ resampling oracle is independent float64 SciPy interpolation on common physical
 centre support, with validity-mask checks. No old/new or cross-device agreement
 is used as an acceptance gate.
 
-Current protocols are `voxreg-benchmark-v3` and `voxreg-resample-benchmark-v3`.
+Current protocols are `voxreg-benchmark-v4` and `voxreg-resample-benchmark-v3`.
+Registration v4 uses 200 fixed updates on all backends; earlier v3 registration
+used 100 with native ANTs convergence enabled. Those results are not interchangeable.
 Non-five-call runs are explicitly diagnostic. Settings, source/input hashes,
 versions, host, power boundaries, actual batches, failures and phase logs are
 recorded. A changed preparation/measurement policy requires new results, not
@@ -153,7 +167,7 @@ just benchmark-resample artifacts/lazy-resample --lazy --size-gib 1 4 --devices 
 Sized inputs default to **128 MiB** temporal chunks, aligned to whole volumes;
 smoke chunks are smaller. Chunk size, fitting batch, threads and worker limits
 stay fixed across compared input sizes. Worker-selected batches are pinned from
-the first timing phase. Registration retains 100 updates without early stopping.
+the first timing phase. Registration defaults to 200 updates without early stopping.
 Advanced overrides remain available through `--lazy --help`; chunk sizing follows
 [Dask's memory/storage/task-duration guidance](https://docs.dask.org/en/stable/array-chunks.html),
 not a universal optimal-size claim.
@@ -178,7 +192,9 @@ support/geometry/time checks and selected eager comparisons. Failed outputs and
 bounded failure evidence are retained; successful temporary outputs are removed
 to avoid retaining five copies. Sources, inputs, settings, logs, `results.json`
 and a separate `report.html` remain. The resident reporter does not combine this
-`voxreg-lazy-benchmark-v2` protocol with its eager matrices. Existing buffered-input
+`voxreg-lazy-benchmark-v3` protocol with its eager matrices. Lazy v3 defaults to
+200 fitting updates; cold-input v2 results used the earlier default of 100.
+Existing buffered-input
 v1 results are preserved and must not be relabelled as cold-input measurements.
 
 Compare 1/4 GiB RSS growth under the same execution policy; reports summarize

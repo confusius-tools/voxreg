@@ -31,7 +31,7 @@ from rich.table import Table
 
 _ACTIVE = None
 FRAMES = 100
-ITERATIONS = 100
+ITERATIONS = 200
 TRUTH_LIMIT = 0.30
 PHASES = ("timing", "memory", "accuracy")
 PACKAGES = (
@@ -457,7 +457,7 @@ def _main(
     report = {
         "protocol": "voxreg-resample-benchmark-v3"
         if resampling
-        else "voxreg-benchmark-v3",
+        else "voxreg-benchmark-v4",
         "kind": "benchmark" if args.runs == 5 else "diagnostic",
         "status": "running",
         "runs": args.runs,
@@ -501,6 +501,9 @@ def _main(
         ),
         "policy": {
             "objective": "minimize median runtime among accuracy-passing configurations",
+            "update_policy": "Fixed outer registration counts on all backends; ANTs accuracy logs verify counts without timing-phase verbosity"
+            if not resampling
+            else "no fitting",
             **(
                 {"relative_rmse_limit": RESAMPLE_LIMIT}
                 if resampling

@@ -14,10 +14,16 @@ rigid sweeps are reviewed. The input-sized serialized-graph bug is fixed;
 
 ## Next priorities
 
-1. **Resolve 3D SyN accuracy qualification.** Current volume-pair and recording
-   cases fail the 0.30-voxel truth gate: voxreg is about 0.306 on CPU/CUDA;
-   FireANTs also fails, while ANTsPy passes. Diagnose the optimizer/settings and
-   capture behavior without relaxing gates or retuning only to the benchmark.
+1. **Qualify 3D SyN accuracy under fixed work.** Earlier 100-update volume-pair
+   and recording cases failed the 0.30-voxel gate: voxreg was about 0.306 on
+   CPU/CUDA; FireANTs also failed, while ANTsPy passed. Benchmarks now request
+   200 fixed updates on all backends; broader CPU/CUDA/recording qualification
+   is still needed. The CPU pair pilot passes for voxreg/ANTsPy but FireANTs is
+   still at 0.303709, above 0.30. [CPU diagnostics](research/syn/ACCURACY-20261112.md)
+   show continued improvement at 300 updates, but larger learning rates are not a
+   robust fix. Retain the current ITK-like scalar normalization; isolate metric,
+   smoothing and inverse-maintenance differences before changing the algorithm.
+   Do not relax gates or retune only to the benchmark.
 2. **Attribute the SyN runtime gap before optimizing.** Local profiling and small
    prototypes are complete, but no worthwhile safe optimization was established.
    Use diagnostic ablations to separate additional validation/finalization work

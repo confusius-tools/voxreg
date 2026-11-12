@@ -261,6 +261,13 @@ registration failures are voxreg/FireANTs 3D SyN pairs and recordings on CPU/CUD
 Voxreg's worst truth RMS is about 0.3064 voxels, above the unchanged 0.30 gate;
 ANTsPy passes these cases. These failures remain unqualified, not speed wins.
 
+Subsequent [CPU convergence diagnostics](research/syn/ACCURACY-20261112.md) reproduce
+0.306434 at 100 updates and reach 0.184296 at 300 with the same learning rate.
+Larger rates (0.2/0.4/0.8) have mixed results across held-out seeds, spacing and
+orientation; no default or official benchmark budget was changed. Directional
+preconditioning was discarded, not identified as a missing coordinate conversion.
+These diagnostics do not qualify CUDA, universal convergence or anatomical quality.
+
 The serialization fix replaces broadcast NumPy placeholder data with coordinate
 metadata and reconstructs bounded input blocks in workers. Public disk-backed
 registration/resampling regressions check graph serialization size, deferred
@@ -282,6 +289,40 @@ RAM. Brief worker pauses remain in 4 GiB registration; complete-volume working
 state and scheduling still need workload-specific limits. This does not qualify
 lazy SyN, arbitrary upstream graphs, multi-GPU/host deployment or anatomical
 registration quality. Interrupted/stalled attempts are retained separately.
+
+## Fixed-work 200-update benchmark pilot
+
+Eager registration v4 and lazy v3 now default to 200 outer fitting updates;
+production registration defaults remain unchanged. ANTs uses its Python
+argument-list API with a convergence window larger than the budget. Accuracy
+calls verify the complete native update sequence per frame. Timing/memory calls
+do not enable verbose logging or claim directly observed counts. Tests reject
+short/duplicate/missing counts and check stdout restoration after native errors.
+Public CLI tests cover rigid, affine and SyN settings, default counts and logging
+boundaries; real native smoke calls verify all three models. The full suite
+passes with **1725 tests**; all pre-commit hooks pass.
+
+The CPU 3D-pair pilot uses native SyN learning rates: voxreg/FireANTs 0.1 and
+ANTsPy 0.2. The ANTs-only accuracy recheck verifies the same frozen input hash:
+
+| Backend | Observed accuracy updates | Truth RMS, voxels | Result |
+| --- | ---: | ---: | --- |
+| voxreg | 200 | 0.232014 | Pass |
+| FireANTs | 200 | 0.303709 | Fails unchanged 0.30 gate |
+| ANTsPy | 200 | 0.183072 | Pass |
+
+All phase calls complete without execution/count errors and verify the same input
+hash. The pilot uses one timing call plus separate memory/accuracy calls, so it
+is diagnostic, not speed qualification. ANTs accuracy alone was restarted after
+a system-wide OOM killed its paused worker (about 414 MiB RSS, elevated OOM score);
+completed timing/memory calls were not repeated. Results and the graphical report
+are in `artifacts/fixed-count-200-pilot/` (original ANTs step 0.1: RMS 0.204105).
+The current step-0.2 ANTs accuracy recheck is in
+`artifacts/fixed-count-200-native-rate-pilot/`; timing/memory were not repeated
+for that parameter-only change. The near-miss is not rounded into a pass.
+This does not qualify the full CPU/CUDA/recording matrix, nor establish that 200
+updates always suffice. FireANTs also uses the budget for its final inverse
+optimization; matching outer counts does not equate total optimizer work.
 
 ## Acceptance
 

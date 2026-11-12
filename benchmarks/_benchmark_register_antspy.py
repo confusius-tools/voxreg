@@ -12,35 +12,31 @@ import numpy as np
 import pandas as pd
 from _benchmark_antspy import _main, _power, _versions, _write
 from _benchmark_data import _grid
+from _benchmark_iterations import run_ants_registration
 from _benchmark_metrics import _point_rms
 from _benchmark_resample_io import _load
+from ants.internal import get_pointer_string
 
 
 def _settings(model, iterations):
-    options = {"initial_transform": "Identity", "singleprecision": True}
-    if model == "syn":
-        options.update(
-            type_of_transform="SyNOnly",
-            reg_iterations=(iterations,),
-            grad_step=0.1,
-            flow_sigma=2.25,
-            total_sigma=0.25,
-            syn_metric="CC",
-            syn_sampling=2,
-        )
-    else:
-        options.update(
-            type_of_transform={"rigid": "Rigid", "affine": "Affine"}[model],
-            aff_iterations=(iterations,),
-            aff_shrink_factors=(1,),
-            aff_smoothing_sigmas=(0,),
-            aff_metric="GC",
-            aff_random_sampling_rate=1.0,
-        )
-    return options
+    return {
+        "initial_transform": "Identity",
+        "singleprecision": True,
+        "transform": {
+            "rigid": "Rigid[0.25]",
+            "affine": "Affine[0.25]",
+            "syn": "SyN[0.2,2.25,0.25]",
+        }[model],
+        "metric": "CC" if model == "syn" else "GC",
+        "metric_parameters": "2" if model == "syn" else "32,regular,1.0",
+        # A window larger than the budget cannot trigger the native stopping test.
+        "convergence": f"[{iterations},{'1e-7' if model == 'syn' else '1e-6'},{iterations + 1}]",
+        "shrink_factors": "1",
+        "smoothing_sigmas": "0",
+    }
 
 
-def _register(arrays, metadata, config, directory):
+def _register(arrays, metadata, config, directory, *, verify_iterations=False):
     planar = arrays["fixed"].shape[0] == 1
     axes = [2, 1] if planar else [2, 1, 0]
     affine = np.array(metadata["affine"])
@@ -52,24 +48,78 @@ def _register(arrays, metadata, config, directory):
     target = ants.from_numpy(np.ascontiguousarray(fixed.T), **geometry)
     raw = arrays["moving"] if metadata["recording"] else arrays["moving"][None]
     output = np.empty_like(raw)
-    transforms = []
+    transforms, updates = [], []
     for index, original in enumerate(raw):
         if metadata["recording"] and index == 0:
             output[index] = original
             transforms.append(None)
+            updates.append(0)
             continue
         values = original[0] if planar else original
         moving = ants.from_numpy(np.ascontiguousarray(values.T), **geometry)
-        result = ants.registration(
-            fixed=target,
-            moving=moving,
-            outprefix=str(directory / f"frame-{index:03d}_"),
-            **_settings(config["model"], config["iterations"]),
+        fixed_image, moving_image = target.clone("float"), moving.clone("float")
+        warped, reverse = fixed_image.clone(), moving_image.clone()
+        prefix = directory / f"frame-{index:03d}_"
+        settings = _settings(config["model"], config["iterations"])
+        metric = (
+            f"{settings['metric']}[{get_pointer_string(fixed_image)},"
+            f"{get_pointer_string(moving_image)},1,{settings['metric_parameters']}]"
         )
-        sampled = result["warpedmovout"].numpy().T
+        arguments = [
+            "--dimensionality",
+            str(target.dimension),
+            "--initial-moving-transform",
+            settings["initial_transform"],
+            "--metric",
+            metric,
+            "--transform",
+            settings["transform"],
+            "--convergence",
+            settings["convergence"],
+            "--smoothing-sigmas",
+            settings["smoothing_sigmas"],
+            "--shrink-factors",
+            settings["shrink_factors"],
+            "--use-histogram-matching",
+            "0",
+            "--collapse-output-transforms",
+            "1",
+            "--output",
+            f"[{prefix},{get_pointer_string(warped)},{get_pointer_string(reverse)}]",
+            "--masks",
+            "[NA,NA]",
+            "--float",
+            "1",
+            "--write-composite-transform",
+            "0",
+        ]
+        updates.append(
+            run_ants_registration(
+                arguments,
+                config["iterations"],
+                prefix.with_name(prefix.name + "iterations.log")
+                if verify_iterations
+                else None,
+            )
+        )
+        sampled = warped.numpy().T
         output[index] = sampled[None] if planar else sampled
-        transforms.append(result["fwdtransforms"])
-    return output, transforms
+        paths = [
+            str(path)
+            for path in sorted(directory.glob(prefix.name + "[0-9]*"), reverse=True)
+            if path.name.endswith("GenericAffine.mat")
+            or (
+                path.name.endswith("Warp.nii.gz")
+                and not path.name.endswith("InverseWarp.nii.gz")
+            )
+        ]
+        required = "Warp.nii.gz" if config["model"] == "syn" else "GenericAffine.mat"
+        if not any(path.endswith(required) for path in paths):
+            raise RuntimeError(
+                f"ANTsPy did not write the expected {required} transform"
+            )
+        transforms.append(paths)
+    return output, transforms, updates
 
 
 def _errors(transforms, arrays, metadata):
@@ -129,7 +179,7 @@ def _worker(config_path, mode):
             resident_input_bytes=sum(a.nbytes for a in arrays.values()),
             backend_settings={
                 "batch_size": 1,
-                "api": "ants.registration",
+                "api": "ants.registration argument-list API; no external executable",
                 "cli_binaries_used": False,
                 "settings": _settings(config["model"], config["iterations"]),
                 "threads": config["threads"],
@@ -139,7 +189,10 @@ def _worker(config_path, mode):
                 + [None] * (count - int(reference)),
                 "statuses": (["reference"] if reference else [])
                 + ["backend_stop"] * (count - int(reference)),
-                "observed_updates_reason": "ANTsPy does not return iteration counts; convergence remains enabled",
+                "requested_updates": ([0] if reference else [])
+                + [config["iterations"]] * (count - int(reference)),
+                "stopping_policy": "Convergence window exceeds the update budget; accuracy logs must verify every frame's fixed count",
+                "observed_updates_reason": "Native logs verify accuracy-phase updates; timing/memory omit verbose count instrumentation",
                 "file_io_in_timing": "ANTsPy transform-file writes included; input staging, scoring and cleanup excluded",
             },
             wall_seconds=[],
@@ -152,7 +205,9 @@ def _worker(config_path, mode):
             run = directory / f"{mode}-{index + 1}"
             run.mkdir()
             start = perf_counter()
-            output, transforms = _register(arrays, metadata, config, run)
+            output, transforms, updates = _register(
+                arrays, metadata, config, run, verify_iterations=mode == "accuracy"
+            )
             elapsed = perf_counter() - start
             expected = (
                 arrays["moving"].shape if reference else (1, *arrays["moving"].shape)
@@ -174,6 +229,10 @@ def _worker(config_path, mode):
                     flush=True,
                 )
             if mode == "accuracy":
+                record["backend_settings"]["updates"] = updates
+                record["backend_settings"]["statuses"] = (
+                    ["reference"] if reference else []
+                ) + ["max_iterations"] * (count - int(reference))
                 errors = _errors(transforms, arrays, metadata)
                 worst = max(errors[1:] if reference else errors)
                 limit = config["truth_rms_limit_voxels"]
