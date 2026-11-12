@@ -11,7 +11,9 @@ import pytest
 import torch
 import xarray as xr
 from dask import delayed
+from dask.callbacks import Callback
 from distributed import Client, LocalCluster
+from distributed.protocol import serialize, to_serialize
 from numpy.testing import assert_allclose, assert_array_equal
 from oracles import max_pull_difference
 from registration_options import RegistrationOptions
@@ -773,3 +775,59 @@ def test_resampling_metadata_failures_before_loading(recording_factory):
     image, _ = resample(lazy, data.isel(time=0, drop=True), maps, device="cpu")
     with pytest.raises(ValueError, match="finite"):
         image.compute(scheduler="synchronous")
+
+
+@pytest.mark.parametrize("operation", ["register", "resample"])
+def test_disk_backed_graph_serialization_contains_metadata_not_dense_placeholders(
+    tmp_path, operation
+):
+    from voxeldata import create_voxeldata
+
+    spatial = np.random.default_rng(713).random((4, 32, 32), dtype=np.float32) + 0.5
+    values = np.arange(1, 65, dtype=np.float32)[:, None, None, None] * spatial
+    data = create_voxeldata(
+        values,
+        dims=("time", "k", "j", "i"),
+        voxel_to_world=np.diag([0.2, 0.1, 0.1, 1]),
+        dt=0.5,
+        name="signal",
+        attrs={"units": "arbitrary"},
+    )
+    path = tmp_path / "recording.zarr"
+    save(data.chunk(time=8), path)
+    moving = load_array(path, chunks={"time": 8})
+    fixed = moving.isel(time=0, drop=True).compute()
+    options: RegistrationOptions = {
+        "transform": "rigid",
+        "max_iterations": 1,
+        "device": "cpu",
+        "progress": False,
+    }
+
+    def reject_reads(*_):
+        raise AssertionError("Graph construction must not execute input tasks.")
+
+    with Callback(pretask=reject_reads):
+        if operation == "register":
+            image = register(moving, fixed, **options)["images"].to_dataset()[
+                "registered"
+            ]
+        else:
+            image, _ = resample(moving, fixed, np.eye(4), device="cpu")
+        _, frames = serialize(to_serialize(image.data), on_error="raise")
+    serialized_bytes = sum(memoryview(frame).nbytes for frame in frames)
+    assert serialized_bytes < values.nbytes // 4
+    selected = [1, 9, 63]
+    actual = image.isel(time=selected).compute(scheduler="synchronous")
+    expected = (
+        register(data, fixed, batch_size=8, **options)["images"].to_dataset()[
+            "registered"
+        ]
+        if operation == "register"
+        else data
+    )
+    assert_allclose(actual, expected.isel(time=selected), rtol=1e-5, atol=1e-5)
+    assert_array_equal(actual.time, moving.time.isel(time=selected))
+    assert_allclose(position_to_world(actual), position_to_world(fixed), rtol=0, atol=0)
+    assert actual.name == expected.name
+    assert actual.attrs["units"] == "arbitrary"

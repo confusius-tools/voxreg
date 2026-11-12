@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import socket
 import threading
-from collections.abc import Generator
+from collections.abc import Generator, Hashable
 from contextlib import contextmanager
 from dataclasses import fields, replace
 from pathlib import Path
@@ -190,13 +190,25 @@ def _select_frames(value: Any, first: int, last: int) -> Any:
     return value
 
 
-def _restore_data(template: xr.DataArray, values: np.ndarray) -> xr.DataArray:
-    """Restore eager values without serializing a lazy xarray collection.
+def _restore_data(
+    template: xr.Dataset,
+    dims: tuple[Hashable, ...],
+    name: Hashable | None,
+    encoding: dict[str, Any],
+    values: np.ndarray,
+) -> xr.DataArray:
+    """Attach metadata to one materialized bounded input block.
 
     Parameters
     ----------
-    template : xarray.DataArray
-        Native geometry and labels with zero-storage placeholder data.
+    template : xarray.Dataset
+        Coordinates, indexes and attributes without a signal variable.
+    dims : tuple of hashable
+        Original dimension order, including dimensions without coordinates.
+    name : hashable, optional
+        Original array name.
+    encoding : dict
+        Original array encoding.
     values : numpy.ndarray
         One complete bounded task block.
 
@@ -205,7 +217,11 @@ def _restore_data(template: xr.DataArray, values: np.ndarray) -> xr.DataArray:
     xarray.DataArray
         Eager VoxelData retaining the original index and metadata.
     """
-    return template.copy(data=values)
+    result = xr.DataArray(
+        values, coords=template.coords, dims=dims, name=name, attrs=template.attrs
+    )
+    result.encoding = encoding.copy()
+    return result
 
 
 def _eager_dependency(value: Any) -> Any:
@@ -228,10 +244,11 @@ def _eager_dependency(value: Any) -> Any:
     # cloning shared fits; raw blocks keep their original task identities.
     block = data.rechunk(data.shape).to_delayed(optimize_graph=False).item()
     if isinstance(value, xr.DataArray):
-        template = value.copy(
-            data=np.broadcast_to(np.zeros((), dtype=value.dtype), value.shape)
+        # Broadcast NumPy placeholders expand to full dense buffers when serialized.
+        template = xr.Dataset(coords=value.coords, attrs=value.attrs)
+        return delayed(_restore_data)(
+            template, value.dims, value.name, value.encoding, block
         )
-        return delayed(_restore_data)(template, block)
     return block
 
 
