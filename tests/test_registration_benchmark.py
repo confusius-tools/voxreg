@@ -143,6 +143,9 @@ def registration(*, fixed, moving):
     return {**os.environ, "PYTHONPATH": str(package.parent)}
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Benchmark requires Linux RSS accounting"
+)
 @pytest.mark.parametrize("model", ["rigid", "affine", "syn"])
 def test_cli_requests_200_fixed_updates_without_timing_logs(
     tmp_path, fake_antspy_environment, model
@@ -195,6 +198,9 @@ def test_cli_requests_200_fixed_updates_without_timing_logs(
     assert "DIAGNOSTIC" not in (output / case["id"] / "timing.log").read_text()
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Benchmark requires Linux RSS accounting"
+)
 def test_cli_fails_if_native_updates_are_short(tmp_path, fake_antspy_environment):
     output = tmp_path / "benchmark"
     run = subprocess.run(

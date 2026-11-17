@@ -551,16 +551,20 @@ def test_incremental_storage_retains_bounded_source_volumes(
     data, _, _ = recording_factory()
     base = data.isel(time=0, drop=True).isel(j=slice(0, 16), i=slice(0, 18))
     live = {"current": 0, "peak": 0, "read": 0}
+    lock = threading.RLock()
 
     def release():
-        live["current"] -= 1
+        with lock:
+            live["current"] -= 1
 
     def read(frame):
         values = base.values[None].copy() + frame * np.float32(0.001)
-        live["read"] += 1
-        live["current"] += 1
-        live["peak"] = max(live["peak"], live["current"])
-        weakref.finalize(values, release)
+        # Source reads and finalizers update this observer from different threads.
+        with lock:
+            live["read"] += 1
+            live["current"] += 1
+            live["peak"] = max(live["peak"], live["current"])
+            weakref.finalize(values, release)
         return values
 
     source = da.concatenate(

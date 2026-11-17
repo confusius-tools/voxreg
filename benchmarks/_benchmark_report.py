@@ -358,7 +358,7 @@ def _render(paths, output):
     for path in paths:
         path = Path(path)
         path = (path / "results.json" if path.is_dir() else path).resolve()
-        report = json.loads(path.read_text())
+        report = json.loads(path.read_text(encoding="utf-8"))
         if report.get("protocol") not in _PROTOCOLS:
             raise ValueError(
                 f"Unsupported protocol in {path}: {report.get('protocol')!r}; use this reporter only for current benchmark protocols"
@@ -435,7 +435,7 @@ body{font:15px system-ui,sans-serif;max-width:1500px;margin:32px auto;padding:0 
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(".html.tmp")
-    temporary.write_text(html)
+    temporary.write_text(html, encoding="utf-8")
     temporary.replace(output)
 
 

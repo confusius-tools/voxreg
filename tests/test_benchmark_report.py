@@ -2,6 +2,7 @@
 
 import base64
 import json
+import os
 import subprocess
 import sys
 from html.parser import HTMLParser
@@ -154,6 +155,12 @@ def render(tmp_path, reports):
             str(output),
             *inputs,
         ],
+        env={
+            **os.environ,
+            "PYTHONUTF8": "0",
+            "PYTHONCOERCECLOCALE": "0",
+            "LC_ALL": "C",
+        },
         capture_output=True,
         text=True,
         timeout=90,
@@ -171,7 +178,7 @@ def test_combined_report_is_graph_first_self_contained_and_separated(tmp_path):
     ]
     result, output = render(tmp_path, reports)
     assert result.returncode == 0, result.stderr
-    text = output.read_text()
+    text = output.read_text(encoding="utf-8")
     parser = ReportParser()
     parser.feed(text)
     assert len(parser.images) == 15
@@ -198,6 +205,7 @@ def test_combined_report_is_graph_first_self_contained_and_separated(tmp_path):
         assert label.lower() in joined.lower()
     assert "independent SciPy reference" in text
     assert "<script" not in text
+    assert "●" in text and "GiB" in text
 
 
 @pytest.mark.parametrize(
@@ -222,7 +230,7 @@ def test_lazy_partial_and_failed_cases_remain_unqualified(tmp_path, protocol):
     partial["timing"] = {"status": "running"}
     result, output = render(tmp_path, [report])
     assert result.returncode == 0, result.stderr
-    text = output.read_text()
+    text = output.read_text(encoding="utf-8")
     assert "Failures and incomplete cases (2)" in text
     assert "bad &lt;signal&gt;" in text and "bad <signal>" not in text
     assert "Partial run" in text
@@ -246,7 +254,7 @@ def test_missing_lazy_memory_is_omitted_not_zero_and_cache_claims_are_checked(tm
                 eviction["worker_cached_tasks"] = {"worker": 1}
     result, output = render(tmp_path, [report])
     assert result.returncode == 0, result.stderr
-    text = output.read_text()
+    text = output.read_text(encoding="utf-8")
     assert "0/14" in text
     assert "Largest per-worker GPU peak" not in text
     assert "<td>—</td>" in text
