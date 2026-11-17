@@ -12,10 +12,15 @@ from html import escape
 from itertools import groupby
 from pathlib import Path
 
+from _benchmark_report_lazy import render_lazy_section
+
 _PROTOCOLS = {
     "voxreg-benchmark-v3": "Registration",
     "voxreg-benchmark-v4": "Registration",
     "voxreg-resample-benchmark-v3": "Resampling",
+    "voxreg-lazy-benchmark-v1": "Lazy streaming",
+    "voxreg-lazy-benchmark-v2": "Lazy streaming",
+    "voxreg-lazy-benchmark-v3": "Lazy streaming",
 }
 _COLORS = {
     "voxreg": "#16867a",
@@ -227,6 +232,15 @@ def _chart(cases, metric, resampling, runs, limit=None):
 
 
 def _section(path, report, index):
+    if report["protocol"].startswith("voxreg-lazy-"):
+        section = render_lazy_section(path, report, index)
+        metadata = {k: v for k, v in report.items() if k != "cases"}
+        return section.removesuffix("</section>") + (
+            "<details><summary>Lazy protocol, versions, source hashes and provenance</summary>"
+            f"<p>Input: <code>{escape(str(path))}</code><br>results.json SHA256: "
+            f"<code>{hashlib.sha256(path.read_bytes()).hexdigest()}</code></p>"
+            f"<pre>{escape(json.dumps(metadata, indent=2))}</pre></details></section>"
+        )
     operation = _PROTOCOLS[report["protocol"]]
     resampling = operation == "Resampling"
     cases = sorted(
@@ -287,7 +301,7 @@ def _section(path, report, index):
         ]
         if not subset:
             continue
-        parts.append(f'<h3>{escape(group)}</h3><div class="plots">')
+        parts.append(f'<h3>{escape(group)}</h3><div class="plots resident-plots">')
         for metric in ("time", "ram", "vram", "accuracy"):
             parts.append(
                 _chart(
@@ -300,7 +314,7 @@ def _section(path, report, index):
             )
         parts.append("</div>")
     parts.append(
-        '<h3>Recorded measurements</h3><p>Ratios are FireANTs time / voxreg time within this run only; greater than 1 means voxreg was faster. They require both complete accuracy-passing cases and identical phase input hashes. Unmatched batches are explicitly flagged, not claimed as controlled wins. Hover over runtime for every timed call.</p><div class="table"><table><thead><tr><th>Configuration</th><th>Outcome</th><th>Batch</th><th>Seconds: median [min–max]</th><th>First call (s)</th><th>RAM GiB</th><th>VRAM GiB</th><th>Worst-frame error</th><th>FireANTs / voxreg</th></tr></thead><tbody>'
+        '<details><summary>Detailed eager measurements and within-run ratios</summary><p>Ratios are FireANTs time / voxreg time within this run only; greater than 1 means voxreg was faster. They require both complete accuracy-passing cases and identical phase input hashes. Unmatched batches are explicitly flagged, not claimed as controlled wins. Hover over runtime for every timed call.</p><div class="table"><table><thead><tr><th>Configuration</th><th>Outcome</th><th>Batch</th><th>Seconds: median [min–max]</th><th>First call (s)</th><th>RAM GiB</th><th>VRAM GiB</th><th>Worst-frame error</th><th>FireANTs / voxreg</th></tr></thead><tbody>'
     )
     previous_group = None
     for case in cases:
@@ -335,7 +349,7 @@ def _section(path, report, index):
             + "".join(f"<td>{escape(v)}</td>" for v in cells)
             + "</tr>"
         )
-    parts.append("</tbody></table></div></section>")
+    parts.append("</tbody></table></div></details></section>")
     return "\n".join(parts)
 
 
@@ -349,10 +363,14 @@ def _render(paths, output):
             raise ValueError(
                 f"Unsupported protocol in {path}: {report.get('protocol')!r}; use this reporter only for current benchmark protocols"
             )
-        if (
-            not isinstance(report.get("cases"), list)
-            or not isinstance(report.get("runs"), int)
-            or report["runs"] < 1
+        lazy = report["protocol"].startswith("voxreg-lazy-")
+        runs = (
+            [c.get("config", {}).get("runs") for c in report.get("cases", [])]
+            if lazy
+            else [report.get("runs")]
+        )
+        if not isinstance(report.get("cases"), list) or any(
+            isinstance(n, bool) or not isinstance(n, int) or n < 1 for n in runs
         ):
             raise ValueError(f"Invalid cases/runs in {path}")
         reports.append((path, report))
@@ -367,15 +385,51 @@ def _render(paths, output):
         f'<a href="#run-{i}">{escape(_PROTOCOLS[r["protocol"]])}: {escape(p.parent.name)}</a>'
         for i, (p, r) in enumerate(reports, 1)
     )
+    overview = ['<section aria-label="Overview"><h2>Overview</h2><div class="cards">']
+    failures = []
+    for i, (path, report) in enumerate(reports, 1):
+        cases = report["cases"]
+        counts = Counter(c["status"] for c in cases)
+        label = _PROTOCOLS[report["protocol"]]
+        if label == "Lazy streaming":
+            label += " · " + report.get("operation", "unknown")
+        overview.append(
+            f'<article><a href="#run-{i}"><strong>{escape(label)}</strong></a>'
+            f"<p>{escape(path.parent.name)}</p><p>{counts.get('passed', 0)}/{len(cases)} cases passed · "
+            f"{escape(report['status'])}</p><small>{escape(report['protocol'])}</small></article>"
+        )
+        for case in cases:
+            if case["status"] == "passed":
+                continue
+            reasons = []
+            for phase in ("timing", "memory", "accuracy"):
+                data = case.get(phase, {})
+                if data.get("error"):
+                    reasons.append(f"{phase}: {data['error']}")
+                elif data.get("status") not in (None, "passed"):
+                    reasons.append(f"{phase}: {data['status']}")
+            failures.append(
+                f'<li><a href="#run-{i}">{escape(path.parent.name)}</a> / '
+                f"<code>{escape(case['id'])}</code>: <strong>{escape(case['status'])}</strong>"
+                f"<pre>{escape(chr(10).join(reasons) or 'Incomplete or unqualified configuration; inspect the run details.')}</pre></li>"
+            )
+    overview.append(
+        "</div><details><summary>Failures and incomplete cases ("
+        + str(len(failures))
+        + ")</summary><ul>"
+        + "".join(failures)
+        + "</ul></details></section>"
+    )
     sections = [_section(p, r, i) for i, (p, r) in enumerate(reports, 1)]
     html = (
         """<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>voxreg benchmark report</title><style>
-body{font:15px system-ui,sans-serif;max-width:1500px;margin:32px auto;padding:0 20px;color:#202b36;background:#fafbfc;line-height:1.5}h1,h2,h3{line-height:1.2}h2{border-top:3px solid #16867a;padding-top:24px;margin-top:48px}a{color:#146b75}code,pre{font-size:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#eef1f4;padding:16px}figure{background:white;margin:14px 0;padding:12px;border:1px solid #ddd;border-radius:6px}figcaption{font-weight:600}img{width:100%;height:auto}table{border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid #ddd}th{background:#e8edf0}.table{overflow-x:auto}.fail td:nth-child(2),.warning{color:#962626;font-weight:600}.pass td:nth-child(2){color:#126355}summary{cursor:pointer}section{scroll-margin:20px}
+body{font:15px system-ui,sans-serif;max-width:1500px;margin:32px auto;padding:0 20px;color:#202b36;background:#fafbfc;line-height:1.5}h1,h2,h3{line-height:1.2}h2{border-top:3px solid #16867a;padding-top:24px;margin-top:48px}a{color:#146b75}code,pre{font-size:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#eef1f4;padding:16px}figure{background:white;margin:14px 0;padding:12px;border:1px solid #ddd;border-radius:6px}figcaption{font-weight:600}img{width:100%;height:auto}table{border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid #ddd}th{background:#e8edf0}.table{overflow-x:auto}.fail td:nth-child(2),.warning{color:#962626;font-weight:600}.pass td:nth-child(2){color:#126355}summary{cursor:pointer}section{scroll-margin:20px}.plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,540px),1fr));gap:12px}.plots figure{margin:8px 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.cards article{padding:16px;background:white;border:1px solid #ddd;border-radius:6px;overflow-wrap:anywhere}details{margin:18px 0}summary{font-weight:600}nav{display:flex;flex-wrap:wrap;gap:8px}.resident-plots{grid-template-columns:1fr}
 </style><body><h1>voxreg performance and accuracy</h1><p>Separate experiments, not a combined registration + resampling pipeline measurement. Hosts, revisions, input maps and measurement boundaries remain separate: no cross-host speedups or pooled ranking. Recorded accuracy is not recomputed by this report.</p><p>"""
         + legend
-        + """</p><p>● Accuracy-passing case · × Failed / unqualified case · dark vertical tick: first timed call · whisker: min–max · all recorded calls contribute to the median. Graph axes are logarithmic when all values are positive. Missing measurements are omitted, never treated as zero. Native controls stay separate from resident APIs.</p><nav>"""
+        + """</p><p>● Accuracy-passing case · × Failed / unqualified case · dark vertical tick: first timed call · whisker: min–max · all recorded calls contribute to the median. Eager axes are logarithmic when all values are positive; lazy scaling uses linear size axes and signed-log accuracy when needed. Missing measurements are omitted, never treated as zero. Lazy read/compute/write scaling is separate from eager resident backend comparisons. Red ticks/lines mark accuracy limits.</p><nav>"""
         + navigation
         + "</nav>"
+        + "\n".join(overview)
         + "\n".join(sections)
         + "</body></html>"
     )

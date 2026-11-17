@@ -215,11 +215,21 @@ and incomplete outcomes remain visible. Graphs show all timing ranges and the
 first call; speed ratios require completed accuracy-passing cases with identical
 inputs and matched voxreg/FireANTs batches.
 
-To render current results together without pooling hosts, revisions or operations:
+The combined report leads with an outcome overview and graphs, with detailed
+tables and provenance collapsed. Eager resident registration/resampling and lazy
+read/compute/write scaling have separate sections for each run; hosts, revisions,
+protocols and execution policies are never pooled. Lazy graphs show timing ranges,
+baseline/peak/incremental RAM, allocated/reserved GPU memory and accuracy. Cold-input
+verification coverage and missing phases remain explicit. A scaling line connects
+only complete accuracy-passing cases with matching policies, not a universal
+out-of-core qualification.
+
+To render all four results in one self-contained, offline HTML file:
 
 ```bash
 just benchmark-report artifacts/performance-report.html \
-  artifacts/benchmark-register-01 artifacts/benchmark-resample-01
+  artifacts/benchmark-register-01 artifacts/benchmark-resample-01 \
+  artifacts/benchmark-register-lazy-01 artifacts/benchmark-resample-lazy-01
 ```
 
 Or run the reporter directly:
@@ -227,8 +237,13 @@ Or run the reporter directly:
 ```bash
 uv run --extra benchmarks python benchmarks/benchmark_report.py \
   artifacts/benchmark-register-01 artifacts/benchmark-resample-01 \
+  artifacts/benchmark-register-lazy-01 artifacts/benchmark-resample-lazy-01 \
   --output artifacts/performance-report.html
 ```
 
-The reporter accepts only the current protocols. Existing saved results are not
-modified by the benchmark or reporter.
+The reporter accepts recorded eager registration v3/v4, eager resampling v3 and
+lazy v1/v2/v3. Historical protocols remain separate, and v1 is not relabelled as
+cold input. Existing saved results are not modified by the reporter. No browser
+scripts, external image files or network resources are required. Individual lazy
+runs still produce their compact standalone report automatically; use the combined
+reporter for the graph-first view.
