@@ -11,7 +11,7 @@ from time import perf_counter
 
 import ants
 import numpy as np
-from _benchmark_resample_io import LIMIT, _errors, _load
+from _benchmark_resample_io import LIMIT, _errors, _load, sample_center_support
 
 PACKAGES = (
     "antspyx",
@@ -105,14 +105,7 @@ def _resample(arrays, metadata):
             else transform[:3, :3] @ points + transform[:3, 3, None]
         )
         query = inverse @ (mapped - affine[:3, 3, None])
-        valid = (
-            (
-                (query >= -1e-10)
-                & (query <= np.array(arrays["fixed"].shape)[:, None] - 1 + 1e-10)
-            )
-            .all(axis=0)
-            .reshape(arrays["fixed"].shape)
-        )
+        valid = sample_center_support(query, original.shape).reshape(original.shape)
         output[index] = sampled[None] if planar else sampled
         output[index][~valid] = original.min()
         masks[index] = valid

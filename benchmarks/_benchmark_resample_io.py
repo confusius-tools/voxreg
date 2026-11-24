@@ -5,9 +5,41 @@ import json
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from scipy.ndimage import map_coordinates
 
 LIMIT = 1e-5
+
+SAMPLE_CENTER_TOLERANCE = 1e-5
+"""Native-voxel boundary tolerance used by the independent benchmark oracle."""
+
+
+def sample_center_support(
+    coordinates: npt.NDArray[np.float64], shape: tuple[int, ...]
+) -> npt.NDArray[np.bool_]:
+    """Check native sample centers on the matching grids used by the benchmarks.
+
+    Parameters
+    ----------
+    coordinates : (3, N) numpy.ndarray
+        Source voxel positions in k/j/i order.
+    shape : tuple of int
+        Spatial shape of the source image.
+
+    Returns
+    -------
+    (N,) numpy.ndarray
+        Boolean mask of positions supported by the source image.
+    """
+    support = np.ones(coordinates.shape[1], dtype=bool)
+    for positions, size in zip(coordinates, shape, strict=True):
+        if size == 1:
+            support &= (positions >= -0.5) & (positions < 0.5)
+        else:
+            support &= (positions >= -SAMPLE_CENTER_TOLERANCE) & (
+                positions <= size - 1 + SAMPLE_CENTER_TOLERANCE
+            )
+    return support
 
 
 def _digest(arrays, metadata):
@@ -83,9 +115,7 @@ def _errors(output, arrays, metadata, validity=None):
             else transform[:3, :3] @ points + transform[:3, 3, None]
         )
         query = inverse @ (mapped - affine[:3, 3, None])
-        valid = (
-            (query >= -1e-10) & (query <= np.array(shape)[:, None] - 1 + 1e-10)
-        ).all(axis=0)
+        valid = sample_center_support(query, shape)
         if not valid.any():
             raise AssertionError("No common interpolation support")
         if masks is not None and not np.array_equal(masks[index].ravel(), valid):

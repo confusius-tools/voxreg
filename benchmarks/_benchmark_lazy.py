@@ -28,6 +28,7 @@ import torch
 import xarray as xr
 import zarr
 from _benchmark_cache import evict_input_cache
+from _benchmark_resample_io import sample_center_support
 from distributed import Client, LocalCluster, get_task_stream
 from scipy.ndimage import map_coordinates
 from scipy.spatial.transform import Rotation
@@ -507,15 +508,7 @@ def verify(config: dict[str, Any], output: Path, directory: Path) -> dict[str, A
             ):
                 invalid_statuses += 1
         coordinates = (inverse_affine @ fitted @ points)[:3]
-        tolerance = 1e-5 if config["operation"] == "register" else 1e-10
-        support = np.ones(math.prod(shape), dtype=bool)
-        for axis, size in enumerate(shape):
-            support &= (
-                (coordinates[axis] >= -0.5) & (coordinates[axis] < 0.5)
-                if size == 1
-                else (coordinates[axis] >= -tolerance)
-                & (coordinates[axis] <= size - 1 + tolerance)
-            )
+        support = sample_center_support(coordinates, shape)
         expected = map_coordinates(
             raw.astype(np.float64),
             coordinates,
@@ -1086,6 +1079,7 @@ def main(argv: list[str] | None = None, *, operation: str = "register") -> int:
         f"benchmark_{operation}.py",
         "_benchmark_lazy.py",
         "_benchmark_cache.py",
+        "_benchmark_resample_io.py",
     ):
         shutil.copy2(ROOT / "benchmarks" / name, frozen / "benchmarks" / name)
     hashes = {

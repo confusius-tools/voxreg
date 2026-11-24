@@ -24,6 +24,9 @@ from voxreg.transforms import (
     validate_matrices,
 )
 
+SAMPLE_CENTER_TOLERANCE = 1e-5
+"""Distance in native voxels allowed beyond the outermost sample centers."""
+
 
 class _TensorOptions(TypedDict):
     """Type shared tensor construction options."""
@@ -141,7 +144,7 @@ def make_plane(
         normalized_to_plane=torch.tensor(lattice, **options) * half[None, :],
         normalized_i=torch.arange(w, **options)[None, None, :] / bounds[0] * 2 - 1,
         normalized_j=torch.arange(h, **options)[None, :, None] / bounds[1] * 2 - 1,
-        support_tolerance=2e-5 / bounds,
+        support_tolerance=SAMPLE_CENTER_TOLERANCE / half,
         identity=torch.eye(2, **options),
         basis=basis,
         center=geometric_center if center is None else center,
@@ -290,7 +293,7 @@ def make_grid(
             )
         coordinates.append(coordinate.reshape(shape))
     options: _TensorOptions = {"device": device, "dtype": dtype}
-    tolerance = 1e-5 / half
+    tolerance = SAMPLE_CENTER_TOLERANCE / half
     slice_basis = (
         make_plane(fixed if slice_volume else moving, device=device, dtype=dtype).basis
         if mixed

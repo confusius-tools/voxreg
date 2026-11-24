@@ -46,6 +46,44 @@ def test_exported_forward_matches_registration(
     assert reverse.shape == moving.shape and reverse_valid.dtype == bool
 
 
+@pytest.mark.parametrize("depth,model", [(1, "translation"), (4, "syn")])
+@pytest.mark.parametrize("interpolation", ["linear", "nearest", "bspline"])
+def test_replay_at_sample_center_boundaries(device, depth, model, interpolation):
+    """Retain a column within tolerance and fill a row just outside it."""
+    shape = (depth, 8, 8)
+    moving = create_voxeldata(
+        np.arange(np.prod(shape), dtype=np.float64).reshape(shape),
+        dims=("k", "j", "i"),
+        voxel_to_world=np.eye(4),
+    )
+    seed = np.eye(4)
+    seed[:3, 3] = [0, -2e-5, 1e-6]
+    fitted = register(
+        moving,
+        moving,
+        transform=model,
+        initial_transform=seed,
+        resample_interpolation=interpolation,
+        return_transforms=True,
+        max_iterations=1,
+        learning_rate=1e-20,
+        device=device,
+    )
+    replay, valid = resample(
+        moving,
+        moving,
+        fitted["forward/transform"],
+        interpolation=interpolation,
+        device=device,
+    )
+    expected = np.ones(shape, dtype=bool)
+    expected[:, 0, :] = False
+    np.testing.assert_array_equal(fitted["images/valid"], expected)
+    np.testing.assert_array_equal(valid, expected)
+    np.testing.assert_array_equal(replay.values[~expected], moving.values.min())
+    np.testing.assert_allclose(replay, fitted["images/registered"], atol=1e-10, rtol=0)
+
+
 @pytest.mark.parametrize("dtype", [np.float32, np.float64, np.uint16])
 @pytest.mark.parametrize("interpolation", ["linear", "nearest"])
 def test_physical_pull_matches_scipy(device, dtype, interpolation):

@@ -10,7 +10,7 @@ import _benchmark_data as data
 import numpy as np
 import torch
 import xarray as xr
-from _benchmark_resample_io import _digest, _load
+from _benchmark_resample_io import SAMPLE_CENTER_TOLERANCE, _digest, _load
 from _benchmark_resample_io import _errors as _array_errors
 from _benchmark_runner import RESAMPLE_LIMIT, _group_rss, _versions, _write
 from torch.nn import functional
@@ -169,7 +169,9 @@ def _resident(moving, fixed, transforms, config):
     output = np.empty_like(raw)
     masks = np.empty(raw.shape, dtype=bool)
     identity = torch.eye(len(axes), len(axes) + 1, device=device, dtype=torch.float64)
-    tolerance = torch.tensor(2e-10 / (np.array(shape)[axes] - 1), device=device)
+    tolerance = torch.tensor(
+        2 * SAMPLE_CENTER_TOLERANCE / (np.array(shape)[axes] - 1), device=device
+    )
     for first in range(0, len(raw), batch):
         last = min(first + batch, len(raw))
         images = torch.tensor(

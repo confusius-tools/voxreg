@@ -5,7 +5,7 @@ Work one item at a time, then stop for review and a separate commit. Start with 
 ## Registration and transform replay
 
 - [x] **Make SyN recognize low-contrast images on a bright background.** SyN now subtracts each image’s minimum before scaling it for local correlation. A regression test checks that adding 10,000 to a float32 recording preserves the fitted motion and the score, while a constant frame still reports an unusable metric.
-- [ ] **Use the same image boundary for registration and replay.** On an 8 × 8 slice shifted by one millionth of a voxel, registration kept all 64 pixels. Replaying its saved transform with `resample` kept 56 and replaced the last column with the fill value. Share the final sampling rule and test both pixel values and validity masks at the edges.
+- [x] **Use the same image boundary for registration and replay.** Both use the same tolerance at the outermost sample centers. Regression tests check that replay keeps the same edge pixels, fills the same out-of-bounds row, and returns the same mask for all three interpolation methods.
 - [ ] **Accept valid starting poses together in a recording.** Two slice poses worked individually but failed together when one pose flipped the slice normal. The first frame currently determines the orientation used for every frame. Check that a recording gives the same result as registering each frame separately, in either frame order.
 - [ ] **Allow registration inside PyTorch’s `no_grad()` context.** A caller doing inference can disable gradients for its own work, but the registration optimizer needs them internally. Enable gradients during fitting and compare rigid and SyN results inside and outside that context.
 

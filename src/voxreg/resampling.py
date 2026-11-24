@@ -23,7 +23,7 @@ from voxreg.interpolation import (
 )
 from voxreg.preparation import choose_batch_size, resolve_device
 from voxreg.results import build_output_template
-from voxreg.sampling import sample_displaced
+from voxreg.sampling import SAMPLE_CENTER_TOLERANCE, sample_displaced
 from voxreg.transforms import validate_matrices
 
 
@@ -37,8 +37,12 @@ def _sample_linear(
     lower, upper, scale, shift = torch.tensor(
         np.stack(
             (
-                np.where(extent, -0.5, -1e-10),
-                np.where(extent, np.nextafter(sizes - 0.5, -np.inf), sizes - 1 + 1e-10),
+                np.where(extent, -0.5, -SAMPLE_CENTER_TOLERANCE),
+                np.where(
+                    extent,
+                    np.nextafter(sizes - 0.5, -np.inf),
+                    sizes - 1 + SAMPLE_CENTER_TOLERANCE,
+                ),
                 np.where(sizes == 1, 0.0, 2 / np.maximum(sizes - 1, 1)),
                 np.where(sizes == 1, 0.0, -1.0),
             )
@@ -278,7 +282,8 @@ def resample(
     valid : xarray.DataArray
         Boolean mask of supported moving-image sample centers. Singleton axes
         have half-open voxel-extent support. Mixed slice/volume pairs use this
-        support on every axis, matching registration.
+        support on every axis, matching registration. Other axes include samples
+        up to 1e-5 voxels beyond the outermost sample centers.
 
     Raises
     ------
@@ -456,8 +461,9 @@ def resample(
                 if mixed or size == 1:
                     valid &= (coordinate >= -0.5) & (coordinate < size - 0.5)
                 else:
-                    # Allow only double-coordinate roundoff at ordinary lattice faces.
-                    valid &= (coordinate >= -1e-10) & (coordinate <= size - 1 + 1e-10)
+                    valid &= (coordinate >= -SAMPLE_CENTER_TOLERANCE) & (
+                        coordinate <= size - 1 + SAMPLE_CENTER_TOLERANCE
+                    )
                 normalized.append(
                     torch.zeros_like(coordinate)
                     if size == 1

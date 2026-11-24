@@ -410,7 +410,10 @@ result = voxreg.register(moving, fixed, resample_interpolation="bspline")
 
 Fitting stays linear, and the default final interpolation is also linear.
 Offline `resample` uses its `interpolation` argument and accepts the same three
-methods.
+methods. Registration and replay both accept samples up to 0.00001 voxel
+beyond the outermost sample centers. Singleton axes use the full voxel width,
+including the lower face and excluding the upper face. Slice-to-volume and
+volume-to-slice sampling use this full-width rule on every axis.
 
 Cubic interpolation prepares spline coefficients once per source batch, then
 samples the original image once. This coefficient prefilter is not Gaussian
