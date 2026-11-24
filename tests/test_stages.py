@@ -117,6 +117,56 @@ def test_stage_overrides_and_manual_handoff(linear_pair_factory, device, planar)
     ] == [0, 1, 2]
 
 
+def test_intermediate_slice_overlap_matches_returned_masks(
+    slice_volume_pair_factory, device
+):
+    """Compare both stages with standalone fits on the same native volume grid."""
+    moving, fixed, _ = slice_volume_pair_factory("translation")
+    series = xr.concat([moving] * 3, dim=xr.IndexVariable("time", [2, 3, 5]))
+    seeds = np.repeat(np.eye(4)[None], 3, axis=0)
+    seeds[:, 2, 3] = [0, 2, 4]
+    roi = fixed > np.median(fixed.values)
+    options: RegistrationOptions = {
+        "batch_size": 2,
+        "max_iterations": 1,
+        "fixed_mask": roi,
+        "return_transforms": True,
+        "device": device,
+        "progress": False,
+    }
+    staged = register(
+        series,
+        fixed,
+        transform=("translation", "rigid"),
+        initial_transform=seeds,
+        **options,
+    )
+    first = register(
+        series, fixed, transform="translation", initial_transform=seeds, **options
+    )
+    final = register(
+        series,
+        fixed,
+        transform="rigid",
+        initial_transform=first["forward"].to_dataset()["transform"],
+        **options,
+    )
+    for index, standalone in enumerate((first, final)):
+        mask = standalone["images"].to_dataset()["valid"]
+        fraction = mask.mean(("k", "j", "i"))
+        diagnostics = staged[f"stages/{index}"].to_dataset()
+        assert_array_equal(diagnostics.output_valid_fraction, fraction)
+        assert_allclose(diagnostics.valid_fraction, fraction, rtol=1e-7)
+        assert_allclose(
+            diagnostics.roi_valid_fraction,
+            (mask & roi).mean(("k", "j", "i")),
+            rtol=1e-7,
+        )
+    assert np.ptp(first["diagnostics"].to_dataset().valid_fraction.values) > 0
+    xr.testing.assert_equal(staged["forward/transform"], final["forward/transform"])
+    xr.testing.assert_equal(staged["images/valid"], final["images/valid"])
+
+
 @pytest.mark.parametrize("terminal", ["affine", "syn"])
 def test_pipeline_samples_original_only_once(
     linear_pair_factory, monkeypatch, terminal
@@ -126,8 +176,14 @@ def test_pipeline_samples_original_only_once(
     fixed, moving, _ = linear_pair_factory(True, "rigid")
     moving = moving.copy(data=moving.values.astype(np.float64))
     source = moving.copy(deep=True)
-    samples = []
+    samples, exported_masks = [], []
     original_sample = linear.sample_rigid
+    to_numpy = torch.Tensor.numpy
+
+    def observe_export(tensor, *args, **kwargs):
+        if tensor.dtype == torch.bool and tensor.numel() == fixed.size:
+            exported_masks.append(tensor.shape)
+        return to_numpy(tensor, *args, **kwargs)
 
     def observe(images, *args, **kwargs):
         if images.dtype == torch.float64:
@@ -136,6 +192,7 @@ def test_pipeline_samples_original_only_once(
 
     monkeypatch.setattr(linear, "sample_rigid", observe)
     monkeypatch.setattr(syn, "sample_rigid", observe)
+    monkeypatch.setattr(torch.Tensor, "numpy", observe_export)
     models = (
         ("translation", "rigid", "affine")
         if terminal == "affine"
@@ -150,6 +207,8 @@ def test_pipeline_samples_original_only_once(
         progress=False,
     )
     assert len(samples) == 1
+    # Only the final stage exports a voxel mask.
+    assert len(exported_masks) == 1
     assert_array_equal(samples[0], moving.values)
     assert "forward" in result
     output, valid = resample(moving, fixed, result["forward"].to_dataset()["transform"])

@@ -425,11 +425,13 @@ def run_linear(
     planar = isinstance(plane, Plane) or plane.planar
     raw = moving.values[:, 0] if planar else moving.values
     spatial_axes = tuple(range(1, raw.ndim))
+    # A 32-bit count saves reduction workspace when the whole reference grid fits.
+    count_dtype = torch.int32 if fixed.size <= np.iinfo(np.int32).max else torch.int64
     reference_shape = (slice(None),) + (None,) * len(spatial_axes)
     resampling_dtype = select_resampling_dtype(raw.dtype, interpolation)
     max_iterations = budgets[0]
     outputs, masks, parameters = [], [], []
-    clocks, statuses, objectives, overlaps = [], [], [], []
+    clocks, statuses, objectives, valid_counts = [], [], [], []
     level_records = []
     metric_overlaps = []
     with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
@@ -560,20 +562,23 @@ def run_linear(
                     outputs.append(
                         restore_image_dtype(values, raw.dtype, interpolation)
                     )
-                masks.append(valid.cpu().numpy())
+                    masks.append(valid.cpu().numpy())
+                valid_counts.append(
+                    valid.sum(dim=spatial_axes, dtype=count_dtype).cpu().numpy()
+                )
+                # Drop fitting masks before starting the next optimizer batch.
+                del valid, fit_valid, metric_valid
                 parameters.append(physical.cpu().numpy())
                 clocks.append(steps.cpu().numpy())
                 statuses.append(status.cpu().numpy())
                 objectives.append(loss.cpu().numpy())
-                overlaps.append(valid.float().mean(dim=spatial_axes).cpu().numpy())
             timings["resample_download"] += perf_counter() - start
             if progress is True:
                 advance(last - first)
             elif callable(progress):
                 progress(last, len(raw))
     params = np.concatenate(parameters)
-    validity = np.concatenate(masks)
-    values = None if fit_only else np.concatenate(outputs)
+    valid_fraction = np.concatenate(valid_counts) / fixed.size
     diagnostic_params, diagnostic_plane = params, plane
     mixed = isinstance(plane, SpatialGrid) and plane.slice_basis is not None
     matrices = (
@@ -635,7 +640,7 @@ def run_linear(
     diagnostics = xr.Dataset(
         {
             "objective": ("time", np.concatenate(objectives)),
-            "valid_fraction": ("time", np.concatenate(overlaps)),
+            "valid_fraction": ("time", valid_fraction.astype(np.float32)),
             "n_iterations": ("time", np.concatenate(clocks)),
             "status": ("time", STATUS_LABELS[np.concatenate(statuses)]),
             **motion,
@@ -691,10 +696,7 @@ def run_linear(
             rotation_center_zyx_mm=plane.center.tolist(),
         )
         if moving.sizes["k"] == 1:
-            diagnostics["output_valid_fraction"] = (
-                "time",
-                validity.reshape(len(raw), -1).mean(axis=1),
-            )
+            diagnostics["output_valid_fraction"] = ("time", valid_fraction)
             if np.any(diagnostics.output_valid_fraction.values == 0):
                 warnings.warn(
                     "No fixed-grid sample centers lie within the transformed slice's voxel extent for some frames. Fitting uses the native fixed grid; try a better initialization or choose the slice as fixed.",
@@ -708,7 +710,6 @@ def run_linear(
     if fit_only:
         assert matrices is not None
         return LinearFit(matrices, diagnostics, plane.center.copy())
-    assert values is not None
     axes = ["z", "y", "x", "1"]
     transforms = (
         xr.DataArray(
@@ -731,8 +732,8 @@ def run_linear(
     template = build_output_template(moving, fixed, same_grid)
     return build_result(
         template,
-        values,
-        validity,
+        np.concatenate(outputs),
+        np.concatenate(masks),
         transforms,
         diagnostics,
         inverse_transforms,

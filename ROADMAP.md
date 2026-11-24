@@ -21,7 +21,7 @@ Work one item at a time, then stop for review and a separate commit. Start with 
 
 - [x] **Stop fitting when every frame in a batch has stopped.** Linear and SyN fitting check for active frames before each update. A reference-only batch reports its score once. Tests cover failed and skipped frames and verify that active frames in a mixed batch keep fitting.
 - [x] **Send only reference-grid metadata to lazy resampling workers.** Workers now build the placeholder from the grid coordinates. For a 96³ reference and a 1 × 2 × 2 source, the serialized image task graph fell from about 905 KB to 15 KB. A regression test checks how graph size grows with the reference axes.
-- [ ] **Release intermediate validity masks after counting valid voxels.** Earlier linear stages only return transforms and diagnostics, yet the code collects and concatenates a mask for the entire recording. Compute the overlap fraction per frame within each batch. Compare peak memory and verify that staged transforms, overlap fractions, and final masks agree. This cost was identified by code inspection.
+- [x] **Release intermediate validity masks after counting valid voxels.** Earlier linear stages keep one count per frame. Only the final stage retains voxel masks. For 128 slices fitted to a 16 × 96 × 96 volume one frame at a time, median peak process memory for the intermediate translation stage fell from 358 to 337 MiB across three CPU runs per version. Tests compare staged transforms, overlap fractions, and final masks with standalone fits.
 
 ## Validation after the fixes
 
