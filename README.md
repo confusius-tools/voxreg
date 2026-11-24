@@ -102,6 +102,7 @@ result = voxreg.register(
 | `moving`, `fixed` | VoxelData with physical length units: eager `(k, j, i)` pairs or NumPy/Dask `(time, k, j, i)` recordings. `fixed` is spatial-only and required for a single image. |
 | `transform` | `"translation"`, `"rigid"` (default), `"affine"`, `"syn"`, a `Stage`, or a sequence of model names/`Stage` specifications. Slices use `k=1`; volumes have at least two samples on each axis. |
 | `initialization` | Optional `"center_geometry"`, `"center_moments"`, `"align_planes"` or a fixed→moving world matrix. Defaults to identity. |
+| `initial_transform` | A shared 4 × 4 starting pose or one matrix per moving frame, in time order. For example, pass a previous rigid fit’s `result["forward/transform"]` to refine each frame. When the first frame is the reference, its matrix must be identity. |
 | `fixed_mask`, `moving_mask` | Optional boolean ROI VoxelData in their own physical grids. Fixed mask is spatial-only; moving mask can be shared or per-frame with matching time labels. Masks restrict fitting at every stage and level. |
 | `moving_intensity_scaling`, `fixed_intensity_scaling` | Independent fitting-only transforms: `None` (default), `"log1p"`, `"sqrt"` or a positive finite power exponent. Fixed scaling applies only to an explicit fixed image. |
 | `moving_winsorize_percentiles`, `fixed_winsorize_percentiles` | Optional lower/upper percentile pairs on the 0–100 scale, e.g. `(1, 99)`. Disabled by default; clip each image independently before intensity transforms. |

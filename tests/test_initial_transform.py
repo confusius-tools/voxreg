@@ -591,3 +591,83 @@ def test_initialization_matrix_and_initial_transform_are_exclusive():
         register(
             moving, fixed, initialization=truth, initial_transform=truth, progress=False
         )
+
+
+@pytest.mark.parametrize("model", ["rigid", "affine", "syn"])
+@pytest.mark.parametrize("batch_size", [1, 2])
+def test_opposite_slice_seeds_match_individual_fits(model, batch_size, device):
+    """Each frame's pose follows its data across batch and pyramid boundaries."""
+    texture = np.random.default_rng(19).normal(size=(1, 13, 15))
+    fixed = create_voxeldata(texture, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
+    upright = fixed.copy(data=np.roll(texture, 1, axis=2))
+    flipped = upright.isel(j=slice(None, None, -1))
+    series = xr.concat(
+        [upright, upright.copy(data=flipped.values.copy())],
+        dim=xr.IndexVariable("time", [2, 5]),
+    )
+    poses = np.stack([np.eye(4), np.diag([-1.0, -1.0, 1.0, 1.0])])
+    poses[1, 1, 3] = fixed.sizes["j"] - 1
+    options: RegistrationOptions = {
+        "transform": model,
+        "device": device,
+        "max_iterations": 3,
+        "shrink_factors": (2, 1),
+        "smoothing_sigmas": (0.3, 0),
+        "return_transforms": True,
+        "progress": False,
+    }
+    individual = [
+        register(
+            series.isel(time=i, drop=True), fixed, initial_transform=pose, **options
+        )
+        for i, pose in enumerate(poses)
+    ]
+    for order in ([0, 1], [1, 0]):
+        result = register(
+            series.isel(time=order).assign_coords(time=series.time),
+            fixed,
+            initial_transform=poses[order],
+            batch_size=batch_size,
+            **options,
+        )
+        for index, i in enumerate(order):
+            for path in (
+                "forward/transform",
+                "inverse/transform",
+                "images/registered",
+                "images/valid",
+                "diagnostics/objective",
+                "diagnostics/n_iterations",
+            ):
+                np.testing.assert_allclose(
+                    result[path].isel(time=index),
+                    individual[i][path],
+                    rtol=0,
+                    atol=1e-6,
+                )
+
+
+def test_implicit_slice_reference_requires_identity_with_opposite_seeds():
+    texture = np.random.default_rng(23).normal(size=(1, 8, 8))
+    series = create_voxeldata(
+        np.stack([texture, texture[:, ::-1]]),
+        dims=("time", "k", "j", "i"),
+        time=[0, 1],
+        voxel_to_world=np.eye(4),
+    )
+    poses = np.stack([np.eye(4), np.diag([-1.0, -1.0, 1.0, 1.0])])
+    poses[1, 1, 3] = 7
+    result = register(
+        series,
+        initial_transform=poses,
+        return_transforms=True,
+        max_iterations=1,
+        device="cpu",
+        progress=False,
+    )
+    np.testing.assert_allclose(result["forward/transform"], poses, atol=1e-12, rtol=0)
+    np.testing.assert_allclose(
+        result["images/registered"], np.stack([texture, texture]), atol=1e-12, rtol=0
+    )
+    with pytest.raises(ValueError, match="implicit reference"):
+        register(series, initial_transform=poses[::-1], device="cpu", progress=False)

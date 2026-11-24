@@ -33,6 +33,7 @@ from voxreg.sampling import (
     make_grid,
     recover_initial_parameters,
     sample_rigid,
+    select_frame_grid,
 )
 from voxreg.transforms import (
     build_linear_diagnostics,
@@ -474,6 +475,7 @@ def run_linear(
     with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
         for first in range(0, len(raw), batch_size):
             last = min(first + batch_size, len(raw))
+            batch_grid = select_frame_grid(plane, first, last)
             if device == "cuda":
                 torch.cuda.synchronize()
             start = perf_counter()
@@ -500,7 +502,7 @@ def run_linear(
                     get_mask_source(fixed_mask, device),
                     get_mask_source(moving_mask, device, first, last),
                     fixed,
-                    plane,
+                    batch_grid,
                 )
                 metric_options["metric_masks"] = metric_masks
             if active_frames is not None:
@@ -533,7 +535,7 @@ def run_linear(
                 physical, steps, status = _optimize_pyramid(
                     images,
                     target_tensor,
-                    plane,
+                    batch_grid,
                     reference,
                     max_iterations,
                     learning_rate,
@@ -547,7 +549,7 @@ def run_linear(
                 physical, steps, status = _optimize(
                     images,
                     target_tensor,
-                    plane,
+                    batch_grid,
                     reference,
                     max_iterations,
                     learning_rate,
@@ -564,7 +566,7 @@ def run_linear(
                         device=device,
                     )
                     sampled, valid = sample_rigid(
-                        original, physical, plane, interpolation=interpolation
+                        original, physical, batch_grid, interpolation=interpolation
                     )
                     fills = original.amin(dim=spatial_axes)[reference_shape]
                     sampled = torch.where(valid, sampled, fills)
@@ -573,7 +575,7 @@ def run_linear(
                             reference[reference_shape], original, sampled
                         )
                         valid = valid | reference[reference_shape]
-                fitted, fit_valid = sample_rigid(images, physical, plane)
+                fitted, fit_valid = sample_rigid(images, physical, batch_grid)
                 metric_valid = (
                     fit_valid
                     if metric_masks is None

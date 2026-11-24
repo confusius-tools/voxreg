@@ -822,7 +822,15 @@ def run_stage(
             initial_transform, plane, moving.sizes["time"]
         )
         if implicit_fixed:
-            if not np.allclose(initial[0], 0, rtol=0, atol=1e-12):
+            # Zero in-plane parameters can still encode a flipped reference slice.
+            flipped_reference = (
+                isinstance(plane, SpatialGrid)
+                and plane.plane_rotation is not None
+                and not np.allclose(
+                    plane.plane_rotation[0], np.eye(3), rtol=0, atol=1e-12
+                )
+            )
+            if flipped_reference or not np.allclose(initial[0], 0, rtol=0, atol=1e-12):
                 raise ValueError(
                     "The implicit reference initial_transform must be identity; supply explicit fixed otherwise."
                 )

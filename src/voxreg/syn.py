@@ -46,6 +46,7 @@ from voxreg.sampling import (
     recover_initial_parameters,
     sample_prepared,
     sample_rigid,
+    select_frame_grid,
 )
 
 
@@ -656,6 +657,7 @@ def run_syn(prepared: PreparedRegistration) -> xr.DataTree:
     with progress_bar("Registering frames", len(raw), show=progress is True) as advance:
         for first in range(0, len(raw), batch_size):
             last = min(first + batch_size, len(raw))
+            batch_grid = select_frame_grid(plane, first, last)
             if device == "cuda":
                 torch.cuda.synchronize()
             start = perf_counter()
@@ -685,7 +687,7 @@ def run_syn(prepared: PreparedRegistration) -> xr.DataTree:
                     get_mask_source(fixed_mask, device),
                     get_mask_source(moving_mask, device, first, last),
                     fixed,
-                    plane,
+                    batch_grid,
                 )
             fit_method = _fit_pyramid if schedule is not None else _fit
             pyramid_options = (
@@ -701,7 +703,7 @@ def run_syn(prepared: PreparedRegistration) -> xr.DataTree:
             forward, inverse, steps, status, objective, error = fit_method(
                 images,
                 stationary,
-                plane,
+                batch_grid,
                 grid,
                 fixed_plane,
                 parameters,
@@ -739,7 +741,7 @@ def run_syn(prepared: PreparedRegistration) -> xr.DataTree:
                 sampled, valid = sample_rigid(
                     original,
                     parameters,
-                    plane,
+                    batch_grid,
                     displacement=forward,
                     interpolation=interpolation,
                 )
@@ -780,7 +782,7 @@ def run_syn(prepared: PreparedRegistration) -> xr.DataTree:
                     .numpy()
                 )
                 fitted, fv = sample_rigid(
-                    images, parameters, plane, displacement=forward
+                    images, parameters, batch_grid, displacement=forward
                 )
                 if metric_masks is not None:
                     fv = metric_masks.apply(fv, parameters, forward)

@@ -1,6 +1,6 @@
 """Differentiable physical-space sampling on independent fixed and moving grids."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import product
 from math import prod
 from typing import Literal, TypedDict
@@ -185,6 +185,37 @@ class SpatialGrid:
     resident_coordinates: torch.Tensor | None = None
 
 
+def select_frame_grid(
+    grid: Plane | SpatialGrid, first: int, last: int
+) -> Plane | SpatialGrid:
+    """Select the plane placements belonging to a fitting batch.
+
+    Parameters
+    ----------
+    grid : Plane or SpatialGrid
+        Recording geometry with shared or per-frame plane rotations.
+    first, last : int
+        Start and exclusive end of the batch in recording order.
+
+    Returns
+    -------
+    Plane or SpatialGrid
+        Geometry sharing the original lattices and the batch's plane placements.
+    """
+    if (
+        isinstance(grid, SpatialGrid)
+        and grid.plane_rotation is not None
+        and len(grid.plane_rotation) > 1
+    ):
+        assert grid.resident_rotation is not None
+        return replace(
+            grid,
+            plane_rotation=grid.plane_rotation[first:last],
+            resident_rotation=grid.resident_rotation[first:last],
+        )
+    return grid
+
+
 def make_grid(
     fixed: xr.DataArray,
     moving: xr.DataArray,
@@ -230,11 +261,12 @@ def make_grid(
         raise ValueError("Use k=1 slices or 3D volumes with all axes >= 2.")
     af, am = position_to_world(fixed), position_to_world(moving)
     lf, lm = af[:3, :3], am[:3, :3]
-    seeds, reversed_normal = None, False
+    mapped_normals, reversed_normal = None, False
     if planar and plane_seed is not None:
         seeds = validate_matrices(plane_seed, moving.sizes.get("time", 1))
         normal = np.cross(lf[:, 2], lf[:, 1])
-        reversed_normal = (seeds[0, :3, :3] @ normal) @ normal < 0
+        mapped_normals = seeds[:, :3, :3] @ normal
+        reversed_normal = np.any(mapped_normals @ normal < 0)
     if (
         planar
         and not reversed_normal
@@ -253,14 +285,21 @@ def make_grid(
             reversed_normal
             or abs(offset[0]) + np.abs(native[0] * (fs - 1)).sum() > 1e-5
         ):
-            if plane_seed is None:
+            if mapped_normals is None:
                 raise ValueError(
                     "Noncoplanar slices need a plane-compatible initial_transform or initialization='align_planes'; centering alone cannot correct tilt."
                 )
-            assert seeds is not None
-            plane_rotation, plane_shift = compute_plane_alignment(
-                fixed, moving, seeds[0, :3, :3] @ normal
+            # A seed can map the fixed normal to either side of the moving plane.
+            # The center shift is the same projection for both orientations.
+            moving_normal = np.cross(lm[:, 2], lm[:, 1])
+            flipped = mapped_normals @ moving_normal < 0
+            rotation, plane_shift = compute_plane_alignment(
+                fixed, moving, -moving_normal if flipped.all() else moving_normal
             )
+            plane_rotation = rotation[None]
+            if flipped.any() and not flipped.all():
+                opposite, _ = compute_plane_alignment(fixed, moving, -moving_normal)
+                plane_rotation = np.where(flipped[:, None, None], opposite, rotation)
         plane = make_plane(fixed, device=device, dtype=dtype, center=center)
         basis, scales = plane.basis, plane.parameter_scale
     else:
@@ -425,7 +464,9 @@ def build_physical_transform(
     if grid.resident_rotation is not None:
         assert grid.resident_shift is not None
         linear = grid.resident_rotation @ linear
-        translation = translation @ grid.resident_rotation.T + grid.resident_shift
+        translation = (grid.resident_rotation @ translation.unsqueeze(-1)).squeeze(
+            -1
+        ) + grid.resident_shift
     return linear, translation
 
 
@@ -903,8 +944,8 @@ def recover_initial_parameters(
             np.einsum("bij,j->bi", values[:, :3, :3] - np.eye(3), plane.center)
             + values[:, :3, 3]
         )
-        values[:, :3, :3] = plane.plane_rotation.T @ values[:, :3, :3]
-        displacement = (displacement - plane.plane_shift) @ plane.plane_rotation
+        values[:, :3, :3] = plane.plane_rotation.swapaxes(-2, -1) @ values[:, :3, :3]
+        displacement = np.vecmat(displacement - plane.plane_shift, plane.plane_rotation)
         values[:, :3, 3] = displacement - np.einsum(
             "bij,j->bi", values[:, :3, :3] - np.eye(3), plane.center
         )
@@ -1045,7 +1086,7 @@ def build_world_matrices(parameters, plane):
             + matrices[:, :3, 3]
         )
         matrices[:, :3, :3] = plane.plane_rotation @ matrices[:, :3, :3]
-        displacement = displacement @ plane.plane_rotation.T + plane.plane_shift
+        displacement = np.matvec(plane.plane_rotation, displacement) + plane.plane_shift
         matrices[:, :3, 3] = displacement - np.einsum(
             "bij,j->bi", matrices[:, :3, :3] - np.eye(3), plane.center
         )
