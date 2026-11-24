@@ -842,6 +842,26 @@ def sample_displaced(
             padding_mode="border",
             align_corners=True,
         )[:, 0].float()
+    return sample_linear_at_indices(images, tuple(coordinates))
+
+
+def sample_linear_at_indices(
+    images: torch.Tensor, coordinates: tuple[torch.Tensor, ...]
+) -> torch.Tensor:
+    """Interpolate using distances from neighboring voxel centers.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        Source images with a leading batch dimension.
+    coordinates : tuple of torch.Tensor
+        Batched positions in array order, clamped to each source axis.
+
+    Returns
+    -------
+    torch.Tensor
+        Interpolated values with the query shape and source dtype.
+    """
     lower = [c.floor().long() for c in coordinates]
     fractions = [
         (c - i).to(images.dtype) for c, i in zip(coordinates, lower, strict=True)

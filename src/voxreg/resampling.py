@@ -23,14 +23,35 @@ from voxreg.interpolation import (
 )
 from voxreg.preparation import choose_batch_size, resolve_device
 from voxreg.results import build_output_template
-from voxreg.sampling import SAMPLE_CENTER_TOLERANCE, sample_nearest
+from voxreg.sampling import (
+    SAMPLE_CENTER_TOLERANCE,
+    sample_linear_at_indices,
+    sample_nearest,
+)
 from voxreg.transforms import validate_matrices
 
 
 def _sample_linear(
     images: torch.Tensor, query: torch.Tensor, *, voxel_extent: bool = False
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Consume owned xyz index queries without fitting-only coordinate round trips."""
+    """Sample linearly at source positions, preserving values at voxel centers.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        Source images with a leading batch dimension.
+    query : torch.Tensor
+        Owned source index positions in x, y, z order. Frames may share a grid.
+    voxel_extent : bool, default: False
+        Whether to include the outer half voxel on every axis.
+
+    Returns
+    -------
+    sampled : torch.Tensor
+        Linearly interpolated intensities in the source tensor dtype.
+    valid : torch.Tensor
+        Mask of supported source positions.
+    """
     sizes = np.array(images.shape[1:][::-1])
     extent = (sizes == 1) | voxel_extent
     # One transfer; the adjacent double preserves half-open singleton faces.
@@ -52,8 +73,20 @@ def _sample_linear(
     valid = ((query >= lower) & (query <= upper)).all(dim=-1)
     shape = query.shape[:-1]
     planar = images.shape[1] == shape[1] == 1
-    # Normalize owned storage once, even when several frames share the query.
     base = query[:1] if query.stride(0) == 0 else query
+    coordinates = query.unbind(-1)[::-1]
+    centers = (base == base.trunc()).all(dim=-1)
+    if centers.all():
+        return sample_nearest(images, coordinates), valid
+    if images.dtype == torch.float64:
+        # Keep fractional weights in native indices for double and integer images.
+        bounded = tuple(
+            c.clamp(0, size - 1)
+            for c, size in zip(coordinates, images.shape[1:], strict=True)
+        )
+        return sample_linear_at_indices(images, bounded), valid
+    # Normalizing can shift exact centers. Save their values before modifying base.
+    exact = sample_nearest(images, coordinates) if centers.any() else None
     if planar:
         grid = base[:, 0, ..., :2].mul_(scale[:2]).add_(shift[:2])
         source = images[:, 0].double()
@@ -86,7 +119,10 @@ def _sample_linear(
         sampled = sampled.reshape(-1)[:points].reshape(shape)
     elif planar:
         sampled = sampled[:, None]
-    return sampled.to(images.dtype), valid
+    sampled = sampled.to(images.dtype)
+    if exact is not None:
+        sampled = torch.where(centers, exact, sampled)
+    return sampled, valid
 
 
 def validate_resampling_metadata(
@@ -371,6 +407,9 @@ def resample(
         position_to_world(moving),
         position_to_world(reference),
     )
+    same_lattice = native_linear and np.array_equal(
+        source_affine[:3, :3], target_affine[:3, :3]
+    )
     shape = tuple(reference.sizes[d] for d in VOXEL_DIMS)
     indices = torch.stack(
         torch.meshgrid(
@@ -381,7 +420,7 @@ def resample(
     )
     local = (
         indices @ torch.tensor(target_affine[:3, :3].T, device=device)
-        if field or not native_linear
+        if (field and not same_lattice) or not native_linear
         else indices
     )
     inverse = np.linalg.inv(source_affine[:3, :3]).T
@@ -401,7 +440,11 @@ def resample(
             offset = torch.tensor(
                 target_affine[:3, 3] - source_affine[:3, 3], device=device
             )
-            query = (local + displacement + offset) @ inverse_lattice
+            if same_lattice:
+                # The base position is exact even on an oblique grid.
+                query = indices.flip(-1) + (displacement + offset) @ inverse_lattice
+            else:
+                query = (local + displacement + offset) @ inverse_lattice
             if shared:
                 query = query.unsqueeze(0).expand(last - first, *shape, 3)
         else:
@@ -417,6 +460,12 @@ def resample(
                     matrices[:, :3, :3]
                     @ torch.tensor(target_affine[:3, :3], device=device)
                 )
+                if same_lattice:
+                    translations = (selected[:, :3, :3] == np.eye(3)).all(axis=(1, 2))
+                    if translations.any():
+                        linear[translations] = torch.eye(
+                            3, dtype=linear.dtype, device=device
+                        ).flip(0)
             if linear is not None and torch.isfinite(linear).all():
                 mapped_offset = torch.tensor(offset, device=device) @ inverse_lattice
                 if device == "cuda":

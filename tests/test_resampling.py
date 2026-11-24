@@ -429,6 +429,45 @@ def test_rejects_invalid_time_coordinates(
         )
 
 
+@pytest.mark.parametrize("field", [False, True])
+@pytest.mark.parametrize("depth", [1, 3])
+def test_linear_identity_preserves_voxel_values(field, depth, device):
+    """An identity pull on an oblique grid must reproduce every source voxel."""
+    shape = (depth, 5, 250)
+    affine = np.eye(4)
+    affine[:3, :3] = [[1.1, 0.2, 0], [0, 0.7, -0.1], [0.05, 0, 1.3]]
+    moving = create_voxeldata(
+        np.random.default_rng(123).choice([0, 2**52], shape).astype(np.int64),
+        dims=("k", "j", "i"),
+        voxel_to_world=affine,
+    )
+    transform = np.eye(4)
+    if field:
+        transform = xr.zeros_like(moving).expand_dims(
+            world_component=["z", "y", "x"], axis=-1
+        )
+        transform.attrs = {"representation": "displacement", "spatial_units": "mm"}
+    actual, valid = resample(moving, moving, transform, device=device)
+    np.testing.assert_array_equal(actual.values, moving.values)
+    assert valid.values.all()
+
+
+@pytest.mark.parametrize("dtype", [np.int64, np.float32])
+def test_linear_pull_at_centers_and_between_neighbors(device, dtype):
+    """A single pull copies even columns and interpolates odd columns."""
+    data = np.random.default_rng(124).choice([0, 2**52], (1, 5, 250)).astype(dtype)
+    moving = create_voxeldata(data, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
+    transform = np.eye(4)
+    transform[2, 2] = 0.5
+    actual, valid = resample(moving, moving, transform, device=device)
+    left = data[..., :125]
+    np.testing.assert_array_equal(actual.values[..., ::2], left)
+    np.testing.assert_array_equal(
+        actual.values[..., 1::2], (left + data[..., 1:126]) / 2
+    )
+    assert valid.values.all()
+
+
 @pytest.mark.parametrize("planar", [True, False])
 def test_linear_native_double_and_cpu_shared_point_tiles(monkeypatch, planar, device):
     shape = (1 if planar else 3, 5, 7)
@@ -447,11 +486,15 @@ def test_linear_native_double_and_cpu_shared_point_tiles(monkeypatch, planar, de
     threads = torch.get_num_threads()
     torch.set_num_threads(4)
     monkeypatch.setattr(F, "grid_sample", sample)
+    transform = np.eye(4)
+    transform[2, 2:] = [0.875, 0.125]
     try:
-        actual, valid = resample(moving, moving, np.eye(4), device=device)
+        actual, valid = resample(moving, moving, transform, device=device)
     finally:
         torch.set_num_threads(threads)
-    np.testing.assert_array_equal(actual.values, moving.values)
+    np.testing.assert_array_equal(
+        actual.values, moving.values + 0.125 * (1 - np.arange(7))
+    )
     assert valid.values.all()
     assert len(calls) == 1
     sampled_shape, stride, source_dtype, grid_dtype = calls[0]
