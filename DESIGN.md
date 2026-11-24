@@ -356,8 +356,8 @@ float64 SyN world fields alone cost 12× float32 image storage.
 
 Convergence uses a device-resident ITK-style window calculation, defaulting to
 50 values and threshold `1e-6`. A window greater than a level's iteration budget
-disables convergence checks there. Stopped rows freeze while companions continue; whole-batch
-completion is polled every CPU iteration or every ten eligible CUDA iterations.
+disables window-based convergence there. A batch stops before the next update
+when all frames are finished. In mixed batches, only active frames advance.
 Matching ITK's monitor does not mean matching its optimizer or final pose.
 
 Frame progress reports completed batches. Optional metric callbacks report owned

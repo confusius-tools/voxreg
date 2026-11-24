@@ -159,7 +159,7 @@ def test_terminal_check_preserves_frozen_full_budget_results(
     stopped = register(data, return_transforms=True, **options)
     stopped_calls = len(calls)
     calls.clear()
-    monkeypatch.setattr(linear, "_check_all_frames_stopped", lambda status: False)
+    monkeypatch.setattr(linear, "all_frames_stopped", lambda status: False)
     full_budget = register(data, return_transforms=True, **options)
     assert stopped_calls < len(calls)
     for field in [
@@ -172,7 +172,7 @@ def test_terminal_check_preserves_frozen_full_budget_results(
 
 
 @pytest.mark.parametrize("device", DEVICES)
-def test_polling_is_batch_wide_bounded_and_absent_in_fixed_budget_controls(
+def test_polling_checks_the_whole_batch_before_each_update(
     recording_factory, monkeypatch, device
 ):
     from voxreg import linear
@@ -191,7 +191,7 @@ def test_polling_is_batch_wide_bounded_and_absent_in_fixed_budget_controls(
         return False
 
     monkeypatch.setattr(linear, "compute_global_ncc", metric)
-    monkeypatch.setattr(linear, "_check_all_frames_stopped", not_finished)
+    monkeypatch.setattr(linear, "all_frames_stopped", not_finished)
     data, _, _ = recording_factory()
     options: RegistrationOptions = {
         "device": device,
@@ -199,10 +199,11 @@ def test_polling_is_batch_wide_bounded_and_absent_in_fixed_budget_controls(
         "progress": False,
     }
     register(data, **options, convergence_window_size=4, convergence_minimum_value=1)
-    assert polls == list(range(4, 40, 10 if device == "cuda" else 1))
+    assert polls == list(range(1, 41))
     polls.clear()
+    evaluations.clear()
     register(data, **options, convergence_window_size=41)
-    assert polls == []
+    assert polls == list(range(1, 41))
 
 
 def test_calibration_report_uses_identical_controls_and_common_support(

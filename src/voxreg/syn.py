@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 import xarray as xr
 
-from voxreg.convergence import WindowConvergence
+from voxreg.convergence import WindowConvergence, all_frames_stopped
 from voxreg.fields import (
     check_field,
     compose_fields,
@@ -283,10 +283,6 @@ def _fit(
             metric_function=metric_function,
         )
         good = meaningful & torch.isfinite(loss) & ~constant
-        if metric_callback is not None and (
-            iteration % metric_interval == 0 or iteration == max_iterations
-        ):
-            metric_callback(steps, torch.where(good, loss.detach(), torch.nan))
         with torch.no_grad():
             active = status == 0
             overlap = valid.sum(dim=axes) > 1
@@ -296,7 +292,13 @@ def _fit(
             bf = torch.where(improved[broadcast], uf.detach(), bf)
             bm = torch.where(improved[broadcast], um.detach(), bm)
             best_loss = torch.where(improved, loss.detach(), best_loss)
-        if iteration == max_iterations:
+        # An unusable trial can finish the batch before any field update.
+        finished = iteration == max_iterations or all_frames_stopped(status)
+        if metric_callback is not None and (
+            finished or iteration % metric_interval == 0
+        ):
+            metric_callback(steps, torch.where(good, loss.detach(), torch.nan))
+        if finished:
             break
         gf, gm = torch.autograd.grad(torch.where(status == 0, loss, 0).sum(), (uf, um))
         with torch.no_grad():
@@ -320,16 +322,6 @@ def _fit(
             um = torch.where((status == 0)[broadcast], candidate_m, um)
         uf = uf.detach().requires_grad_(True)
         um = um.detach().requires_grad_(True)
-        cadence = 10 if images.is_cuda else 1
-        if (
-            monitor is not None
-            and iteration + 1 >= convergence_window_size
-            and (iteration + 1 - convergence_window_size) % cadence == 0
-            and not (status == 0).any().item()
-        ):
-            break
-    if metric_callback is not None and iteration < max_iterations:
-        metric_callback(steps, torch.where(good, loss.detach(), torch.nan))
     if not finalize:
         with torch.no_grad():
             objective, meaningful, _ = _compute_midpoint_loss(

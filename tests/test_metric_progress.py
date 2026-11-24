@@ -11,6 +11,38 @@ from voxreg import register
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
 
+@pytest.mark.parametrize("transform", ["rigid", "syn"])
+@pytest.mark.parametrize("batch_size", [1, 3])
+def test_reports_stop_with_last_active_frame(
+    recording_factory, device, transform, batch_size
+):
+    data, _, _ = recording_factory()
+    data.values[2] = 0
+    events = []
+    result = register(
+        data,
+        transform=transform,
+        batch_size=batch_size,
+        max_iterations=4,
+        fixed_mask=data.isel(time=0, drop=True) > 0,
+        metric_interval=1,
+        metric_callback=lambda frames, steps, loss: events.append((frames, steps)),
+        device=device,
+        progress=False,
+    )
+    diagnostics = result["diagnostics"].to_dataset()
+    assert_array_equal(
+        diagnostics.status, ["reference", "max_iterations", "invalid_metric"]
+    )
+    assert_array_equal(diagnostics.n_iterations, [0, 4, 0])
+    for frame in range(3):
+        clocks = [
+            steps[frames == frame].item() for frames, steps in events if frame in frames
+        ]
+        expected = list(range(5)) if frame == 1 else [0] * (1 if batch_size == 1 else 5)
+        assert clocks == expected
+
+
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("transform", ["rigid", "affine"])
 def test_metric_callback_preserves_results_and_reports_frame_clocks(

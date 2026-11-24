@@ -3,6 +3,22 @@
 import torch
 
 
+def all_frames_stopped(status: torch.Tensor) -> bool:
+    """Read whether a whole batch has stopped, synchronizing CUDA once.
+
+    Parameters
+    ----------
+    status : torch.Tensor
+        Per-frame optimizer status, where zero denotes active fitting.
+
+    Returns
+    -------
+    bool
+        Whether every frame has a terminal status.
+    """
+    return not (status == 0).any().item()
+
+
 class WindowConvergence:
     """Track ITK's normalized, first-order B-spline energy-profile gradient.
 

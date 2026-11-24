@@ -423,10 +423,8 @@ def register(
     Convergence follows ITK v4's accumulated-absolute-energy normalization and
     first-order B-spline window gradient, checked before the next Adam update.
     Each frame has independent metric history, Adam moments, clock and stopping
-    state. After a full history window, whole-batch completion is checked each
-    iteration on CPU and every ten iterations on CUDA, using one batch-wide scalar
-    read (a CUDA stream synchronization). These checks do not alter per-frame
-    decisions; frozen frames remain resident until the entire batch finishes.
+    state. Before each update, one batch-wide status check determines whether
+    any frame still needs fitting. On CUDA this synchronizes the stream.
     Fitting images, NCC/MI statistics and SyN working fields use float32 with native
     grid_sample fitting interpolation. Physical geometry and linear pose parameters
     use float64, as do final SyN inversion and exported displacements. Benchmark accuracy is measured against known

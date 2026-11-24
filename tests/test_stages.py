@@ -174,6 +174,7 @@ def test_motion_stages_isolate_failures_and_preserve_reference(
     results = []
     for batch_size in (1, 3):
         events = []
+        reports = []
         result = register(
             recording,
             transform=("rigid", terminal),
@@ -183,7 +184,16 @@ def test_motion_stages_isolate_failures_and_preserve_reference(
             return_transforms=True,
             batch_size=batch_size,
             progress=lambda done, total, events=events: events.append((done, total)),
+            metric_interval=1,
+            metric_callback=lambda frames, steps, loss, reports=reports: reports.append(
+                (frames, steps)
+            ),
         )
+        if batch_size == 1:
+            # One report per level for the failed frame, including its skipped stage.
+            assert [steps.item() for frames, steps in reports if frames[0] == 2] == [
+                0
+            ] * 4
         assert events[-1] == (6, 6)
         assert all(a[0] < b[0] for a, b in pairwise(events))
         assert_array_equal(result["images"].to_dataset()["registered"][0], recording[0])

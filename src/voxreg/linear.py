@@ -11,7 +11,7 @@ import numpy.typing as npt
 import torch
 import xarray as xr
 
-from voxreg.convergence import WindowConvergence
+from voxreg.convergence import WindowConvergence, all_frames_stopped
 from voxreg.interpolation import restore_image_dtype, select_resampling_dtype
 from voxreg.masks import (
     MetricMasks,
@@ -60,22 +60,6 @@ class _OptimizerOptions(_MetricOptions, total=False):
     initial_parameters: torch.Tensor | None
 
 
-def _check_all_frames_stopped(status: torch.Tensor) -> bool:
-    """Read whether a whole batch has stopped, synchronizing CUDA once.
-
-    Parameters
-    ----------
-    status : torch.Tensor
-        Per-frame optimizer status, where zero denotes active fitting.
-
-    Returns
-    -------
-    bool
-        Whether every frame has a terminal status.
-    """
-    return not (status == 0).any().item()
-
-
 # Fitting needs gradients even when the caller wraps registration in no_grad.
 @torch.enable_grad()
 def _optimize(
@@ -95,7 +79,7 @@ def _optimize(
     metric_masks: MetricMasks | None = None,
     metric_function: Metric | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Run masked batched Adam with bounded whole-batch stopping checks.
+    """Run masked batched Adam while any frame still needs an update.
 
     Parameters
     ----------
@@ -161,21 +145,17 @@ def _optimize(
         status = torch.where(reference, 4, 0)
     if active_frames is not None:
         status = torch.where(~active_frames & ~reference, 7, status)
-    check_interval = 10 if images.is_cuda else 1
     orientation = (
         check_affine_parameters(u.detach() * plane.parameter_scale, plane)[1]
         if plane.transform == "affine"
         else None
     )
-    for iteration in range(max_iterations):
-        moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
-        if metric_masks is not None:
-            valid = metric_masks.apply(valid, u * plane.parameter_scale)
-        loss, meaningful = objective(moved, fixed, valid)
-        if metric_callback is not None and iteration % metric_interval == 0:
-            metric_callback(
-                steps, torch.where(meaningful & ~constant, loss.detach(), torch.nan)
-            )
+    for iteration in range(max_iterations + 1):
+        with torch.set_grad_enabled(iteration < max_iterations):
+            moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
+            if metric_masks is not None:
+                valid = metric_masks.apply(valid, u * plane.parameter_scale)
+            loss, meaningful = objective(moved, fixed, valid)
         overlap = valid.sum(dim=spatial_axes) > 1
         good = overlap & meaningful & torch.isfinite(loss)
         active = status == 0
@@ -194,6 +174,16 @@ def _optimize(
             improved = active & good & (loss < best_loss)
             best = torch.where(improved[:, None], u.detach(), best)
             best_loss = torch.where(improved, loss.detach(), best_loss)
+        # References, failures and skipped frames can finish before a window fills.
+        finished = iteration == max_iterations or all_frames_stopped(status)
+        if metric_callback is not None and (
+            finished or iteration % metric_interval == 0
+        ):
+            metric_callback(
+                steps, torch.where(meaningful & ~constant, loss.detach(), torch.nan)
+            )
+        if finished:
+            break
         active = status == 0
         gradient = torch.autograd.grad(torch.where(active, loss, 0).sum(), u)[0]
         with torch.no_grad():
@@ -221,36 +211,7 @@ def _optimize(
             )
             candidate = u - torch.where(active[:, None], delta, 0)
         u = candidate.detach().requires_grad_(True)
-        if (
-            monitor is not None
-            and iteration + 1 >= convergence_window_size
-            and (iteration + 1 - convergence_window_size) % check_interval == 0
-            and iteration + 1 < max_iterations
-            and _check_all_frames_stopped(status)
-        ):
-            break
-    with torch.no_grad():
-        moved, valid = sample_rigid(images, u * plane.parameter_scale, plane)
-        if metric_masks is not None:
-            valid = metric_masks.apply(valid, u * plane.parameter_scale)
-        loss, meaningful = objective(moved, fixed, valid)
-        if metric_callback is not None:
-            metric_callback(steps, torch.where(meaningful & ~constant, loss, torch.nan))
-        overlap = valid.sum(dim=spatial_axes) > 1
-        good = overlap & meaningful & torch.isfinite(loss)
-        eligible = (status == 0) | (status == 1)
-        if orientation is not None:
-            admissible, sign = check_affine_parameters(u * plane.parameter_scale, plane)
-            status = torch.where(
-                eligible & (~admissible | (sign != orientation)), 6, status
-            )
-            eligible = (status == 0) | (status == 1)
-            good = good & admissible & (sign == orientation)
-        improved = eligible & good & (loss < best_loss)
-        best = torch.where(improved[:, None], u, best)
-        status = torch.where(eligible & ~overlap, 2, status)
-        status = torch.where(eligible & overlap & ~good, 3, status)
-        status = torch.where(status == 0, 5, status)
+    status = torch.where(status == 0, 5, status)
     return best * plane.parameter_scale, steps, status
 
 

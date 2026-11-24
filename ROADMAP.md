@@ -19,7 +19,7 @@ Work one item at a time, then stop for review and a separate commit. Start with 
 
 ## Memory and runtime
 
-- [ ] **Stop fitting when every frame in a batch has stopped.** A reference-only batch reported zero updates but still issued 51 metric callbacks in both rigid and SyN fitting with a 100-iteration budget and reporting every iteration. Exit the loop once all frames are done. Check reference-only, failed, and skipped batches, plus a mixed batch where one frame still needs updates.
+- [x] **Stop fitting when every frame in a batch has stopped.** Linear and SyN fitting check for active frames before each update. A reference-only batch reports its score once. Tests cover failed and skipped frames and verify that active frames in a mixed batch keep fitting.
 - [ ] **Send only reference-grid metadata to lazy resampling workers.** A 96³ reference produced a roughly 902 KB serialized Dask task graph for a 1 × 2 × 2 moving image. A dummy reference array expands when Dask packages it. Construct the placeholder on the worker and verify that graph size follows the coordinate metadata as reference volume grows.
 - [ ] **Release intermediate validity masks after counting valid voxels.** Earlier linear stages only return transforms and diagnostics, yet the code collects and concatenates a mask for the entire recording. Compute the overlap fraction per frame within each batch. Compare peak memory and verify that staged transforms, overlap fractions, and final masks agree. This cost was identified by code inspection.
 
