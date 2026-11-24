@@ -20,6 +20,7 @@ from voxreg.interpolation import (
     prepare_cubic_spline,
     restore_image_dtype,
     sample_cubic_spline,
+    select_resampling_dtype,
 )
 from voxreg.preparation import choose_batch_size, resolve_device
 from voxreg.results import build_output_template
@@ -427,7 +428,7 @@ def resample(
     inverse_lattice = torch.tensor(
         inverse[:, ::-1].copy() if native_linear else inverse, device=device
     )
-    dtype = np.float64 if integer or moving.dtype.itemsize > 4 else np.float32
+    dtype = select_resampling_dtype(moving.dtype, interpolation)
     outputs, masks = [], []
     for first in range(0, frames, batch_size):
         last = min(first + batch_size, frames)

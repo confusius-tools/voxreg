@@ -12,7 +12,7 @@ import torch
 import xarray as xr
 
 from voxreg.convergence import WindowConvergence
-from voxreg.interpolation import restore_image_dtype
+from voxreg.interpolation import restore_image_dtype, select_resampling_dtype
 from voxreg.masks import (
     MetricMasks,
     get_mask_source,
@@ -465,10 +465,7 @@ def run_linear(
     raw = moving.values[:, 0] if planar else moving.values
     spatial_axes = tuple(range(1, raw.ndim))
     reference_shape = (slice(None),) + (None,) * len(spatial_axes)
-    integer_output = np.issubdtype(raw.dtype, np.integer)
-    resampling_dtype = (
-        np.float64 if integer_output or raw.dtype.itemsize > 4 else np.float32
-    )
+    resampling_dtype = select_resampling_dtype(raw.dtype, interpolation)
     max_iterations = budgets[0]
     outputs, masks, parameters = [], [], []
     clocks, statuses, objectives, overlaps = [], [], [], []

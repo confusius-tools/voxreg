@@ -29,7 +29,7 @@ from voxreg.fields import (
     smooth_field as _smooth_field,
 )
 from voxreg.geometry import position_to_world
-from voxreg.interpolation import restore_image_dtype
+from voxreg.interpolation import restore_image_dtype, select_resampling_dtype
 from voxreg.masks import MetricMasks, get_mask_source
 from voxreg.metrics import compute_global_ncc, compute_local_ncc
 from voxreg.preparation import PreparedRegistration
@@ -643,8 +643,7 @@ def run_syn(prepared: PreparedRegistration) -> xr.DataTree:
     planar = len(grid.shape) == 2
     raw = moving.values[:, 0] if planar else moving.values
     axes = tuple(range(1, raw.ndim))
-    integer = np.issubdtype(raw.dtype, np.integer)
-    dtype = np.float64 if integer or raw.dtype.itemsize > 4 else np.float32
+    dtype = select_resampling_dtype(raw.dtype, interpolation)
     initial = (
         np.zeros((len(raw), len(plane.parameter_scale))) if initial is None else initial
     )

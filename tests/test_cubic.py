@@ -119,10 +119,10 @@ def test_cubic_large_offset_and_integer_knots(dtype, device):
     )
     # Evaluate the small contrast separately to avoid an ill-conditioned oracle.
     centered = moving.copy(data=(values.astype(float) - offset))
-    expected = _oracle(centered, moving, matrix, valid.values) + offset
-    expected = np.where(valid.values, expected, values.min())
+    expected = _oracle(centered, moving, matrix, valid.values)
     if dtype == np.int64:
         expected = np.rint(expected)
+    expected = expected + offset
     assert_allclose(
         sampled, expected.astype(dtype), rtol=0, atol=0.25 if dtype != np.float32 else 0
     )
@@ -147,14 +147,61 @@ def test_cubic_float_overshoot_and_integer_clipping():
     assert_array_equal(sampled, _oracle(integer, integer, matrix, supported.values))
 
 
-@pytest.mark.parametrize("upper,expected", [(1, 0), (3, 2)])
-def test_cubic_exact_half_integer_rounding(upper, expected):
-    values = np.broadcast_to(np.array([0, upper], dtype=np.int16), (1, 2, 2)).copy()
-    moving = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
+@pytest.mark.parametrize("background", [0, 2**44, -(2**44)])
+@pytest.mark.parametrize("method", ["resample", "translation", "syn"])
+def test_cubic_integer_ramp_rounds_consistently(background, method, device):
+    ramp = np.arange(50, dtype=np.int64).reshape(1, 5, 10)
+    moving = create_voxeldata(
+        ramp + background, dims=("k", "j", "i"), voxel_to_world=np.eye(4)
+    )
     matrix = np.eye(4)
-    matrix[2, 3] = 0.5
-    sampled, valid = resample(moving, moving, matrix, interpolation="bspline")
-    assert_array_equal(sampled.values[valid.values], expected)
+    matrix[2, 3] = 0.58
+    if method == "resample":
+        sampled, valid = resample(
+            moving, moving, matrix, interpolation="bspline", device=device
+        )
+    else:
+        result = register(
+            moving,
+            moving,
+            transform=method,
+            initial_transform=matrix,
+            max_iterations=1,
+            learning_rate=1e-20,
+            resample_interpolation="bspline",
+            device=device,
+            progress=False,
+        )
+        images = result["images"].to_dataset()
+        sampled, valid = images["registered"], images["valid"]
+    supported = np.broadcast_to(np.arange(10) < 9, ramp.shape)
+    centered = moving.copy(data=ramp)
+    assert_array_equal(valid.values.reshape(ramp.shape), supported)
+    assert_array_equal(
+        sampled.values.reshape(ramp.shape) - background,
+        _oracle(centered, centered, matrix, supported),
+    )
+
+
+@pytest.mark.parametrize("lower", [0, 1, 2**52, 2**52 + 1, -(2**52) - 1])
+@pytest.mark.parametrize("contrast", [1, 103])
+def test_cubic_exact_half_integer_rounding(lower, contrast, device):
+    values = np.broadcast_to(
+        np.array([lower, lower + contrast], dtype=np.int64), (1, 2, 2)
+    )
+    moving = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
+    matrices = np.repeat(np.eye(4)[None], 3, axis=0)
+    matrices[:, 2, 3] = [0.5 - 1e-6, 0.5, 0.5 + 1e-6]
+    reference = moving.isel(i=slice(0, 1))
+    sampled, valid = resample(
+        moving, reference, matrices, interpolation="bspline", device=device
+    )
+    # This symmetric two-voxel spline crosses its midpoint at exactly half a voxel.
+    assert valid.values.all()
+    below = lower + contrast // 2
+    assert_array_equal(
+        sampled.values[:, 0, 0, 0], [below, below + below % 2, below + 1]
+    )
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])

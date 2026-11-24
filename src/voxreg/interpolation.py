@@ -13,29 +13,24 @@ Interpolation: TypeAlias = Literal["linear", "nearest", "bspline"]
 """Supported final-image interpolation methods; fitting remains linear."""
 
 
-def _round_integer_samples(values: npt.NDArray, method: Interpolation) -> npt.NDArray:
-    """Round final integer-image samples, stabilizing cubic half-integer ties.
+def select_resampling_dtype(dtype: np.dtype, method: Interpolation) -> np.dtype:
+    """Choose the tensor input dtype for final image sampling.
 
     Parameters
     ----------
-    values : numpy.ndarray
-        Final float64 intensities, after support fills and before dtype clipping.
+    dtype : numpy.dtype
+        Original moving-image dtype.
     method : str
         Selected final-image interpolator.
 
     Returns
     -------
-    numpy.ndarray
-        Nearest-even rounded values. Cubic samples within
-        32 * float64 epsilon * max(1, abs(value)) of a half-integer are snapped
-        to that half-integer first, so coefficient-solve roundoff does not
-        arbitrarily change exact ties. Floating-image outputs are unaffected.
+    numpy.dtype
+        Signed int64 for integer cubic inputs, otherwise float32 or float64.
     """
-    if method == "bspline":
-        half = np.rint(values * 2) / 2
-        tolerance = 32 * np.finfo(np.float64).eps * np.maximum(1, np.abs(values))
-        values = np.where(np.abs(values - half) <= tolerance, half, values)
-    return np.rint(values)
+    if np.issubdtype(dtype, np.integer):
+        return np.dtype(np.int64 if method == "bspline" else np.float64)
+    return np.dtype(np.float64 if dtype.itemsize > 4 else np.float32)
 
 
 def restore_image_dtype(
@@ -46,7 +41,7 @@ def restore_image_dtype(
     Parameters
     ----------
     values : numpy.ndarray
-        Final floating samples on CPU, retaining double precision for cubic.
+        Final samples on CPU. Integer cubic samples have already been rounded.
     dtype : numpy.dtype
         Original moving-image intensity type.
     method : str
@@ -65,7 +60,9 @@ def restore_image_dtype(
     """
     if np.issubdtype(dtype, np.integer):
         limits = np.iinfo(dtype)
-        values = np.clip(_round_integer_samples(values, method), limits.min, limits.max)
+        if np.issubdtype(values.dtype, np.floating):
+            values = np.rint(values)
+        values = np.clip(values, limits.min, limits.max)
     elif method == "bspline" and np.issubdtype(dtype, np.floating):
         if (
             not np.isfinite(values).all()
@@ -175,6 +172,9 @@ def prepare_cubic_spline(images: torch.Tensor) -> CubicSpline:
     values = images.double()
     broadcast = (slice(None),) + (None,) * (images.ndim - 1)
     offset = values.flatten(1)[:, 0]
+    if not images.is_floating_point():
+        # Removing an even integer preserves which side of a tie rounds to even.
+        offset = offset - offset.remainder(2)
     centered = values - offset[broadcast]
     overflow = ~torch.isfinite(centered).flatten(1).all(dim=1)
     offset = torch.where(overflow, 0, offset)
@@ -207,7 +207,7 @@ def sample_cubic_spline(
     Returns
     -------
     torch.Tensor
-        Float64 samples, preserving singleton axes and batch broadcasting.
+        Float64 samples for floating images or rounded int64 samples for integer images.
         The caller restores the original image dtype once, after outside fills.
         Floating overshoot is retained, without clipping to the input range.
 
@@ -226,8 +226,13 @@ def sample_cubic_spline(
     coefficients = spline.coefficients.reshape(len(spline.images), -1).expand(count, -1)
     originals = spline.images.reshape(len(spline.images), -1).expand(count, -1)
     offsets, scales = spline.offset.expand(count), spline.scale.expand(count)
+    integer = not spline.images.is_floating_point()
+    if integer:
+        offsets = offsets.long()
     output = torch.empty(
-        (count, queries.shape[1]), dtype=torch.float64, device=queries.device
+        (count, queries.shape[1]),
+        dtype=torch.int64 if integer else torch.float64,
+        device=queries.device,
     )
     chunk_size = max(1, 2**18 // count)
     for start in range(0, queries.shape[1], chunk_size):
@@ -276,10 +281,17 @@ def sample_cubic_spline(
                 index = index * sizes[axis] + indices[axis][choice]
                 weight = weight * weights[axis][choice]
             sampled += coefficients.gather(1, index) * weight
-        sampled = sampled * scales[:, None] + offsets[:, None]
-        sampled = torch.where(knots, originals.gather(1, knot_index).double(), sampled)
+        sampled = sampled * scales[:, None]
+        if integer:
+            # Only correct roundoff close to a tie, before adding back the background.
+            half = (sampled * 2).round() * 0.5
+            tolerance = 4 * torch.finfo(sampled.dtype).eps * sampled.abs().clamp_min(1)
+            sampled = torch.where((sampled - half).abs() <= tolerance, half, sampled)
+            sampled = sampled.round().long()
+        sampled = sampled + offsets[:, None]
+        sampled = torch.where(knots, originals.gather(1, knot_index), sampled)
         output[:, start:stop] = sampled
-    if not torch.isfinite(output).all():
+    if not integer and not torch.isfinite(output).all():
         raise ValueError(
             "Cubic interpolation produced nonfinite values in the source dtype."
         )

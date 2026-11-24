@@ -426,7 +426,8 @@ unchanged. A wider stencil does not shrink valid support.
 Floating outputs retain spline overshoot, including negative values from
 nonnegative inputs; values outside the original floating dtype's finite range
 raise an error. Integer outputs use nearest-even rounding and dtype clipping.
-Cubic half-integer ties within float64 roundoff are stabilized before rounding.
+Cubic sampling rounds intensity differences before adding the background back.
+This keeps small differences visible even in very bright images.
 Outputs retain the moving image dtype. Cubic uses additional coefficient memory
 and is not performance-qualified yet. Use nearest for categorical labels;
 label-aware interpolation remains deferred.
