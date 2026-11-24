@@ -13,6 +13,43 @@ from voxreg.metrics import compute_local_ncc
 from voxreg.sampling import sample_displaced
 
 
+def test_syn_local_correlation_preserves_fit_on_a_bright_background(
+    recording_factory, device
+):
+    """An additive intensity offset preserves both motion and metric validity."""
+    recording, _, _ = recording_factory()
+    recording = recording.isel(j=slice(16), i=slice(16))
+    # These increments remain exactly representable after adding 10,000 in float32.
+    texture = np.random.default_rng(42).integers(0, 1025, (1, 16, 16))
+    texture = texture.astype(np.float32) / 1024
+    recording = recording.copy(
+        data=np.stack((texture, np.roll(texture, 1, axis=-1), np.ones_like(texture)))
+    )
+    fits = []
+    for background in (0, 10_000):
+        moving = recording.copy(data=recording.values + background)
+        result = register(
+            moving,
+            moving.isel(time=0, drop=True),
+            transform="syn",
+            device=device,
+            max_iterations=3,
+            return_transforms=True,
+            progress=False,
+        )
+        diagnostics = result["diagnostics"].to_dataset()
+        assert_array_equal(
+            diagnostics.status, ["max_iterations"] * 2 + ["invalid_metric"]
+        )
+        assert_allclose(diagnostics.objective[0], -1, atol=1e-6)
+        assert np.isnan(diagnostics.objective[2].item())
+        field = result["forward"].to_dataset()["transform"]
+        assert np.abs(field.isel(time=1).values).max() > 0
+        fits.append((field, diagnostics.objective[:2]))
+    for original, bright in zip(*fits, strict=True):
+        assert_allclose(original, bright, rtol=0, atol=1e-6)
+
+
 @pytest.mark.parametrize("planar", [True, False])
 @pytest.mark.parametrize(
     "options",

@@ -597,6 +597,8 @@ def run_stage(
     metric_interval = settings.metric_interval
     start = perf_counter()
     validate_metric(metric, mi_bins, mi_sigma)
+    if metric is None and transform == "syn":
+        metric = "local_ncc"
     if metric == "local_ncc" and transform != "syn":
         raise ValueError(
             "metric=local_ncc requires transform=syn; its radius is syn_cc_radius."

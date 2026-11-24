@@ -1,65 +1,30 @@
 # Roadmap
 
-Goal: small, physically correct physical-space registration of VoxelData on CPU/CUDA.
-Work one item at a time, then stop for review and a separate commit.
+Work one item at a time, then stop for review and a separate commit. Start with the two failures below that affect whether a fit succeeds and whether its saved transform reproduces the result.
 
-The core eager/lazy APIs, native result trees, local Rich progress and unified
-benchmark commands are implemented. [README](README.md) owns supported behavior;
-[VALIDATION](VALIDATION.md) owns evidence and limits. Anatomical registration
-quality is not yet validated.
+## Registration and transform replay
 
-The initial coruscant eager comparisons and fixed-policy cold-input 1/4 GiB
-rigid sweeps are reviewed. The input-sized serialized-graph bug is fixed;
-[PERFORMANCE](PERFORMANCE.md#coruscant-baseline) records results and remaining limits.
+- [x] **Make SyN recognize low-contrast images on a bright background.** SyN now subtracts each image’s minimum before scaling it for local correlation. A regression test checks that adding 10,000 to a float32 recording preserves the fitted motion and the score, while a constant frame still reports an unusable metric.
+- [ ] **Use the same image boundary for registration and replay.** On an 8 × 8 slice shifted by one millionth of a voxel, registration kept all 64 pixels. Replaying its saved transform with `resample` kept 56 and replaced the last column with the fill value. Share the final sampling rule and test both pixel values and validity masks at the edges.
+- [ ] **Accept valid starting poses together in a recording.** Two slice poses worked individually but failed together when one pose flipped the slice normal. The first frame currently determines the orientation used for every frame. Check that a recording gives the same result as registering each frame separately, in either frame order.
+- [ ] **Allow registration inside PyTorch’s `no_grad()` context.** A caller doing inference can disable gradients for its own work, but the registration optimizer needs them internally. Enable gradients during fitting and compare rigid and SyN results inside and outside that context.
 
-## Next priorities
+## Resampling accuracy
 
-1. **Qualify 3D SyN accuracy under fixed work.** Earlier 100-update volume-pair
-   and recording cases failed the 0.30-voxel gate: voxreg was about 0.306 on
-   CPU/CUDA; FireANTs also failed, while ANTsPy passed. Benchmarks now request
-   200 fixed updates on all backends; broader CPU/CUDA/recording qualification
-   is still needed. The CPU pair pilot passes for voxreg/ANTsPy but FireANTs is
-   still at 0.303709, above 0.30. [CPU diagnostics](research/syn/ACCURACY-20261112.md)
-   show continued improvement at 300 updates, but larger learning rates are not a
-   robust fix. Retain the current ITK-like scalar normalization; isolate metric,
-   smoothing and inverse-maintenance differences before changing the algorithm.
-   Do not relax gates or retune only to the benchmark.
-2. **Attribute the SyN runtime gap before optimizing.** Local profiling and small
-   prototypes are complete, but no worthwhile safe optimization was established.
-   Use diagnostic ablations to separate additional validation/finalization work
-   from avoidable overhead; the profiled spans do not causally explain the gap.
-   Preserve numerical safety, precision and complete workloads. See
-   [PERFORMANCE](PERFORMANCE.md) and the [profile](research/syn/PROFILE-20261111.md).
-3. **Broaden real-data qualification.** Evaluate pair, motion and atlas workflows
-   on native grids with explicit quality limits. Qualify intensity scaling and
-   winsorization, MI bandwidth/convergence/runtime, and pyramid capture range and
-   whole-call performance. Establish useful workflow settings only after these
-   checks; anatomical quality is not implied by synthetic accuracy.
+- [ ] **Make nearest-neighbor ties predictable for labels.** A half-voxel shift of a width-10 label image picked label 1 at both positions 0.5 and 1.5. Use the original voxel positions when rounding. Check that exact ties follow the nearest-even rule across image widths and that positions just to either side select the closer label.
+- [ ] **Preserve exact voxel values under an identity transform.** Linear resampling changed 418 values in an integer image containing only 0 and 2⁵², even though every output point was an original voxel center. Avoid mixing neighbors at exact centers. Require exact equality for identity pulls on high-contrast integer data.
+- [ ] **Round cubic interpolation consistently for integer images.** Adding a background of 2⁴⁴ to an integer ramp changed which way fractional samples rounded. On the same 0.58-voxel shift, removing that background afterward gave 2, 4, 4, 6 where the original gave 3, 4, 5, 6. Correct the rounding tolerance and test both shifted ramps and genuine half-integer ties.
+- [ ] **Keep small translations at large world coordinates.** A half-voxel shift disappeared when both grids had the same origin at 2⁵² mm. Subtract the common origin before adding the small translation. Verify that changing the shared origin preserves interpolated values and edge validity.
+- [ ] **Support reversed displacement fields.** Reversing an axis of both a saved SyN field and its reference grid produced a valid pair that PyTorch could not read because of the array’s memory layout. Convert each field batch to a supported layout at upload. Its output should match the original resampling result reversed along the same axis.
 
-## Deferred or evidence-driven
+## Memory and runtime
 
-- **Extended memory qualification:** larger-than-host-RAM input is an optional
-  stronger check. Current 1/4 GiB evidence covers one GPU, rigid fitting and known-map
-  resampling, not arbitrary recordings, lazy SyN or a universal memory bound.
-  Rerun relevant benchmarks after meaningful changes; preserve frozen settings
-  and failures without pooling incompatible hosts, revisions or protocols.
-- **Complex IQ:** define a real fitting representation and phase-preserving
-  resampling of original complex data. Spatial interpolation is not temporal
-  phase correction; lazy chunking alone does not provide complex support.
-- **Deployment scaling:** qualify multi-host/GPU performance and resource bounds.
-  Distributed execution already works; distributed Rich progress is optional
-  future work, with Dask's own tools available today.
-- **Large single volumes:** spatial-block registration/distributed fitting of one
-  volume is separate from temporal streaming. Mixed-dimensional deformation
-  remains out of scope.
-- **Other algorithms/controls:** multistart, line search, Gaussian-weighted CC,
-  MSE/custom losses, optimizer/regularization hooks, velocity integration,
-  compute-dtype selection and rigid-plus-scale need demonstrated use cases and
-  measured benefit. Keep current optimizers and defaults until justified.
-- **Additional resampling qualification:** measure auto-device/cubic performance;
-  use nearest interpolation for categorical labels. Label-aware interpolation is
-  not currently planned implementation work.
+- [ ] **Stop fitting when every frame in a batch has stopped.** A reference-only batch reported zero updates but still issued 51 metric callbacks in both rigid and SyN fitting with a 100-iteration budget and reporting every iteration. Exit the loop once all frames are done. Check reference-only, failed, and skipped batches, plus a mixed batch where one frame still needs updates.
+- [ ] **Send only reference-grid metadata to lazy resampling workers.** A 96³ reference produced a roughly 902 KB serialized Dask task graph for a 1 × 2 × 2 moving image. A dummy reference array expands when Dask packages it. Construct the placeholder on the worker and verify that graph size follows the coordinate metadata as reference volume grows.
+- [ ] **Release intermediate validity masks after counting valid voxels.** Earlier linear stages only return transforms and diagnostics, yet the code collects and concatenates a mask for the entire recording. Compute the overlap fraction per frame within each batch. Compare peak memory and verify that staged transforms, overlap fractions, and final masks agree. This cost was identified by code inspection.
 
-Do not compete with heavy jobs during measurements. Preserve historical outputs
-and minimal failure evidence; job completion is not tracked here. Research details
-and experiment limitations remain in [research](research/README.md).
+## Validation after the fixes
+
+- **3D SyN accuracy.** Complete the 200-update comparison for volume pairs and recordings on CPU and CUDA. Keep the existing 0.30-voxel error limit. The CPU pair pilot passed for voxreg and ANTsPy. FireANTs measured 0.303709 voxels. [Fixed-work pilot](PERFORMANCE.md#fixed-work-pilot)
+- **Runtime and memory.** Profile the full SyN call to distinguish time spent fitting from time spent checking and exporting transforms. Repeat the cold-input memory benchmarks after the lazy changes, keeping input chunks and fitting batches fixed. Extend coverage to lazy SyN. [Performance baseline](PERFORMANCE.md#coruscant-baseline)
+- **Anatomical accuracy.** Build on the first real-data motion check with image-pair, recording, and atlas cases on their native grids. Set quality limits for each workflow, then measure how intensity preprocessing, mutual information, and coarse-to-fine fitting affect accuracy and runtime. [Real-data evidence and limits](VALIDATION.md#first-real-data-motion-quality-case)

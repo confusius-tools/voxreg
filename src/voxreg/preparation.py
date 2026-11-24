@@ -313,7 +313,7 @@ def prepare_fitting_images(
         evaluated in float64. Numerical conditioning is per image, never across
         frames or shared between moving and fixed images.
     metric : str, optional
-        Selected metric; MI uses native per-image ranges instead of NCC conditioning.
+        Local NCC and MI use each native image's intensity range to map it to [0, 1].
     implicit_fixed : bool, default: False
         Whether to reuse the first transformed moving frame as the fitting target.
     moving_winsorize_percentiles, fixed_winsorize_percentiles : sequence of float, optional
@@ -384,8 +384,9 @@ def prepare_fitting_images(
     if not np.any(fit_raw) and not np.any(target_raw):
         raise ValueError("Intensity scaling produced all-zero fitting images.")
     fit, target = fit_raw, target_raw
-    if metric == "mi":
-        # Native ranges stay fixed across all levels, samples and ROI changes.
+    if metric in ("mi", "local_ncc"):
+        # Remove the background before local variance subtracts nearly equal moments.
+        # MI uses the same native range to define its histogram bins.
         def normalize(values, axes):
             low = values.min(axis=axes, keepdims=True)
             high = values.max(axis=axes, keepdims=True)

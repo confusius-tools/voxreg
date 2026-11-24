@@ -189,12 +189,12 @@ zero and may erase contrast. Final resampling always uses original intensities
 and dtype, and moment initialization uses original nonnegative native weights.
 Masks restrict fitting samples, not transforms or their reductions.
 
-There is no recording-wide intensity normalization. NCC bounds each image/frame
-independently by its magnitude maximum; double/integer or transformed inputs also
-retain per-image offset/contrast conditioning before float32 conversion. MI uses
-independent per-image min/max ranges. A bright unrelated frame cannot change
-another frame's conditioning, and temporal chunks need no shared intensity scan.
-Masks do not limit these per-image reductions.
+Global NCC scales each image by its largest absolute value. For double, integer,
+or transformed inputs, it also subtracts an offset and rescales the remaining
+contrast before float32 fitting. Local NCC and MI map each image's minimum and
+maximum to 0 and 1. For local NCC, subtracting the minimum preserves small
+intensity differences on a bright background. Each range covers one full image,
+including pixels outside masks, and is computed independently for each frame.
 
 The implicit reference reuses the transformed first moving frame and its output
 is preserved exactly. Non-`None` fixed scaling without an explicit fixed image is
