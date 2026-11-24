@@ -846,7 +846,10 @@ def sample_displaced(
 
 
 def sample_linear_at_indices(
-    images: torch.Tensor, coordinates: tuple[torch.Tensor, ...]
+    images: torch.Tensor,
+    coordinates: tuple[torch.Tensor, ...],
+    *,
+    skip_aligned_axes: bool = False,
 ) -> torch.Tensor:
     """Interpolate using distances from neighboring voxel centers.
 
@@ -856,26 +859,43 @@ def sample_linear_at_indices(
         Source images with a leading batch dimension.
     coordinates : tuple of torch.Tensor
         Batched positions in array order, clamped to each source axis.
+    skip_aligned_axes : bool, default: False
+        Whether to skip zero-weight neighbors on axes with fixed integer coordinates.
+        Use only when coordinate derivatives are unnecessary.
 
     Returns
     -------
     torch.Tensor
         Interpolated values with the query shape and source dtype.
     """
-    lower = [c.floor().long() for c in coordinates]
-    fractions = [
-        (c - i).to(images.dtype) for c, i in zip(coordinates, lower, strict=True)
-    ]
-    result = images.new_zeros(coordinates[0].shape)
-    for corner in product((0, 1), repeat=len(coordinates)):
-        index = torch.zeros_like(lower[0])
-        weight = torch.ones_like(fractions[0])
-        for size, i, f, side in zip(
-            images.shape[1:], lower, fractions, corner, strict=True
-        ):
-            index = index * size + (i + side).clamp(0, size - 1)
-            weight = weight * (f if side else 1 - f)
-        values = images.flatten(1).gather(1, index.flatten(1)).reshape(index.shape)
+    # Reuse flattened neighbor offsets across all corners of an interpolation cell.
+    stride = prod(images.shape[1:])
+    base = torch.zeros_like(coordinates[0], dtype=torch.long)
+    neighbors = []
+    for size, coordinate in zip(images.shape[1:], coordinates, strict=True):
+        stride //= size
+        lower = coordinate.long()
+        base.add_(lower, alpha=stride)
+        fraction = (coordinate - lower).to(images.dtype)
+        # A fixed, integer-aligned axis contributes only its lower neighbor.
+        # Keep both sides when differentiating coordinates at voxel centers.
+        if skip_aligned_axes and not fraction.any():
+            continue
+        step = (lower < size - 1).long().mul_(stride)
+        neighbors.append(((None, 1 - fraction), (step, fraction)))
+    pixels = images.flatten(1)
+    if not neighbors:
+        return pixels.gather(1, base.flatten(1)).reshape(base.shape)
+    result = images.new_zeros(base.shape)
+    for corner in product(*neighbors):
+        index = base
+        for step, _ in corner:
+            if step is not None:
+                index = index + step
+        weight = corner[0][1]
+        for _, factor in corner[1:]:
+            weight = weight * factor
+        values = pixels.gather(1, index.flatten(1)).reshape(index.shape)
         result = result + weight * values
     return result
 

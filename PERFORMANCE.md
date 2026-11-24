@@ -34,6 +34,71 @@ timing, memory and accuracy phases. Routine `--size-gib 1 4` sweeps hold the
 128 MiB chunk and fitting/worker policy fixed to compare baseline/peak RAM.
 GiB-scale inputs remain opt-in; oversized inputs are a separate stronger check.
 
+## Mac CPU comparison
+
+On 2026-11-24 we compared `d25645d` (before the twelve roadmap fixes) with
+`051f60d` on the same arm64 Mac. Both revisions used Python 3.14.10, PyTorch
+2.14.1 and four CPU threads. Times below are milliseconds per call, reported as
+median [min–max] across five warm calls. All four workloads passed their accuracy
+checks on both revisions. [Commands and workload details](BENCHMARK.md#quick-cpu-comparison-across-commits)
+
+| Workload | Before (ms) | After (ms) | Change in median |
+| --- | ---: | ---: | ---: |
+| Rigid motion correction, four slices | 276 [269–287] | 290 [277–364] | +4.9% |
+| SyN, small volume pair | 1,534 [1,431–1,682] | 1,507 [1,440–1,820] | −1.8% |
+| Linear resampling, float32 volume | 25.45 [24.81–26.72] | 28.28 [26.59–30.90] | +11.1% |
+| Linear resampling, int64 volume | 26.88 [26.26–29.47] | 46.58 [44.56–49.95] | +73.3% |
+
+The registration timing ranges overlap. The clearest slowdown was fractional
+linear resampling of int64 images. From the parent of `b177ca6` to that commit
+alone, the median rose from 25.53 to 46.36 ms (+81.5%). That commit changed how
+integer images are sampled to preserve precision. Both revisions produced the
+expected rounded values and support mask on this fractional translation.
+
+Repeating the comparison with two CPU threads gave +12.2% for float32
+resampling and +71.9% for int64. Registration varied more. The two-thread
+medians rose 9.9% for rigid and 15.4% for SyN, with overlapping timing ranges
+for both models.
+
+We also checked 3D SyN accuracy separately on the standard 80 × 150 × 80 grid
+at `051f60d`. With one frame per batch and 200 updates per fit, the pair's
+root-mean-square transform error was **0.2318 voxels**. The recording's first
+frame stayed unchanged, and the next two frames measured **0.2036** and
+**0.2180**. Each passed the existing 0.30-voxel limit. The full 100-frame
+recording, CUDA, memory use and the other libraries were outside this Mac run.
+[Individual timings and accuracy results](research/performance/mac-cpu-051f60d.json)
+
+### Linear resampling follow-up
+
+We reran the same four workloads after optimizing CPU resampling. Each column
+below compares a baseline with the working tree on the same Mac. Values are
+medians of five calls in milliseconds. Both revisions passed every accuracy check
+in each run.
+
+| Workload | Before the roadmap fixes → optimized (4 threads) | Before the speed fix → optimized (2 threads) |
+| --- | ---: | ---: |
+| Rigid motion correction, four slices | 267.28 → 269.07 | 273.01 → 272.82 |
+| SyN, small volume pair | 1,384.34 → 1,387.61 | 1,402.82 → 1,415.71 |
+| Linear resampling, float32 | 24.55 → 7.05 | 31.54 → 9.60 |
+| Linear resampling, int64 | 25.48 → 10.86 | 45.47 → 11.49 |
+
+The four-thread baseline was `d25645d`. The two-thread baseline was `051f60d`,
+which already included the precision fixes. Affine resampling now builds
+coordinates from three short axis vectors. For the benchmark's one-axis shift,
+integer interpolation reads only the two contributing neighbors. It still uses
+voxel coordinates for exact rounding. [Individual timings and accuracy results](research/performance/mac-cpu-linear-resampling.json)
+
+In a separate four-thread spot check, we timed int64 pulls that combined rotation
+and translation. The median went from 25.85 to 22.07 ms for a matrix pull and
+from 40.29 to 37.13 ms for a dense displacement field, comparing
+`d25645d` with the optimized working tree.
+
+For a three-axis fractional shift of an 80 × 150 × 80 int64 volume, a single
+fresh process per version reached 403, 500 and 407 MiB of peak memory for the
+matrix pull at `d25645d`, `051f60d` and the optimized working tree respectively.
+The corresponding displacement-field runs reached 470, 565 and 447 MiB. These
+whole-process readings include the Python environment and input data.
+
 ## Coruscant baseline
 
 Reviewed on 2026-11-12: i9-14900K, RTX 5070, eight CPU threads. Eager revision

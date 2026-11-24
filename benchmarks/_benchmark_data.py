@@ -122,7 +122,29 @@ def _phantom(points, shape):
     return values.reshape(shape).astype(np.float32)
 
 
-def _dataset(shape, frames, model, recording):
+def make_dataset(shape, frames, model, recording):
+    """Generate matching images and known physical motion for a benchmark.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        Spatial voxel counts in k, j, i order.
+    frames : int
+        Number of recording frames.
+    model : str
+        Motion model for deforming the phantom.
+    recording : bool
+        Whether to generate a recording with frame zero as its reference.
+
+    Returns
+    -------
+    moving : xarray.DataArray
+        Moving image or recording.
+    fixed : xarray.DataArray
+        Reference image.
+    amplitudes : numpy.ndarray
+        Known motion amplitude for each frame.
+    """
     from voxeldata import create_voxeldata
 
     points = _grid(shape)

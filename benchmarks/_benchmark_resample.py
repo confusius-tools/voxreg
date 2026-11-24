@@ -20,7 +20,7 @@ from voxreg import position_to_world, resample
 
 def _prepare(config):
     shape = data.SHAPES[config["workload"]]
-    moving, fixed, amplitudes = data._dataset(
+    moving, fixed, amplitudes = data.make_dataset(
         shape, config["frames"], config["model"], config["workload"].endswith("+t")
     )
     recording = "time" in moving.dims

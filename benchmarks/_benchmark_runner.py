@@ -24,7 +24,12 @@ import torch
 from _benchmark_data import _configs
 from _benchmark_resample_io import LIMIT as RESAMPLE_LIMIT
 from _benchmark_resample_io import _load
-from _benchmark_resident import _check, _prepare_inputs, _run, _voxel_inputs
+from _benchmark_resident import (
+    _prepare_inputs,
+    _voxel_inputs,
+    check_registration,
+    run_registration,
+)
 from _benchmark_syn_reference import REFERENCE as SYN_REFERENCE
 from rich.console import Console
 from rich.table import Table
@@ -130,11 +135,13 @@ def _worker(config_path, mode):
             if cuda:
                 torch.cuda.synchronize()
             start = perf_counter()
-            output, errors, details = _run(moving, fixed, amplitudes, config, accuracy)
+            output, errors, details = run_registration(
+                moving, fixed, amplitudes, config, accuracy
+            )
             if cuda:
                 torch.cuda.synchronize()
             seconds = perf_counter() - start
-            _check(output, moving, config, details)
+            check_registration(output, moving, config, details)
             if (
                 record.get("backend_settings", details)["batch_size"]
                 != details["batch_size"]

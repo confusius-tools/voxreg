@@ -31,6 +31,9 @@ from voxreg.sampling import (
 )
 from voxreg.transforms import validate_matrices
 
+_LINEAR_BLOCK_POINTS = 2**17
+"""Target number of CPU samples sharing temporary linear interpolation buffers."""
+
 
 def _sample_linear(
     images: torch.Tensor, query: torch.Tensor, *, voxel_extent: bool = False
@@ -73,14 +76,28 @@ def _sample_linear(
     ).unbind()
     valid = ((query >= lower) & (query <= upper)).all(dim=-1)
     shape = query.shape[:-1]
-    planar = images.shape[1] == shape[1] == 1
-    base = query[:1] if query.stride(0) == 0 else query
+    if images.dtype == torch.float64 and images.device.type == "cpu":
+        # Bound the per-neighbor interpolation buffers for large volumes and batches.
+        flat = query.flatten(1, -2)
+        sampled = images.new_empty(flat.shape[:-1])
+        block_size = max(1, _LINEAR_BLOCK_POINTS // len(images))
+        for start in range(0, flat.shape[1], block_size):
+            block = slice(start, start + block_size)
+            positions = flat[:, block].unbind(-1)[::-1]
+            bounded = tuple(
+                c.clamp(0, size - 1)
+                for c, size in zip(positions, images.shape[1:], strict=True)
+            )
+            sampled[:, block] = sample_linear_at_indices(
+                images, bounded, skip_aligned_axes=True
+            )
+        return sampled.view(shape), valid
     coordinates = query.unbind(-1)[::-1]
+    base = query[:1] if query.stride(0) == 0 else query
     centers = (base == base.trunc()).all(dim=-1)
     if centers.all():
         return sample_nearest(images, coordinates), valid
     if images.dtype == torch.float64:
-        # Keep fractional weights in native indices for double and integer images.
         bounded = tuple(
             c.clamp(0, size - 1)
             for c, size in zip(coordinates, images.shape[1:], strict=True)
@@ -88,6 +105,7 @@ def _sample_linear(
         return sample_linear_at_indices(images, bounded), valid
     # Normalizing can shift exact centers. Save their values before modifying base.
     exact = sample_nearest(images, coordinates) if centers.any() else None
+    planar = images.shape[1] == shape[1] == 1
     if planar:
         grid = base[:, 0, ..., :2].mul_(scale[:2]).add_(shift[:2])
         source = images[:, 0].double()
@@ -412,18 +430,11 @@ def resample(
         source_affine[:3, :3], target_affine[:3, :3]
     )
     shape = tuple(reference.sizes[d] for d in VOXEL_DIMS)
-    indices = torch.stack(
-        torch.meshgrid(
-            *(torch.arange(n, device=device, dtype=torch.float64) for n in shape),
-            indexing="ij",
-        ),
-        dim=-1,
-    )
-    local = (
-        indices @ torch.tensor(target_affine[:3, :3].T, device=device)
-        if (field and not same_lattice) or not native_linear
-        else indices
-    )
+    axes = tuple(torch.arange(n, device=device, dtype=torch.float64) for n in shape)
+    local = None
+    if not native_linear or (field and not same_lattice):
+        local = torch.stack(torch.meshgrid(*axes, indexing="ij"), dim=-1)
+        local = local @ torch.tensor(target_affine[:3, :3].T, device=device)
     inverse = np.linalg.inv(source_affine[:3, :3]).T
     inverse_lattice = torch.tensor(
         inverse[:, ::-1].copy() if native_linear else inverse, device=device
@@ -445,9 +456,14 @@ def resample(
                 target_affine[:3, 3] - source_affine[:3, 3], device=device
             )
             if same_lattice:
-                # The base position is exact even on an oblique grid.
-                query = indices.flip(-1) + (displacement + offset) @ inverse_lattice
+                # Add exact voxel indices without building another volume-sized grid.
+                query = (displacement + offset) @ inverse_lattice
+                k, j, i = axes
+                query[..., 0].add_(i)
+                query[..., 1].add_(j[:, None])
+                query[..., 2].add_(k[:, None, None])
             else:
+                assert local is not None
                 query = (local + displacement + offset) @ inverse_lattice
             if shared:
                 query = query.unsqueeze(0).expand(last - first, *shape, 3)
@@ -477,28 +493,22 @@ def resample(
                         ).flip(0)
             if linear is not None and torch.isfinite(linear).all():
                 mapped_offset = torch.tensor(offset, device=device) @ inverse_lattice
-                if device == "cuda":
-                    # Separable coordinates avoid a dense, skinny float64 GEMM.
-                    k = indices[:, 0, 0, 0][None, None, :, None, None]
-                    j = indices[0, :, 0, 1][None, None, None, :, None]
-                    i = indices[0, 0, :, 2][None, None, None, None, :]
-                    query = (
-                        linear[:, :, 0, None, None, None] * k
-                        + linear[:, :, 1, None, None, None] * j
+                # Broadcast one-dimensional axes instead of materializing an input grid.
+                k, j, i = axes
+                query = (
+                    (
+                        linear[:, :, 0, None, None, None] * k[:, None, None]
+                        + linear[:, :, 1, None, None, None] * j[:, None]
                         + linear[:, :, 2, None, None, None] * i
-                        + mapped_offset[:, :, None, None, None]
-                    ).movedim(1, -1)
-                else:
-                    query = (
-                        torch.einsum("bij,...j->b...i", linear, indices)
-                        + mapped_offset[:, None, None, None]
                     )
+                    .add_(mapped_offset[:, :, None, None, None])
+                    .movedim(1, -1)
+                )
             else:
                 # Extreme finite coefficients may overflow only when composed.
-                if native_linear:
-                    local = indices @ torch.tensor(
-                        target_affine[:3, :3].T, device=device
-                    )
+                if local is None:
+                    local = torch.stack(torch.meshgrid(*axes, indexing="ij"), dim=-1)
+                    local = local @ torch.tensor(target_affine[:3, :3].T, device=device)
                 query = (
                     torch.einsum("bij,...j->b...i", matrices[:, :3, :3], local)
                     + torch.tensor(offset, device=device)[:, None, None, None]

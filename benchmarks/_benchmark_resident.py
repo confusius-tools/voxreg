@@ -3,7 +3,7 @@
 import json
 
 import numpy as np
-from _benchmark_data import SHAPES, _dataset, _grid, _run_fireants, _write_json
+from _benchmark_data import SHAPES, _grid, _run_fireants, _write_json, make_dataset
 from _benchmark_metrics import _linear_rms, _point_rms
 from _benchmark_resample_io import _digest
 
@@ -17,7 +17,7 @@ def _prepare_inputs(config_path):
         config_path.parent.parent / "inputs" / f"{config['workload']}-{config['model']}"
     )
     if not (directory / "inputs.json").exists():
-        moving, fixed, amplitudes = _dataset(
+        moving, fixed, amplitudes = make_dataset(
             SHAPES[config["workload"]],
             config["frames"],
             config["model"],
@@ -62,10 +62,32 @@ def _voxel_inputs(arrays, metadata):
     return moving, fixed, arrays["amplitudes"]
 
 
-def _run(moving, fixed, amplitudes, config, accuracy):
+def run_registration(moving, fixed, amplitudes, config, accuracy):
+    """Run one resident registration call and optionally score the fitted transform.
+
+    Parameters
+    ----------
+    moving, fixed : xarray.DataArray
+        Moving data and reference grid.
+    amplitudes : numpy.ndarray
+        Per-frame motion amplitudes used to generate the inputs.
+    config : dict
+        Workload, model, backend and fitting settings.
+    accuracy : bool
+        Whether to export transforms and score their error against known motion.
+
+    Returns
+    -------
+    output : numpy.ndarray
+        Registered frames.
+    errors : list of float or None
+        Per-frame transform errors in voxels when scored.
+    details : dict
+        Fitting batch size, per-frame update counts and termination statuses.
+    """
     model, backend = config["model"], config["backend"]
     reference = config["workload"].endswith("+t")
-    shape = SHAPES[config["workload"]]
+    shape = tuple(fixed.shape)
     if backend.startswith("fireants-"):
         output, errors, details = _run_fireants(
             moving,
@@ -123,7 +145,25 @@ def _run(moving, fixed, amplitudes, config, accuracy):
     return output, errors, details
 
 
-def _check(output, moving, config, details):
+def check_registration(output, moving, config, details):
+    """Validate registered pixels and per-frame diagnostics.
+
+    Parameters
+    ----------
+    output : numpy.ndarray
+        Registered frames.
+    moving : xarray.DataArray
+        Original moving image or recording.
+    config : dict
+        Workload settings.
+    details : dict
+        Diagnostics returned by the registration backend.
+
+    Raises
+    ------
+    AssertionError
+        If the pixels, reference frame or diagnostics violate the benchmark checks.
+    """
     reference = config["workload"].endswith("+t")
     expected = moving.shape if reference else (1, *moving.shape)
     if output.shape != expected or output.dtype != np.float32:

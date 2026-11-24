@@ -48,6 +48,41 @@ Do not compete with an existing heavy job. Keep the machine awake and on stable
 AC/performance settings. No automatic resume, OOM retry or batch reduction occurs.
 Unavailable backends, errors and partial runs are recorded rather than hidden.
 
+## Quick CPU comparison across commits
+
+To compare two local commits, pass their names or IDs to the CPU benchmark.
+
+```bash
+uv run python benchmarks/benchmark_cpu.py --baseline HEAD^ --revision HEAD --output artifacts/cpu.json
+```
+
+The command runs both versions on the same machine using the same installed
+dependencies, inputs and thread count (four by default). The four workloads cover
+rigid motion correction on four slices, SyN on a small volume, and linear
+resampling of a full-size float32 or int64 volume at fractional voxel positions.
+Registration fits use 200 updates per moving frame. Each block starts with a
+correctness check against the known transform or the expected image and mask.
+The table shows the median of five timed calls per revision. The second block
+reverses the order of the revisions to reduce the effect of drift.
+
+After each push to `main`, open **Actions → CPU performance**. The run summary
+compares the tips before and after that push on one Linux runner with two threads.
+Its downloadable JSON contains both commit IDs, dependency versions, individual
+timings and accuracy results. Timing changes are informational. A failed accuracy
+check on the new revision fails the job. Use **Run workflow** to compare a
+selected revision with an earlier commit or tag. Compare timings within a run,
+since different runners can have different hardware.
+
+For a separate accuracy check, `--full-size-syn` uses the standard 80 × 150 × 80
+volume pair and the first three frames of the recording, fitting one frame at a time.
+
+```bash
+uv run python benchmarks/benchmark_cpu.py --revision HEAD --full-size-syn --output artifacts/cpu-syn.json
+```
+
+This reports each frame's transform error and update count. The full benchmark
+also covers 100-frame recordings, other backends and peak memory.
+
 ## Workloads and matching
 
 The analytic phantom is not anatomy. Workloads are a `(1,150,128)` planar

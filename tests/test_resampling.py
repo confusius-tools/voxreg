@@ -493,6 +493,32 @@ def test_linear_pull_at_centers_and_between_neighbors(device, dtype):
     assert valid.values.all()
 
 
+def test_integer_linear_batch_matches_native_voxel_weights(device):
+    """Different pulls in one batch preserve half ties and all eight corner weights."""
+    # Two frames span multiple interpolation blocks, including a partial last block.
+    shape = (14, 96, 100)
+    values = np.random.default_rng(203).integers(-1000, 1000, shape, dtype=np.int64)
+    values[0, 0, :3] = [0, 1, 2]
+    image = create_voxeldata(values, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
+    matrices = np.stack([np.eye(4), np.eye(4)])
+    matrices[0, 2, 3] = 0.5
+    matrices[1, :3, 3] = [-0.25, 0.5, 0.75]
+    matrices[1, 2, 1] = -0.125
+    actual, valid = resample(image, image, matrices, device=device, batch_size=2)
+
+    indices = np.indices(shape).reshape(3, -1)
+    for frame in range(len(matrices)):
+        query = matrices[frame, :3, :3] @ indices + matrices[frame, :3, 3, None]
+        inside = ((0 <= query) & (query <= np.array(shape)[:, None] - 1)).all(axis=0)
+        expected = map_coordinates(
+            values.astype(np.float64), query, order=1, mode="nearest"
+        )
+        expected[~inside] = values.min()
+        np.testing.assert_array_equal(valid[frame], inside.reshape(shape))
+        np.testing.assert_array_equal(actual[frame], np.rint(expected).reshape(shape))
+    np.testing.assert_array_equal(actual[0, 0, 0, :2], [0, 2])
+
+
 @pytest.mark.parametrize("planar", [True, False])
 def test_linear_native_double_and_cpu_shared_point_tiles(monkeypatch, planar, device):
     shape = (1 if planar else 3, 5, 7)

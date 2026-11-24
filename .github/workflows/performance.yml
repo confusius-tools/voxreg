@@ -1,0 +1,47 @@
+name: CPU performance
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Commit or tag to compare with the selected revision (defaults to its parent)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "0.13.5"
+          python-version: "3.14"
+
+      - run: uv sync --frozen --no-dev
+
+      - name: Compare both revisions on this runner
+        env:
+          BASELINE: ${{ inputs.baseline || github.event.before }}
+        run: |
+          if [[ -z "$BASELINE" || "$BASELINE" =~ ^0+$ ]]; then
+            BASELINE=HEAD^
+          fi
+          uv run --no-sync python benchmarks/benchmark_cpu.py \
+            --baseline "$BASELINE" --revision "$GITHUB_SHA" \
+            --threads 2 --output cpu-performance.json
+
+      - uses: actions/upload-artifact@v7.0.2
+        if: ${{ !cancelled() && hashFiles('cpu-performance.json') != '' }}
+        with:
+          name: cpu-performance-${{ github.sha }}
+          path: cpu-performance.json

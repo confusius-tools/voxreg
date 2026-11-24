@@ -1,0 +1,720 @@
+{
+  "across_roadmap_fixes": {
+    "protocol": "voxreg-cpu-history-v1",
+    "platform": "macOS-26.7.3-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.14.10",
+    "threads": 4,
+    "packages": {
+      "torch": "2.14.1",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "voxeldata": "0.0.6",
+      "xarray": "2026.9.0"
+    },
+    "results": {
+      "baseline": {
+        "commit": "d25645d7a6991c28ada9e794d09a09589fbbcaa4",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.2712851670003147,
+              0.2686569170036819,
+              0.27604162500210805,
+              0.2868292080020183,
+              0.28625145799742313
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16542067091645593
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.5238550840003882,
+              1.5488901670032647,
+              1.4313083340020967,
+              1.5337972499983152,
+              1.6819469170004595
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.025453875001403503,
+              0.02498008299880894,
+              0.024809209004160948,
+              0.026721042006101925,
+              0.026635875001375098
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.02687737499945797,
+              0.02676208300545113,
+              0.026263583000400104,
+              0.02947275000042282,
+              0.02734420900378609
+            ]
+          }
+        }
+      },
+      "current": {
+        "commit": "051f60d66aac63aa460cd245421e5e0f84cae9e2",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.27710845800174866,
+              0.28070841600128915,
+              0.29194812499918044,
+              0.3639705829991726,
+              0.2895608750040992
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16636031225750045
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.4446446250003646,
+              1.4403102500000386,
+              1.506792084001063,
+              1.798861167000723,
+              1.8195305000044755
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.028281207996769808,
+              0.026745916999061592,
+              0.026594208997266833,
+              0.030900832993211225,
+              0.02849604099901626
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.04658108300645836,
+              0.04455983300431399,
+              0.04576220900344197,
+              0.049947583000175655,
+              0.04738595800154144
+            ]
+          }
+        }
+      }
+    }
+  },
+  "isolated_linear_sampling_fix": {
+    "protocol": "voxreg-cpu-history-v1",
+    "platform": "macOS-26.7.3-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.14.10",
+    "threads": 4,
+    "packages": {
+      "torch": "2.14.1",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "voxeldata": "0.0.6",
+      "xarray": "2026.9.0"
+    },
+    "results": {
+      "baseline": {
+        "commit": "cd8a7c42ec2f4e758943361c7702222faca6d619",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.2656872919978923,
+              0.2927921669979696,
+              0.26924195799801964,
+              0.2653169170007459,
+              0.26427679199696286
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16636031225750045
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.5290450410029734,
+              1.4834250829953817,
+              1.4472739999982878,
+              1.5366598749969853,
+              1.4672697499991045
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.02490166699863039,
+              0.024751917000685353,
+              0.0246482919974369,
+              0.02489945799607085,
+              0.024426459000096656
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.026661208001314662,
+              0.025534833999699913,
+              0.02548695800214773,
+              0.02616320800007088,
+              0.02539666700613452
+            ]
+          }
+        }
+      },
+      "current": {
+        "commit": "b177ca6dd78bcff8e1ec2ca1e8b502ee92d395b4",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.265830582997296,
+              0.2634237079982995,
+              0.26873008300026413,
+              0.3252788750032778,
+              0.31293141700007254
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16636031225750045
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.3860350000031758,
+              1.4025651669944637,
+              1.443762875001994,
+              1.625068832996476,
+              1.4806926250021206
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.02593291600351222,
+              0.025983082996390294,
+              0.02588291699794354,
+              0.02584062499954598,
+              0.025367667003592942
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.04635558299924014,
+              0.04581679200055078,
+              0.04637604200252099,
+              0.04770841699792072,
+              0.04187920899858
+            ]
+          }
+        }
+      }
+    }
+  },
+  "full_size_syn_accuracy": {
+    "revision": "051f60d66aac63aa460cd245421e5e0f84cae9e2",
+    "threads": 4,
+    "cases": [
+      {
+        "config": {
+          "workload": "3d",
+          "model": "syn",
+          "backend": "cpu",
+          "iterations": 200,
+          "frames": 1,
+          "batch_size": 1
+        },
+        "shape": [
+          80,
+          150,
+          80
+        ],
+        "rms_voxels": [
+          0.23179652603219086
+        ],
+        "passed": true,
+        "details": {
+          "batch_size": 1,
+          "updates": [
+            200
+          ],
+          "statuses": [
+            "max_iterations"
+          ]
+        },
+        "seconds_including_scoring": 57.36920937499963
+      },
+      {
+        "config": {
+          "workload": "3d+t",
+          "model": "syn",
+          "backend": "cpu",
+          "iterations": 200,
+          "frames": 3,
+          "batch_size": 1
+        },
+        "shape": [
+          80,
+          150,
+          80
+        ],
+        "rms_voxels": [
+          0.0,
+          0.20356227215746792,
+          0.21798258554826921
+        ],
+        "passed": true,
+        "details": {
+          "batch_size": 1,
+          "updates": [
+            0,
+            200,
+            200
+          ],
+          "statuses": [
+            "reference",
+            "max_iterations",
+            "max_iterations"
+          ]
+        },
+        "seconds_including_scoring": 119.53811291600141
+      }
+    ]
+  },
+  "across_roadmap_fixes_two_threads": {
+    "protocol": "voxreg-cpu-history-v1",
+    "platform": "macOS-26.7.3-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.14.10",
+    "threads": 2,
+    "packages": {
+      "torch": "2.14.1",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "voxeldata": "0.0.6",
+      "xarray": "2026.9.0"
+    },
+    "results": {
+      "baseline": {
+        "commit": "d25645d7a6991c28ada9e794d09a09589fbbcaa4",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.29894108399457764,
+              0.29292179100593785,
+              0.33491516600042814,
+              0.4686823750016629,
+              0.4374340420035878
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16542067091645593
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.7725840829953086,
+              1.6945928339991951,
+              1.8199102080034208,
+              2.8982732910008053,
+              2.7664317910021055
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.03617929200117942,
+              0.035412666999036446,
+              0.03466370800015284,
+              0.04232666700409027,
+              0.04238408299715957
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.03605208399676485,
+              0.03536266700393753,
+              0.03746220799803268,
+              0.04254979200050002,
+              0.04315104099805467
+            ]
+          }
+        }
+      },
+      "current": {
+        "commit": "051f60d66aac63aa460cd245421e5e0f84cae9e2",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.32454058400617214,
+              0.368066707997059,
+              0.3832577499997569,
+              0.3723794999968959,
+              0.3560035840055207
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16636031225750045
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.9147383329982404,
+              2.0425702079955954,
+              2.5983406250015832,
+              2.3642572079988895,
+              2.099925375005114
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.04060837499855552,
+              0.043578332995821256,
+              0.04204070800187765,
+              0.038959042001806665,
+              0.03861941699869931
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.06527633299992885,
+              0.06490825000219047,
+              0.0644062909996137,
+              0.05217629200342344,
+              0.05128404100105399
+            ]
+          }
+        }
+      }
+    }
+  }
+}

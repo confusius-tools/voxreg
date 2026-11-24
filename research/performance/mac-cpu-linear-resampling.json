@@ -1,0 +1,435 @@
+{
+  "before_roadmap_fixes": {
+    "protocol": "voxreg-cpu-history-v1",
+    "platform": "macOS-26.7.3-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.14.10",
+    "threads": 4,
+    "packages": {
+      "torch": "2.14.1",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "voxeldata": "0.0.6",
+      "xarray": "2026.9.0"
+    },
+    "results": {
+      "baseline": {
+        "commit": "d25645d7a6991c28ada9e794d09a09589fbbcaa4",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.26714824999362463,
+              0.2672848750007688,
+              0.2672649999949499,
+              0.2679260000004433,
+              0.2674764590046834
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16542067091645593
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.381166667000798,
+              1.3823791660033748,
+              1.3843391660047928,
+              1.3935205840025446,
+              1.4860326249981881
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.0247150419963873,
+              0.02429879100236576,
+              0.02420012500078883,
+              0.02493720799975563,
+              0.024548417000914924
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.02597520899871597,
+              0.02535258299758425,
+              0.024989834004372824,
+              0.026155416999245062,
+              0.025482500001089647
+            ]
+          }
+        }
+      },
+      "current": {
+        "commit": "worktree-526761b1b5212b095a555fce776c484bfa72d68c0421f4f45ee96fb8ada04573",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.2656154169962974,
+              0.266546874998312,
+              0.2724418750003679,
+              0.2847637079976266,
+              0.26906570800201735
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16636031225750045
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.3794943329994567,
+              1.3823414169964963,
+              1.3903052499954356,
+              1.389421833002416,
+              1.3876055419968907
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.007050542000797577,
+              0.00655341699894052,
+              0.006531667000672314,
+              0.007103832998836879,
+              0.007060749994707294
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.011417292000260204,
+              0.010671166004613042,
+              0.010572499995760154,
+              0.01151512499927776,
+              0.010858708003070205
+            ]
+          }
+        }
+      }
+    }
+  },
+  "before_speed_fix": {
+    "protocol": "voxreg-cpu-history-v1",
+    "platform": "macOS-26.7.3-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.14.10",
+    "threads": 2,
+    "packages": {
+      "torch": "2.14.1",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "voxeldata": "0.0.6",
+      "xarray": "2026.9.0"
+    },
+    "results": {
+      "baseline": {
+        "commit": "051f60d66aac63aa460cd245421e5e0f84cae9e2",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.2730089999968186,
+              0.27195587499591056,
+              0.2741481670018402,
+              0.2709014170031878,
+              0.2737640840059612
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16636031225750045
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.4329827499968815,
+              1.3997371250006836,
+              1.4037425830028951,
+              1.4028201250039274,
+              1.4027333339981851
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.03210708299593534,
+              0.03143741699750535,
+              0.03138641600526171,
+              0.032039958001405466,
+              0.0315368750016205
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.0464985840008012,
+              0.04544779100251617,
+              0.04533600000286242,
+              0.04627937500481494,
+              0.04547120899951551
+            ]
+          }
+        }
+      },
+      "current": {
+        "commit": "worktree-526761b1b5212b095a555fce776c484bfa72d68c0421f4f45ee96fb8ada04573",
+        "cases": {
+          "rigid-4-slices": {
+            "shape": [
+              1,
+              150,
+              128
+            ],
+            "frames": 4,
+            "rms_voxels": [
+              0.0,
+              0.0013722014208660768,
+              0.0015474157081243277,
+              0.0009094692126019999
+            ],
+            "batch_size": 4,
+            "updates": [
+              0,
+              200,
+              200,
+              200
+            ],
+            "statuses": [
+              "reference",
+              "max_iterations",
+              "max_iterations",
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              0.27646862500114366,
+              0.27441212499979883,
+              0.2728192089998629,
+              0.2710081250043004,
+              0.27145708400348667
+            ]
+          },
+          "syn-small-volume": {
+            "shape": [
+              24,
+              40,
+              24
+            ],
+            "frames": 1,
+            "rms_voxels": [
+              0.16636031225750045
+            ],
+            "batch_size": 1,
+            "updates": [
+              200
+            ],
+            "statuses": [
+              "max_iterations"
+            ],
+            "passed": true,
+            "seconds": [
+              1.4183487499976764,
+              1.4157110000014654,
+              1.4196202090024599,
+              1.406976541999029,
+              1.4026121670030989
+            ]
+          },
+          "linear-resample-float32": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 1.1878561956280009e-07,
+            "passed": true,
+            "seconds": [
+              0.00996370899520116,
+              0.009595707997505087,
+              0.009495999998762272,
+              0.00982629200007068,
+              0.009587624997948296
+            ]
+          },
+          "linear-resample-int64": {
+            "shape": [
+              80,
+              150,
+              80
+            ],
+            "frames": 1,
+            "max_intensity_error": 0.0,
+            "passed": true,
+            "seconds": [
+              0.011871417002112139,
+              0.011173917002452072,
+              0.011296415999822784,
+              0.012355916005617473,
+              0.011485583003377542
+            ]
+          }
+        }
+      }
+    }
+  },
+  "candidate_id": "worktree- followed by the SHA-256 of git diff HEAD -- src/voxreg applied to 051f60d"
+}
