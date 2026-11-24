@@ -14,7 +14,7 @@ Work one item at a time, then stop for review and a separate commit. Start with 
 - [x] **Make nearest-neighbor ties predictable for labels.** `resample` rounds the source voxel positions directly. Tests cover exact ties and the closest representable position on either side for both matrices and displacement fields.
 - [x] **Preserve exact voxel values under an identity transform.** Linear resampling now preserves values at voxel centers, including on oblique grids. Tests cover identity matrices, zero displacement fields, and a pull that lands halfway between voxels in every other column.
 - [x] **Round cubic interpolation consistently for integer images.** Cubic sampling rounds before adding the background back. Tests check shifted ramps with positive and negative backgrounds, exact half-integer ties, and values on either side.
-- [ ] **Keep small translations at large world coordinates.** A half-voxel shift disappeared when both grids had the same origin at 2⁵² mm. Subtract the common origin before adding the small translation. Verify that changing the shared origin preserves interpolated values and edge validity.
+- [x] **Keep small translations at large world coordinates.** Matrix resampling now preserves a half-voxel shift when both grids move to a distant origin. Tests check sampled values and edge validity for nearest, linear, and cubic interpolation.
 - [ ] **Support reversed displacement fields.** Reversing an axis of both a saved SyN field and its reference grid produced a valid pair that PyTorch could not read because of the array’s memory layout. Convert each field batch to a supported layout at upload. Its output should match the original resampling result reversed along the same axis.
 
 ## Memory and runtime

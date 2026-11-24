@@ -450,11 +450,16 @@ def resample(
                 query = query.unsqueeze(0).expand(last - first, *shape, 3)
         else:
             matrices = torch.tensor(selected, device=device)
-            offset = (
-                selected[:, :3, :3] @ target_affine[:3, 3]
-                + selected[:, :3, 3]
-                - source_affine[:3, 3]
+            # Cancel the largest opposing terms first so a small shift or origin survives.
+            low, middle, high = np.sort(
+                np.broadcast_arrays(
+                    selected[:, :3, :3] @ target_affine[:3, 3],
+                    selected[:, :3, 3],
+                    -source_affine[:3, 3],
+                ),
+                axis=0,
             )
+            offset = (low + high) + middle
             linear = None
             if native_linear:
                 linear = inverse_lattice.T @ (

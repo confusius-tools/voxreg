@@ -567,6 +567,52 @@ def test_linear_singleton_faces_remain_half_open(axis, device):
         np.testing.assert_array_equal(actual.values, expected)
 
 
+@pytest.mark.parametrize("interpolation", ["nearest", "linear", "bspline"])
+def test_half_voxel_shift_at_large_world_origin(interpolation, device):
+    """Changing the shared grid origin preserves both shifted values and support."""
+    data = np.arange(10, dtype=np.float64).reshape(1, 2, 5)
+    transforms = np.repeat(np.eye(4)[None], 2, axis=0)
+    transforms[:, 2, 3] = [0.5, -0.5]
+    near = create_voxeldata(data, dims=("k", "j", "i"), voxel_to_world=np.eye(4))
+    expected, valid = resample(
+        near, near, transforms, interpolation=interpolation, device=device
+    )
+    np.testing.assert_array_equal(
+        valid.values[:, 0, 0],
+        [[True, True, True, True, False], [False, True, True, True, True]],
+    )
+    for origin in (2**52, -(2**52)):
+        affine = np.eye(4)
+        affine[2, 3] = origin
+        far = create_voxeldata(data, dims=("k", "j", "i"), voxel_to_world=affine)
+        actual, supported = resample(
+            far, far, transforms, interpolation=interpolation, device=device
+        )
+        np.testing.assert_array_equal(actual.values, expected.values)
+        np.testing.assert_array_equal(supported.values, valid.values)
+
+
+@pytest.mark.parametrize(
+    "source_origin,reference_origin", [(0.5, -(2**52)), (2**52, -0.5)]
+)
+def test_large_translation_preserves_fractional_grid_origin(
+    source_origin, reference_origin, device
+):
+    """A large translation between grids leaves a known half-voxel shift."""
+    data = np.array([[[1.0, 3.0, 5.0]]])
+    affine = np.eye(4)
+    affine[2, 3] = source_origin
+    moving = create_voxeldata(data, dims=("k", "j", "i"), voxel_to_world=affine)
+    affine = np.eye(4)
+    affine[2, 3] = reference_origin
+    reference = create_voxeldata(data, dims=("k", "j", "i"), voxel_to_world=affine)
+    transform = np.eye(4)
+    transform[2, 3] = 2**52
+    actual, valid = resample(moving, reference, transform, device=device)
+    np.testing.assert_array_equal(actual.values, [[[1.0, 2.0, 4.0]]])
+    np.testing.assert_array_equal(valid.values, [[[False, True, True]]])
+
+
 def test_composition_overflow_uses_physical_mapping(device):
     moving = create_voxeldata(
         np.full((1, 1, 1), 7, dtype=np.float32),
