@@ -11,7 +11,7 @@ Work one item at a time, then stop for review and a separate commit. Start with 
 
 ## Resampling accuracy
 
-- [ ] **Make nearest-neighbor ties predictable for labels.** A half-voxel shift of a width-10 label image picked label 1 at both positions 0.5 and 1.5. Use the original voxel positions when rounding. Check that exact ties follow the nearest-even rule across image widths and that positions just to either side select the closer label.
+- [x] **Make nearest-neighbor ties predictable for labels.** `resample` rounds the source voxel positions directly. Tests cover exact ties and the closest representable position on either side for both matrices and displacement fields.
 - [ ] **Preserve exact voxel values under an identity transform.** Linear resampling changed 418 values in an integer image containing only 0 and 2⁵², even though every output point was an original voxel center. Avoid mixing neighbors at exact centers. Require exact equality for identity pulls on high-contrast integer data.
 - [ ] **Round cubic interpolation consistently for integer images.** Adding a background of 2⁴⁴ to an integer ramp changed which way fractional samples rounded. On the same 0.58-voxel shift, removing that background afterward gave 2, 4, 4, 6 where the original gave 3, 4, 5, 6. Correct the rounding tolerance and test both shifted ramps and genuine half-integer ties.
 - [ ] **Keep small translations at large world coordinates.** A half-voxel shift disappeared when both grids had the same origin at 2⁵² mm. Subtract the common origin before adding the small translation. Verify that changing the shared origin preserves interpolated values and edge validity.

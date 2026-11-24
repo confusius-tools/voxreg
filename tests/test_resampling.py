@@ -234,6 +234,42 @@ def test_dense_translation_matches_matrix(device, planar, interpolation):
     xr.testing.assert_identical(dense_valid, linear_valid)
 
 
+@pytest.mark.parametrize("width", [7, 10, 18])
+@pytest.mark.parametrize("dense", [False, True])
+def test_nearest_labels_at_and_beside_half_voxels(width, dense, device):
+    """Select the even voxel at each tie and the closer voxel one float away."""
+    labels = create_voxeldata(
+        np.arange(2 * 3 * width, dtype=np.uint16).reshape(2, 3, width),
+        dims=("k", "j", "i"),
+        voxel_to_world=np.eye(4),
+    )
+    reference = labels.isel(i=slice(0, 1))
+    left = np.arange(width - 1)
+    ties = left + 0.5
+    positions = np.concatenate(
+        (np.nextafter(ties, -np.inf), ties, np.nextafter(ties, np.inf))
+    )
+    expected = np.concatenate((left, left + left % 2, left + 1))
+    transforms = np.repeat(np.eye(4)[None], len(positions), axis=0)
+    transforms[:, 2, 3] = positions
+    if dense:
+        grid = reference.expand_dims(
+            time=np.arange(len(positions)), world_component=["z", "y", "x"]
+        )
+        shifts = transforms[:, :3, 3, None, None, None]
+        transforms = grid.copy(data=np.broadcast_to(shifts, grid.shape)).assign_attrs(
+            representation="displacement", spatial_units="mm"
+        )
+
+    actual, valid = resample(
+        labels, reference, transforms, interpolation="nearest", device=device
+    )
+    np.testing.assert_array_equal(
+        actual.values[..., 0], labels.values[..., expected].transpose(2, 0, 1)
+    )
+    assert valid.values.all()
+
+
 def test_singleton_support_and_labels(device):
     moving = create_voxeldata(
         np.arange(20, dtype=np.uint16).reshape(1, 4, 5),

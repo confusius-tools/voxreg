@@ -445,6 +445,8 @@ reverse, reverse_valid = voxreg.resample(fixed, moving, result["inverse/transfor
 The reference must be spatial-only; for a recording use a spatial frame as the
 reference. Displacement fields must match that grid exactly. Original dtype and
 time labels are retained; use `interpolation="nearest"` for labels or masks.
+Exactly halfway between two source positions, `resample` chooses the even array
+index on that axis. For example, 0.5 selects index 0 and 1.5 selects index 2.
 See `help(voxreg.resample)` for broadcasting, batching and support conventions.
 
 ## Lazy recordings and resampling

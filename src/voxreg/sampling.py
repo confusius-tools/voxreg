@@ -746,6 +746,30 @@ def map_displacement(
     return torch.stack(components, dim=-1)
 
 
+def sample_nearest(
+    images: torch.Tensor, coordinates: tuple[torch.Tensor, ...]
+) -> torch.Tensor:
+    """Sample nearest neighbors using fractional array indices.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        Source images with a leading batch dimension.
+    coordinates : tuple of torch.Tensor
+        Batched source positions, one tensor per spatial axis in array order.
+
+    Returns
+    -------
+    torch.Tensor
+        Selected source values with the query shape. Half-integer positions
+        select the even index. Callers apply the geometric validity mask.
+    """
+    index = torch.zeros_like(coordinates[0], dtype=torch.int64)
+    for size, coordinate in zip(images.shape[1:], coordinates, strict=True):
+        index.mul_(size).add_(coordinate.clamp(0, size - 1).round().long())
+    return images.flatten(1).gather(1, index.flatten(1)).reshape(index.shape)
+
+
 def sample_displaced(
     images: torch.Tensor,
     normalized: torch.Tensor,
@@ -772,16 +796,21 @@ def sample_displaced(
     torch.Tensor
         Source intensities sampled in image dtype; support is checked by the caller.
     """
-    dimensions = images.ndim - 1
+    native_coordinates = (
+        (component + 1) * ((size - 1) / 2)
+        for size, component in zip(
+            images.shape[1:], reversed(normalized.unbind(-1)), strict=True
+        )
+    )
+    if interpolation == "nearest":
+        return sample_nearest(images, tuple(native_coordinates))
     native_cpu = (
         images.device.type == "cpu"
         and images.dtype == torch.float32
-        and interpolation == "linear"
         and min(images.shape[1:]) > 1
     )
     coordinates = []
-    for axis, size in enumerate(images.shape[1:]):
-        coordinate = (normalized[..., dimensions - axis - 1] + 1) * ((size - 1) / 2)
+    for size, coordinate in zip(images.shape[1:], native_coordinates, strict=True):
         if images.dtype == torch.float32:
             nearest = coordinate.round()
             snapped_knot = nearest
@@ -813,17 +842,12 @@ def sample_displaced(
             padding_mode="border",
             align_corners=True,
         )[:, 0].float()
-    if interpolation == "nearest":
-        index = torch.zeros_like(coordinates[0], dtype=torch.int64)
-        for size, coordinate in zip(images.shape[1:], coordinates, strict=True):
-            index = index * size + coordinate.round().long()
-        return images.flatten(1).gather(1, index.flatten(1)).reshape(index.shape)
     lower = [c.floor().long() for c in coordinates]
     fractions = [
         (c - i).to(images.dtype) for c, i in zip(coordinates, lower, strict=True)
     ]
     result = images.new_zeros(coordinates[0].shape)
-    for corner in product((0, 1), repeat=dimensions):
+    for corner in product((0, 1), repeat=len(coordinates)):
         index = torch.zeros_like(lower[0])
         weight = torch.ones_like(fractions[0])
         for size, i, f, side in zip(

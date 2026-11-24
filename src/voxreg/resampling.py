@@ -23,7 +23,7 @@ from voxreg.interpolation import (
 )
 from voxreg.preparation import choose_batch_size, resolve_device
 from voxreg.results import build_output_template
-from voxreg.sampling import SAMPLE_CENTER_TOLERANCE, sample_displaced
+from voxreg.sampling import SAMPLE_CENTER_TOLERANCE, sample_nearest
 from voxreg.transforms import validate_matrices
 
 
@@ -257,7 +257,8 @@ def resample(
         have time labels they must match exactly. Anonymous per-frame matrices
         applied to a spatial image produce integer time labels.
     interpolation : {"linear", "nearest", "bspline"}, default="linear"
-        Use nearest for categorical labels. Outside samples use each original
+        Use nearest for categorical labels. Exact half-voxel positions select
+        the even source array index along that axis. Outside samples use each original
         moving frame's minimum and are marked invalid. bspline uses prefiltered
         cubic B-splines with whole-sample mirror boundaries in 2D and 3D. Its
         coefficients and queries use float64 on the selected device. Floating
@@ -455,7 +456,6 @@ def resample(
             raise ValueError("Transform produced nonfinite sampling coordinates.")
         if not native_linear:
             valid = torch.ones(query.shape[:-1], device=device, dtype=torch.bool)
-            normalized = []
             for axis, size in enumerate(moving.shape[1:]):
                 coordinate = query[..., axis]
                 if mixed or size == 1:
@@ -464,11 +464,6 @@ def resample(
                     valid &= (coordinate >= -SAMPLE_CENTER_TOLERANCE) & (
                         coordinate <= size - 1 + SAMPLE_CENTER_TOLERANCE
                     )
-                normalized.append(
-                    torch.zeros_like(coordinate)
-                    if size == 1
-                    else coordinate * (2 / (size - 1)) - 1
-                )
         original = torch.tensor(
             np.ascontiguousarray(moving.values[first:last], dtype=dtype), device=device
         )
@@ -477,9 +472,8 @@ def resample(
         elif interpolation == "bspline":
             sampled = sample_cubic_spline(prepare_cubic_spline(original), query, valid)
         else:
-            sampled = sample_displaced(
-                original, torch.stack(normalized[::-1], dim=-1), "nearest"
-            )
+            # A normalized-coordinate round trip can move an exact tie to either side.
+            sampled = sample_nearest(original, query.unbind(-1))
         sampled = torch.where(
             valid, sampled, original.amin(dim=(1, 2, 3))[:, None, None, None]
         )
