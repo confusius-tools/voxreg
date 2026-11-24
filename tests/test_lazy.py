@@ -17,7 +17,7 @@ from distributed.protocol import serialize, to_serialize
 from numpy.testing import assert_allclose, assert_array_equal
 from oracles import max_pull_difference
 from registration_options import RegistrationOptions
-from voxeldata import VoxelToWorldIndex, load_array, save
+from voxeldata import VoxelToWorldIndex, create_voxeldata, load_array, save
 
 from voxreg import Stage, position_to_world, register, resample
 from voxreg.geometry import validate_registration_geometry
@@ -781,12 +781,30 @@ def test_resampling_metadata_failures_before_loading(recording_factory):
         image.compute(scheduler="synchronous")
 
 
+def test_lazy_resampling_graph_size_follows_reference_axis_lengths():
+    """Tripling the reference axes should cost at most three times the graph size."""
+    moving = create_voxeldata(
+        np.arange(4).reshape(1, 2, 2), dims=("k", "j", "i"), voxel_to_world=np.eye(4)
+    ).chunk()
+    sizes = []
+    for edge in (32, 96):
+        values = np.broadcast_to(np.uint8(7), (edge,) * 3)
+        reference = create_voxeldata(
+            values, dims=("k", "j", "i"), voxel_to_world=np.eye(4)
+        )
+        # Auxiliary coordinates belong on the output, but workers only need the grid.
+        reference = reference.assign_coords(region=(reference.dims, values))
+        image, _ = resample(moving, reference, np.eye(4), device="cpu")
+        xr.testing.assert_identical(image.coords["region"], reference.coords["region"])
+        _, frames = serialize(to_serialize(image.data), on_error="raise")
+        sizes.append(sum(memoryview(frame).nbytes for frame in frames))
+    assert sizes[1] <= 3 * sizes[0]
+
+
 @pytest.mark.parametrize("operation", ["register", "resample"])
 def test_disk_backed_graph_serialization_contains_metadata_not_dense_placeholders(
     tmp_path, operation
 ):
-    from voxeldata import create_voxeldata
-
     spatial = np.random.default_rng(713).random((4, 32, 32), dtype=np.float32) + 0.5
     values = np.arange(1, 65, dtype=np.float32)[:, None, None, None] * spatial
     data = create_voxeldata(

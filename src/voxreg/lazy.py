@@ -18,7 +18,7 @@ from dask import delayed
 from dask.highlevelgraph import HighLevelGraph, MaterializedLayer
 from filelock import FileLock
 
-from voxreg.geometry import VOXEL_DIMS, validate_registration_geometry
+from voxreg.geometry import VOXEL_DIMS, WORLD_DIMS, validate_registration_geometry
 from voxreg.interpolation import Interpolation
 from voxreg.preparation import RegistrationSettings, resolve_device
 from voxreg.progress import enable_lazy_progress
@@ -809,7 +809,7 @@ def register_lazy(
 
 def _run_resampling_batch(
     moving: xr.DataArray,
-    reference: xr.DataArray,
+    grid: xr.Dataset,
     transforms: Any,
     interpolation: Interpolation,
     device: Literal["auto", "cpu", "cuda"],
@@ -819,8 +819,10 @@ def _run_resampling_batch(
 
     Parameters
     ----------
-    moving, reference : xarray.DataArray
-        Eager source batch and shared reference metadata.
+    moving : xarray.DataArray
+        Eager source batch.
+    grid : xarray.Dataset
+        Native reference coordinates and their voxel-to-world index.
     transforms : object
         Required eager map frames only.
     interpolation : str
@@ -839,6 +841,11 @@ def _run_resampling_batch(
     """
     from voxreg.resampling import resample
 
+    # Build the zero-filled view here so Dask never serializes a volume of zeros.
+    shape = tuple(grid.sizes[d] for d in VOXEL_DIMS)
+    reference = xr.DataArray(
+        np.broadcast_to(np.uint8(0), shape), coords=grid.coords, dims=VOXEL_DIMS
+    )
     resolved = resolve_device(device)
     with _execution_slot(resolved):
         return resample(
@@ -924,11 +931,12 @@ def resample_lazy(
         moving = moving.expand_dims(time=time)
         validate_registration_geometry(moving)
     ranges = _task_ranges(moving.sizes["time"], batch_size, source, transforms)
-    # Reference intensities are unused; replacing data avoids loading a lazy image.
-    reference = reference.copy(data=np.broadcast_to(np.uint8(0), reference.shape))
     template = build_output_template(moving, reference, False)
     shared = delayed(_eager_dependency(transforms)) if not per_frame else None
-    reference_dependency = delayed(reference)
+    grid = reference.coords.to_dataset().drop_vars(
+        set(reference.coords) - set(VOXEL_DIMS) - set(WORLD_DIMS)
+    )
+    reference_dependency = delayed(grid)
     outputs, masks = [], []
     shape = tuple(reference.sizes[d] for d in VOXEL_DIMS)
     for first, last in ranges:
