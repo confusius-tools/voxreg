@@ -76,6 +76,8 @@ def _check_all_frames_stopped(status: torch.Tensor) -> bool:
     return not (status == 0).any().item()
 
 
+# Fitting needs gradients even when the caller wraps registration in no_grad.
+@torch.enable_grad()
 def _optimize(
     images: torch.Tensor,
     fixed: torch.Tensor,

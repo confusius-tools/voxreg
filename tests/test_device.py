@@ -11,6 +11,33 @@ from registration_options import RegistrationOptions
 from voxreg import register, resample
 
 
+@pytest.mark.parametrize("transform", ["rigid", "syn"])
+def test_registration_inside_no_grad(linear_pair_factory, device, transform):
+    """A caller can disable gradients around a complete registration."""
+    fixed, moving, _ = linear_pair_factory(True, "rigid")
+    options: RegistrationOptions = {
+        "transform": transform,
+        "device": device,
+        "return_transforms": True,
+        "max_iterations": 3,
+        "progress": False,
+    }
+    expected = register(moving, fixed, **options)
+    with torch.no_grad():
+        actual = register(moving, fixed, **options)
+        assert not torch.is_grad_enabled()
+
+    assert actual["diagnostics/n_iterations"].item() == 3
+    for path in (
+        "forward/transform",
+        "inverse/transform",
+        "images/registered",
+        "diagnostics/objective",
+    ):
+        xr.testing.assert_allclose(actual[path], expected[path])
+    xr.testing.assert_identical(actual["images/valid"], expected["images/valid"])
+
+
 @pytest.mark.parametrize("planar", [True, False])
 @pytest.mark.parametrize("transform", ["rigid", "syn", ("rigid", "affine", "syn")])
 def test_auto_registration_matches_explicit_device(

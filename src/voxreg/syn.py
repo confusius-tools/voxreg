@@ -181,6 +181,8 @@ def _compute_final_inverse(field, grid):
     return invert_field(field, grid, iterations=80)
 
 
+# The halfway fields need gradients even when the caller disables gradient tracking.
+@torch.enable_grad()
 def _fit(
     images,
     target,

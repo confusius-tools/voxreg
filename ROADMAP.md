@@ -7,7 +7,7 @@ Work one item at a time, then stop for review and a separate commit. Start with 
 - [x] **Make SyN recognize low-contrast images on a bright background.** SyN now subtracts each image’s minimum before scaling it for local correlation. A regression test checks that adding 10,000 to a float32 recording preserves the fitted motion and the score, while a constant frame still reports an unusable metric.
 - [x] **Use the same image boundary for registration and replay.** Both use the same tolerance at the outermost sample centers. Regression tests check that replay keeps the same edge pixels, fills the same out-of-bounds row, and returns the same mask for all three interpolation methods.
 - [x] **Accept valid starting poses together in a recording.** Each slice frame can now start upright or flipped. Tests compare both frame orders with individual fits and check that motion correction preserves the first frame when it is the reference.
-- [ ] **Allow registration inside PyTorch’s `no_grad()` context.** A caller doing inference can disable gradients for its own work, but the registration optimizer needs them internally. Enable gradients during fitting and compare rigid and SyN results inside and outside that context.
+- [x] **Allow registration inside PyTorch’s `no_grad()` context.** The optimizers enable gradients during fitting and restore the caller’s setting afterward. Regression tests compare rigid and SyN transforms, images, validity masks, and scores with ordinary registration.
 
 ## Resampling accuracy
 
