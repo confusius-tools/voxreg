@@ -207,6 +207,31 @@ def test_dense_field_broadcast_and_validation(linear_pair_factory, device):
         resample(moving, fixed, spatial_field.isel(world_component=[2, 1, 0]))
 
 
+@pytest.mark.parametrize("shared", [False, True])
+def test_reversed_syn_field_matches_flipped_output(linear_pair_factory, device, shared):
+    fixed, moving, _ = linear_pair_factory(True, model="rigid")
+    series = xr.concat([moving, moving * 2], dim=xr.IndexVariable("time", [3, 4]))
+    fitted = register(
+        series,
+        fixed,
+        transform="syn",
+        return_transforms=True,
+        max_iterations=1,
+        device=device,
+        progress=False,
+    )
+    field = fitted["forward"].to_dataset()["transform"]
+    if shared:
+        field = field.isel(time=0, drop=True)
+    expected, valid = resample(series, fixed, field, batch_size=1, device=device)
+    flip = slice(None, None, -1)
+    actual, supported = resample(
+        series, fixed.isel(i=flip), field.isel(i=flip), batch_size=1, device=device
+    )
+    xr.testing.assert_allclose(actual, expected.isel(i=flip), rtol=2e-6, atol=2e-6)
+    xr.testing.assert_identical(supported, valid.isel(i=flip))
+
+
 @pytest.mark.parametrize("planar", [True, False])
 @pytest.mark.parametrize("interpolation", ["linear", "nearest"])
 def test_dense_translation_matches_matrix(device, planar, interpolation):

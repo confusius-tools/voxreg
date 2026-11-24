@@ -437,6 +437,9 @@ def resample(
         else:
             selected = values[first:last]
         if field:
+            # PyTorch cannot read a NumPy view with a reversed axis.
+            if min(selected.strides) < 0:
+                selected = selected.copy()
             displacement = torch.tensor(selected, device=device, dtype=torch.float64)
             offset = torch.tensor(
                 target_affine[:3, 3] - source_affine[:3, 3], device=device
