@@ -227,10 +227,22 @@ was subsequently reduced by sharing diagnostic projection layers instead of
 creating delayed/from-delayed/concatenation wrappers for every variable/block.
 On a metadata-only 90,000-frame slice with 300-frame chunks, three-call median
 graph construction dropped from 0.752 s to 0.239 s; diagnostic graph layers dropped
-from 1507 to 921. Chunk sizing still controls task count. Small streaming tests
-with 4/24 frames and 1/2/4 local scheduler workers check bounded source retention;
-they do not establish a universal bound for arbitrary upstream graphs. Application
-scheduler limits remain explicit; library-global thread settings are unchanged.
+from 1507 to 921. Chunk sizing still controls task count.
+
+Local Zarr write tests use 12 and 48 one-frame chunks and delay the reference
+read by 100 ms. With `bounded_threads`, the test limit for this graph is two
+source frames for the serial working set plus one per worker admitted together.
+Across three Mac CPU runs each at 12, 24 and 48 frames, the observed peak was
+two frames with two workers and three with four workers at all three lengths.
+The test counts live arrays from the first read, checks each frame is read and
+fitted once, and checks all sources are released when the write finishes.
+Separate checks verify that two tasks can run concurrently and that saved images,
+masks, transforms and diagnostics agree with synchronous execution, apart from
+timings. With ordinary threads, four workers could load all 24 frames in the
+earlier slow-reference test. These counts exclude fitting and output buffers.
+On that 24-frame Mac CPU workload, the median deferred write took 0.392 s with
+four ordinary threads, 0.457 s with four bounded threads and 0.490 s with
+synchronous execution (six timed calls each after warm-up, one PyTorch thread).
 
 ## Lazy streaming benchmark
 

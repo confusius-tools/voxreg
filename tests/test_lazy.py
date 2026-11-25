@@ -17,9 +17,9 @@ from distributed.protocol import serialize, to_serialize
 from numpy.testing import assert_allclose, assert_array_equal
 from oracles import max_pull_difference
 from registration_options import RegistrationOptions
-from voxeldata import VoxelToWorldIndex, create_voxeldata, load_array, save
+from voxeldata import VoxelToWorldIndex, create_voxeldata, load_array, load_tree, save
 
-from voxreg import Stage, position_to_world, register, resample
+from voxreg import Stage, bounded_threads, position_to_world, register, resample
 from voxreg.geometry import validate_registration_geometry
 
 
@@ -541,31 +541,39 @@ def test_distributed_worker_execution_and_joint_zarr_storage(
     assert_allclose(position_to_world(stored), position_to_world(image), rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("frames", [4, 24])
+@pytest.mark.parametrize("frames", [12, 48])
 @pytest.mark.parametrize(
-    "scheduler, workers", [("synchronous", 1), ("threads", 2), ("threads", 4)]
+    "scheduler, workers",
+    [("synchronous", 1), ("threads", 4), (bounded_threads, 2), (bounded_threads, 4)],
 )
-def test_incremental_storage_retains_bounded_source_volumes(
+def test_incremental_storage_releases_fitted_source_volumes(
     recording_factory, tmp_path, frames, scheduler, workers
 ):
     data, _, _ = recording_factory()
     base = data.isel(time=0, drop=True).isel(j=slice(0, 16), i=slice(0, 18))
-    live = {"current": 0, "peak": 0, "read": 0}
-    lock = threading.RLock()
-
-    def release():
-        with lock:
-            live["current"] -= 1
+    sources = {}
+    finished = set()
+    lock = threading.Lock()
 
     def read(frame):
+        if frame == 0:
+            # A slow reference leaves other workers free to read moving frames.
+            time.sleep(0.1)
         values = base.values[None].copy() + frame * np.float32(0.001)
-        # Source reads and finalizers update this observer from different threads.
         with lock:
-            live["read"] += 1
-            live["current"] += 1
-            live["peak"] = max(live["peak"], live["current"])
-            weakref.finalize(values, release)
+            assert frame not in sources
+            sources[frame] = weakref.ref(values)
+            if scheduler != "threads":
+                assert sum(ref() is not None for ref in sources.values()) <= workers + 2
         return values
+
+    def on_fit(done, _total):
+        with lock:
+            assert done - 1 not in finished
+            finished.add(done - 1)
+            # Threads may prefetch inputs while a fit waits for the reference.
+            # Count only frames that have already reached their fitting callback.
+            assert sum(sources[i]() is not None for i in finished) <= 2 * workers + 1
 
     source = da.concatenate(
         [
@@ -576,18 +584,64 @@ def test_incremental_storage_retains_bounded_source_volumes(
         ]
     )
     recording = base.expand_dims(time=np.arange(frames)).copy(data=source)
-    result = register(recording, max_iterations=1, progress=False, device="cpu")
-    assert live["read"] == 0
+    result = register(recording, max_iterations=1, progress=on_fit, device="cpu")
+    assert not sources
     save(result, tmp_path / "stream.zarr", compute=False, zarr_format=2).compute(
         scheduler=scheduler, num_workers=workers
     )
-    assert live["read"] == frames
-    assert live["peak"] <= 2 * workers + 1
+    assert sources.keys() == finished == set(range(frames))
+    assert all(ref() is None for ref in sources.values())
     stored = load_array(tmp_path / "stream.zarr", group="images", variable="registered")
     assert_array_equal(stored.isel(time=0), base)
-    assert_allclose(
-        stored.isel(time=-1), base + (frames - 1) * np.float32(0.001), atol=1e-6
+    expected = (
+        base.values + np.arange(frames, dtype=np.float32)[:, None, None, None] * 0.001
     )
+    assert_allclose(stored, expected, atol=1e-6)
+
+
+def test_bounded_threads_runs_independent_tasks_together():
+    rendezvous = threading.Barrier(2)
+
+    @delayed
+    def read(value):
+        rendezvous.wait(timeout=5)
+        return value
+
+    left, right = read(4), read(7)
+    assert dask.compute(left + right, left - right, scheduler=bounded_threads) == (
+        11,
+        -3,
+    )
+
+
+def test_bounded_threads_checks_configured_worker_count():
+    with (
+        dask.config.set(num_workers=0),
+        pytest.raises(ValueError, match="num_workers"),
+    ):
+        delayed(int)(1).compute(scheduler=bounded_threads)
+
+
+def test_bounded_threaded_save_matches_synchronous(recording_factory, tmp_path):
+    recording, _, _ = recording_factory(oblique=True, strided=True)
+    result = register(
+        recording.chunk(time=2, j=32),
+        max_iterations=2,
+        progress=False,
+        return_transforms=True,
+        device="cpu",
+    )
+    trees = []
+    for name, scheduler in (("sync", "synchronous"), ("threaded", bounded_threads)):
+        path = tmp_path / f"{name}.zarr"
+        save(result, path, compute=False).compute(scheduler=scheduler)
+        trees.append(load_tree(path, chunks=None))
+    for group in ("images", "forward", "inverse", "diagnostics"):
+        expected, actual = (tree[group].to_dataset() for tree in trees)
+        timings = [key for key in expected if str(key).endswith("_seconds")]
+        xr.testing.assert_identical(
+            expected.drop_vars(timings), actual.drop_vars(timings)
+        )
 
 
 @pytest.mark.parametrize("scheduler", ["threads", "processes"])

@@ -1,6 +1,6 @@
 # Roadmap
 
-Work one item at a time, then stop for review and a separate commit. Start with the two failures below that affect whether a fit succeeds and whether its saved transform reproduces the result.
+Work one item at a time, then stop for review and a separate commit.
 
 ## Registration and transform replay
 
@@ -19,6 +19,7 @@ Work one item at a time, then stop for review and a separate commit. Start with 
 
 ## Memory and runtime
 
+- [x] **Limit read-ahead during a threaded save.** The local `bounded_threads` scheduler limits how many tasks can run ahead of a slow reference read. Tests check peak live inputs from the first read, one read per chunk, and agreement with a synchronous write. [Streaming checks](VALIDATION.md#lazy-graph-construction-cost)
 - [x] **Stop fitting when every frame in a batch has stopped.** Linear and SyN fitting check for active frames before each update. A reference-only batch reports its score once. Tests cover failed and skipped frames and verify that active frames in a mixed batch keep fitting.
 - [x] **Send only reference-grid metadata to lazy resampling workers.** Workers now build the placeholder from the grid coordinates. For a 96³ reference and a 1 × 2 × 2 source, the serialized image task graph fell from about 905 KB to 15 KB. A regression test checks how graph size grows with the reference axes.
 - [x] **Release intermediate validity masks after counting valid voxels.** Earlier linear stages keep one count per frame. Only the final stage retains voxel masks. For 128 slices fitted to a 16 × 96 × 96 volume one frame at a time, median peak process memory for the intermediate translation stage fell from 358 to 337 MiB across three CPU runs per version. Tests compare staged transforms, overlap fractions, and final masks with standalone fits.

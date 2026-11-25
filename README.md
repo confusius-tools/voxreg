@@ -466,7 +466,8 @@ result = voxreg.register(
     recording.chunk(time=16), fixed,
     device="auto", return_transforms=True,
 )
-vd.save(result, "registration.zarr")  # Compute and write bounded time tasks.
+write = vd.save(result, "registration.zarr", compute=False)
+write.compute(scheduler=voxreg.bounded_threads, num_workers=4)
 # For small results only: computed = result.compute().
 ```
 
@@ -506,19 +507,13 @@ GPU. Local schedulers coordinate via file leases under `~/.cache/voxreg/executio
 distributed workers use scheduler semaphore leases. Use one worker per GPU and
 bounded worker memory; separate schedulers/jobs are not a shared resource manager.
 CPU task concurrency is deliberately conservative rather than an automatic tuner.
-The fitting lease does not limit Dask's input prefetch or library CPU thread pools.
-For bounded local read/write overlap, use application-scoped scheduling:
-
-```python
-import dask
-
-with dask.config.set(scheduler="threads", num_workers=2):
-    vd.save(result, "registration.zarr")
-```
-
-For CPU-only fitting, the synchronous scheduler avoids competing Dask workers
-while PyTorch parallelizes the fit internally. voxreg does not change process-wide
-PyTorch/BLAS thread settings or the application's global Dask worker configuration.
+For a large recording on one machine, `voxreg.bounded_threads` runs the write
+in groups of at most `num_workers` Dask tasks. Threads finish each group before
+starting the next, so a slow reference read limits how far other reads can get
+ahead. With ordinary `scheduler="threads"`, workers can load a whole recording
+while the first fit waits for its reference. Waiting between groups can reduce
+throughput. Use `scheduler="synchronous"` to run one local task at a time.
+PyTorch can still use its own CPU threads within each fit.
 
 Metric/progress callbacks run in tasks, with global frame indices/work offsets;
 distributed callbacks execute on workers, not the client. They must be serializable.
@@ -561,9 +556,9 @@ even when later passed together to `dask.compute`; that can repeat registration.
 Map/stage groups are already included when requested, with spatial grids local
 to their leaf nodes.
 
-Small CPU/CUDA and distributed tests cover bounded source loading and Zarr round
-trips. They are not a measured full-recording peak-RAM/VRAM qualification on data
-larger than physical RAM; benchmark that workload before production deployment.
+Small tests cover source release during local writes and Zarr round trips with
+distributed workers. Full-recording peak RAM and VRAM on data larger than
+physical RAM still need workload-specific measurements.
 Complex IQ and distributed fitting of one spatial volume remain unsupported.
 
 ## Development and benchmarks
