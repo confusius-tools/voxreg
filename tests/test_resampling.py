@@ -39,11 +39,51 @@ def test_exported_forward_matches_registration(
     )
     assert actual.dtype == moving.dtype
     assert actual.xindexes["z"].equals(fixed.xindexes["z"])
-    # Reverse application is executable for every exported transform type.
+
+
+@pytest.mark.parametrize("model", ["translation", "rigid", "affine", "syn"])
+@pytest.mark.parametrize("planar", [True, False])
+def test_exported_inverse_replays_known_pull(
+    linear_pair_factory, device, model, planar
+):
+    fixed, moving, truth = linear_pair_factory(
+        planar, "affine" if model == "syn" else model
+    )
+    fitted = register(
+        moving,
+        fixed,
+        initial_transform=truth,
+        transform=model,
+        max_iterations=1,
+        learning_rate=1e-20,
+        return_transforms=True,
+        device=device,
+        progress=False,
+    )
     reverse, reverse_valid = resample(
         fixed, moving, fitted["inverse"].to_dataset()["transform"], device=device
     )
-    assert reverse.shape == moving.shape and reverse_valid.dtype == bool
+    mapping = (
+        np.linalg.inv(position_to_world(fixed))
+        @ np.linalg.inv(truth)
+        @ position_to_world(moving)
+    )
+    query = (
+        mapping[:3, :3] @ np.indices(moving.shape).reshape(3, -1) + mapping[:3, 3, None]
+    )
+    size = np.asarray(fixed.shape)[:, None]
+    support = np.where(
+        size == 1,
+        (query >= -0.5) & (query < 0.5),
+        (query >= -1e-5) & (query <= size - 1 + 1e-5),
+    ).all(axis=0)
+    assert support.any() and not support.all()
+    expected = map_coordinates(fixed.values, query, order=1, mode="nearest")
+    expected[~support] = fixed.values.min()
+    np.testing.assert_array_equal(reverse_valid, support.reshape(moving.shape))
+    np.testing.assert_allclose(
+        reverse, expected.reshape(moving.shape), rtol=0, atol=2e-10
+    )
 
 
 @pytest.mark.parametrize("depth,model", [(1, "translation"), (4, "syn")])
@@ -383,11 +423,18 @@ def test_mixed_support_matches_registration_and_scipy(
 
 
 @pytest.mark.parametrize(
-    "bad", [np.zeros((4, 4)), np.eye(3), np.full((4, 4), np.nan), np.empty((0, 4, 4))]
+    "bad, message",
+    [
+        (np.zeros((4, 4)), "homogeneous"),
+        (np.diag([0, 1, 1, 1]), "nonsingular"),
+        (np.eye(3), "shaped"),
+        (np.full((4, 4), np.nan), "finite"),
+        (np.empty((0, 4, 4)), "nonempty"),
+    ],
 )
-def test_invalid_matrices(linear_pair_factory, bad):
+def test_invalid_matrices(linear_pair_factory, bad, message):
     fixed, moving, _ = linear_pair_factory(True)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         resample(moving, fixed, bad)
 
 

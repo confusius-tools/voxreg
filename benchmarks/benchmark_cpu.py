@@ -85,6 +85,7 @@ def registration_case(
     dict
         Fit diagnostics, accuracy verdict and timing samples.
     """
+    import numpy as np
     from _benchmark_data import make_dataset
     from _benchmark_resident import check_registration, run_registration
 
@@ -117,6 +118,10 @@ def registration_case(
         """
         image, _, diagnostics = result
         check_registration(image, inputs[0], config, diagnostics)
+        if not np.array_equal(image, output):
+            raise AssertionError(
+                "Timed registration pixels differ from the accuracy call"
+            )
         if diagnostics != details:
             raise AssertionError("Timed fit diagnostics differ from the accuracy call")
 
@@ -126,7 +131,8 @@ def registration_case(
         "rms_voxels": errors,
         **details,
         "passed": details["updates"] == expected
-        and all(error <= REFERENCE["limit_voxels"] for error in errors),
+        and len(errors) == frames
+        and all(0 <= error <= REFERENCE["limit_voxels"] for error in errors),
         "seconds": measure(
             lambda: run_registration(*inputs, config, accuracy=False),
             repeats,
@@ -192,12 +198,29 @@ def resampling_case(
         and output.dtype == moving.dtype
         and error <= (0 if dtype == "int64" else 1e-6)
     )
+
+    def check_timed_sample(result: tuple["xr.DataArray", "xr.DataArray"]) -> None:
+        """Check the timed image and support against the verified warm-up."""
+        image, support = result
+        if image.dtype != moving.dtype or not np.array_equal(
+            image.values, output.values
+        ):
+            raise AssertionError(
+                "Timed resampling pixels differ from the accuracy call"
+            )
+        if support.dtype != np.bool_ or not np.array_equal(
+            support.values, valid.values
+        ):
+            raise AssertionError(
+                "Timed resampling support differs from the accuracy call"
+            )
+
     return {
         "shape": fixed.shape,
         "frames": 1,
         "max_intensity_error": error,
         "passed": bool(passed),
-        "seconds": measure(run, repeats),
+        "seconds": measure(run, repeats, check_timed_sample),
     }
 
 

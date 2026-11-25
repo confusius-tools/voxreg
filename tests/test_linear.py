@@ -2,8 +2,6 @@
 
 # ruff: noqa: B009 -- ITK generates these attributes dynamically; getattr keeps typing accurate.
 
-from typing import Literal
-
 import numpy as np
 import pytest
 import torch
@@ -21,10 +19,6 @@ from voxreg.sampling import (
     sample_rigid,
 )
 from voxreg.transforms import check_affine_parameters, configure_transform
-
-DEVICES: list[Literal["cpu", "cuda"]] = (
-    ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
-)
 
 
 def points(data):
@@ -44,7 +38,6 @@ def error(a, b, data):
 
 
 @pytest.mark.parametrize("model", ["rigid", "affine"])
-@pytest.mark.parametrize("device", DEVICES)
 def test_nonparallel_planes_refine_image_motion_after_geometry_alignment(
     linear_pair_factory, model, device
 ):
@@ -136,7 +129,6 @@ def test_seed_roundtrip_and_itk_oracle(linear_pair_factory, planar, model):
 
 @pytest.mark.parametrize("planar", [False, True])
 @pytest.mark.parametrize("model", ["translation", "affine"])
-@pytest.mark.parametrize("device", DEVICES)
 def test_seeded_sampling_scipy_and_gradients(
     linear_pair_factory, planar, model, device
 ):
@@ -191,7 +183,9 @@ def test_seeded_sampling_scipy_and_gradients(
 
 @pytest.mark.parametrize("planar", [False, True])
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
-def test_fitting_truth_and_cpu_cuda_precision(linear_pair_factory, planar, model):
+def test_fitting_truth_and_cpu_cuda_precision(
+    linear_pair_factory, planar, model, device
+):
     fixed, moving, truth = linear_pair_factory(planar, model)
     if model == "rigid":
         # Even the best translation-only fit must fail this rotation control.
@@ -199,7 +193,7 @@ def test_fitting_truth_and_cpu_cuda_precision(linear_pair_factory, planar, model
         translation_only[:3, 3] = ((truth - np.eye(4)) @ points(fixed))[:3].mean(axis=1)
         assert np.sqrt(np.mean(error(translation_only, truth, fixed) ** 2)) > 0.25
     results = []
-    for device in DEVICES:
+    for backend in ("cpu", device) if device == "cuda" else (device,):
         r = register(
             moving,
             fixed,
@@ -208,7 +202,7 @@ def test_fitting_truth_and_cpu_cuda_precision(linear_pair_factory, planar, model
             initialization="center_moments",
             max_iterations=160,
             convergence_window_size=161,
-            device=device,
+            device=backend,
             progress=False,
         )
         delta = error(r["forward"].to_dataset()["transform"], truth, fixed)
@@ -232,7 +226,6 @@ def test_fitting_truth_and_cpu_cuda_precision(linear_pair_factory, planar, model
 
 
 @pytest.mark.parametrize("model", ["translation", "affine"])
-@pytest.mark.parametrize("device", DEVICES)
 def test_series_batch_reference_and_explicit_seed(recording_factory, model, device):
     data, _, _ = recording_factory(oblique=True, strided=True)
     options: RegistrationOptions = {

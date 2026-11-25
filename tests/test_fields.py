@@ -11,6 +11,7 @@ from voxreg.fields import (
     compose_fields,
     compute_jacobian_determinant,
     invert_field,
+    invert_final_field,
     make_field_grid,
     smooth_field,
 )
@@ -230,7 +231,6 @@ def test_cpu_inverse_certificate_preserves_residual_checks(
     displacement_factory, monkeypatch, planar
 ):
     from voxreg import fields
-    from voxreg.syn import _compute_final_inverse
 
     data, _, _, values = displacement_factory(planar)
     grid = make_field_grid(data)
@@ -246,7 +246,7 @@ def test_cpu_inverse_certificate_preserves_residual_checks(
         return original(*args)
 
     monkeypatch.setattr(fields, "_update_inverse", observed)
-    inverse, error = _compute_final_inverse(field, grid)
+    inverse, error = invert_final_field(field, grid)
     assert not calls
     pixels = np.einsum(
         "ij,bj...->bi...", grid.inverse_lattice.numpy(), (inverse - expected).numpy()
@@ -272,7 +272,6 @@ def test_cpu_inverse_preserves_original_fallback(
     displacement_factory, monkeypatch, planar, reason
 ):
     from voxreg import fields
-    from voxreg.syn import _compute_final_inverse
 
     data, _, _, values = displacement_factory(planar, strided=True)
     grid = make_field_grid(data)
@@ -281,6 +280,7 @@ def test_cpu_inverse_preserves_original_fallback(
         field[:, :, 0] = 0.001
     if reason == "gradient":
         field.requires_grad_()
+    expected, expected_error = invert_field(field, grid, iterations=80)
     original = fields._update_inverse
     calls = []
 
@@ -289,13 +289,14 @@ def test_cpu_inverse_preserves_original_fallback(
         return original(*args)
 
     monkeypatch.setattr(fields, "_update_inverse", observed)
-    inverse, error = _compute_final_inverse(field, grid)
+    inverse, error = invert_final_field(field, grid)
     assert len(calls) == 80
-    assert torch.isfinite(inverse).all() and torch.isfinite(error).all()
+    torch.testing.assert_close(inverse, expected, atol=0, rtol=0)
+    torch.testing.assert_close(error, expected_error, atol=0, rtol=0)
     if reason == "gradient":
-        inverse.sum().backward()
-        assert field.grad is not None
-        assert torch.isfinite(field.grad).all()
+        gradient = torch.autograd.grad(inverse.sum(), field)[0]
+        reference = torch.autograd.grad(expected.sum(), field)[0]
+        torch.testing.assert_close(gradient, reference, atol=0, rtol=0)
 
 
 @pytest.mark.parametrize("planar", [False, True])

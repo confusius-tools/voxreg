@@ -16,10 +16,8 @@ from voxreg.convergence import WindowConvergence
 REFERENCE = json.loads(
     (Path(__file__).parent / "data/convergence_itk.json").read_text()
 )
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
 
-@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("window", [2, 10, 20, 50])
 def test_matches_itk_monitor(device, window):
     losses = torch.tensor(
@@ -39,7 +37,6 @@ def test_matches_itk_monitor(device, window):
     )
 
 
-@pytest.mark.parametrize("device", DEVICES)
 def test_inactive_histories_are_frozen_and_frames_are_independent(device):
     monitor = WindowConvergence(3, 10, torch.device(device))
     serial = [WindowConvergence(1, 10, torch.device(device)) for _ in range(3)]
@@ -67,7 +64,6 @@ def test_inactive_histories_are_frozen_and_frames_are_independent(device):
             torch.testing.assert_close(new[~active], old[~active], rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("device", DEVICES)
 def test_stops_before_next_update_and_disabled_window_reaches_limit(
     recording_factory, monkeypatch, device
 ):
@@ -133,7 +129,6 @@ def test_rejects_invalid_convergence_options(recording_factory, options):
         register(data, **options)
 
 
-@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("failed_frame", [False, True])
 def test_terminal_check_preserves_frozen_full_budget_results(
     recording_factory, monkeypatch, device, failed_frame
@@ -171,7 +166,6 @@ def test_terminal_check_preserves_frozen_full_budget_results(
         xr.testing.assert_equal(stopped[field], full_budget[field])
 
 
-@pytest.mark.parametrize("device", DEVICES)
 def test_polling_checks_the_whole_batch_before_each_update(
     recording_factory, monkeypatch, device
 ):

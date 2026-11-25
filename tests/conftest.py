@@ -14,6 +14,16 @@ from voxeldata import create_voxeldata
 from voxreg import position_to_world
 
 
+@pytest.fixture(scope="session", autouse=True)
+def execution_lock_directory(tmp_path_factory):
+    """Share test-local file leases across spawned Dask workers."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv(
+            "VOXREG_EXECUTION_LOCK_DIR", str(tmp_path_factory.mktemp("execution-locks"))
+        )
+        yield
+
+
 @pytest.fixture
 def benchmark_disk_dir():
     """Provide a fresh owned directory outside potentially memory-backed /tmp."""

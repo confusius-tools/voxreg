@@ -13,10 +13,7 @@ from voxreg import position_to_world
 from voxreg.sampling import make_grid, recover_initial_parameters, sample_rigid
 from voxreg.transforms import configure_transform
 
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
-
-@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 @pytest.mark.parametrize("interpolation", ["linear", "nearest"])
 @pytest.mark.parametrize("oblique", [False, True])

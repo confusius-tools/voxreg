@@ -18,9 +18,8 @@ from voxreg.convergence import WindowConvergence, all_frames_stopped
 from voxreg.fields import (
     check_field,
     compose_fields,
-    compute_contracted_cpu_inverse,
     compute_jacobian_determinant,
-    invert_field,
+    invert_final_field,
     make_field_grid,
     measure_norm,
     sample_field_at,
@@ -166,19 +165,6 @@ def _build_candidate_fields(
             & (determinant.flatten(1).amin(dim=1) > 0)
         )
     return candidates[0], candidates[1], admissible
-
-
-def _compute_final_inverse(field, grid):
-    """Invert final fields, using certified CPU contraction when available."""
-    if (
-        field.device.type == "cpu"
-        and not field.requires_grad
-        and not torch.compiler.is_compiling()
-    ):
-        contracted = compute_contracted_cpu_inverse(field, grid, 80)
-        if contracted is not None:
-            return contracted
-    return invert_field(field, grid, iterations=80)
 
 
 # The halfway fields need gradients even when the caller disables gradient tracking.
@@ -349,8 +335,8 @@ def _fit(
         # Final inversion, validation and exported displacements retain double arithmetic.
         grid = physical_grid
         bf, bm = bf.double(), bm.double()
-        fi, _ = _compute_final_inverse(bf, grid)
-        mi, _ = _compute_final_inverse(bm, grid)
+        fi, _ = invert_final_field(bf, grid)
+        mi, _ = invert_final_field(bm, grid)
         forward = compose_fields(bm, fi, grid)
         inverse = compose_fields(bf, mi, grid)
         determinant = compute_jacobian_determinant(forward, grid)

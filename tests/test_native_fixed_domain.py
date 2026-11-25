@@ -17,8 +17,6 @@ from voxreg.sampling import (
 )
 from voxreg.transforms import check_affine_parameters, configure_transform
 
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
-
 
 def observe_seed(monkeypatch, records):
     def optimize(
@@ -52,7 +50,6 @@ def observe_seed(monkeypatch, records):
     monkeypatch.setattr(linear, "_optimize", optimize)
 
 
-@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
 @pytest.mark.parametrize("moving_slice", [False, True])
 def test_native_domains_and_nonidentity_seed_match_sitk_value(
@@ -125,7 +122,6 @@ def test_native_domains_and_nonidentity_seed_match_sitk_value(
     assert_array_equal(seed, originals[2])
 
 
-@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
 def test_singleton_and_active_axes_use_half_voxel_support(monkeypatch, device, model):
     affine = np.diag([0.25, 0.5, 0.5, 1.0])
@@ -155,7 +151,6 @@ def test_singleton_and_active_axes_use_half_voxel_support(monkeypatch, device, m
 
 
 @pytest.mark.parametrize("moving_slice", [False, True])
-@pytest.mark.parametrize("device", DEVICES)
 def test_slice_affine_constraint_is_on_recording_to_volume_map(
     slice_volume_pair_factory, moving_slice, device
 ):

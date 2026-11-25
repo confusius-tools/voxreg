@@ -8,7 +8,7 @@ import pytest
 import torch
 import xarray as xr
 from numpy.testing import assert_allclose, assert_array_equal
-from oracles import max_pull_difference
+from oracles import max_pull_difference, voxel
 from registration_options import RegistrationOptions
 
 from voxreg import Stage, position_to_world, register, resample
@@ -49,15 +49,18 @@ def test_single_stage_preserves_single_model(
 @pytest.mark.parametrize("planar", [True, False])
 def test_stage_overrides_and_manual_handoff(linear_pair_factory, device, planar):
     fixed, moving, _ = linear_pair_factory(planar, "rigid")
-    stages = (
-        Stage("rigid", max_iterations=2),
-        Stage(
-            "affine",
-            shrink_factors=(2, 1),
-            smoothing_sigmas=(0.18, 0),
-            max_iterations=(2, 3),
-        ),
-        Stage("syn", max_iterations=4, syn_update_sigma=0.8),
+    overrides: tuple[RegistrationOptions, ...] = (
+        {"max_iterations": 2},
+        {
+            "shrink_factors": (2, 1),
+            "smoothing_sigmas": (0.18, 0),
+            "max_iterations": (2, 3),
+        },
+        {"max_iterations": 4, "syn_update_sigma": 0.8},
+    )
+    stages = tuple(
+        Stage(model, **settings)
+        for model, settings in zip(("rigid", "affine", "syn"), overrides, strict=True)
     )
     options: RegistrationOptions = {
         "device": device,
@@ -67,13 +70,13 @@ def test_stage_overrides_and_manual_handoff(linear_pair_factory, device, planar)
     }
     actual = register(moving, fixed, transform=stages, **options)
     seed = None
-    for stage in stages:
+    for stage, settings in zip(stages, overrides, strict=True):
         manual = register(
             moving,
             fixed,
             transform=stage.transform,
             initial_transform=seed,
-            **{**options, **stage._overrides()},
+            **{**options, **settings},
         )
         seed = manual["forward"].to_dataset()["transform"]
     assert "forward" in actual and "forward" in manual
@@ -442,8 +445,30 @@ def test_moments_pivot_is_initialized_once(linear_pair_factory, terminal):
 
 
 @pytest.mark.parametrize("planar", [True, False])
-def test_rigid_affine_syn_recovers_physical_truth(linear_pair_factory, device, planar):
-    fixed, moving, truth = linear_pair_factory(planar, "rigid")
+def test_rigid_affine_syn_recovers_physical_truth(
+    nonlinear_pair_factory, device, planar
+):
+    fixed, moving, deformation, _ = nonlinear_pair_factory(
+        planar, amplitude=1.25, axis_aligned=True
+    )
+    affine = position_to_world(fixed)
+    indices = np.indices(fixed.shape).reshape(3, -1).T
+    points = indices @ affine[:3, :3].T + affine[:3, 3]
+    center = points.mean(axis=0)
+    pose = np.eye(4)
+    pose[1:3, 1:3] = [[1.05, 0.02], [-0.03, 0.96]]
+    pose[:3, 3] = center - pose[:3, :3] @ center + [0, 0.12, -0.09]
+    moving = voxel(moving.values, pose @ affine)
+    expected = (
+        (points + deformation.reshape(-1, 3)) @ pose[:3, :3].T + pose[:3, 3] - points
+    )
+    design = np.column_stack((indices, np.ones(len(indices))))
+    affine_only = design @ np.linalg.lstsq(design, expected, rcond=None)[0]
+    spacing = np.linalg.norm(affine[:3, :3], axis=0)[np.asarray(fixed.shape) > 1].min()
+    assert (
+        np.sqrt(np.mean(np.sum((affine_only - expected) ** 2, axis=1))) > 0.30 * spacing
+    )
+
     result = register(
         moving,
         fixed,
@@ -454,20 +479,10 @@ def test_rigid_affine_syn_recovers_physical_truth(linear_pair_factory, device, p
         return_transforms=True,
         progress=False,
     )
-    assert "forward" in result
-    points = position_to_world(fixed) @ np.vstack(
-        (np.indices(fixed.shape).reshape(3, -1), np.ones(fixed.size))
-    )
-    expected = ((truth @ points) - points)[:3].T.reshape(*fixed.shape, 3)
-    spacing = np.linalg.norm(
-        position_to_world(fixed)[:3, :3][:, np.array(fixed.shape) > 1], axis=0
-    ).min()
-    residual = (
-        result["forward"]
-        .to_dataset()["transform"]
+    actual = (
+        result["forward/transform"]
         .transpose(..., "world_component")
-        .values
-        - expected
+        .values.reshape(-1, 3)
     )
-    assert np.sqrt(np.mean(np.sum(residual**2, axis=-1))) / spacing < 0.30
-    assert result["diagnostics"].to_dataset().min_jacobian > 0
+    assert np.sqrt(np.mean(np.sum((actual - expected) ** 2, axis=1))) < 0.30 * spacing
+    assert result["diagnostics/min_jacobian"].item() > 0

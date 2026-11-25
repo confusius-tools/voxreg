@@ -2,8 +2,6 @@
 
 # ruff: noqa: B009 -- ITK generates these attributes dynamically; getattr keeps typing accurate.
 
-from typing import Literal
-
 import numpy as np
 import pytest
 import torch
@@ -14,10 +12,6 @@ from scipy.spatial.transform import Rotation
 from voxeldata import create_voxeldata
 
 from voxreg import position_to_world, register
-
-DEVICES: list[Literal["cpu", "cuda"]] = (
-    ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
-)
 
 
 def volume_pair():
@@ -70,7 +64,6 @@ def native_centers(fixed, moving, mode):
 
 @pytest.mark.parametrize("mode", ["center_geometry", "center_moments"])
 @pytest.mark.parametrize("scaling", [None, "log1p", "sqrt", 2.0])
-@pytest.mark.parametrize("device", DEVICES)
 def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
     fixed, moving = volume_pair()
     original_fixed, original_moving = fixed.values.copy(), moving.values.copy()
@@ -122,7 +115,6 @@ def test_auto_pose_recovers_large_offset_and_matches_itk(mode, scaling, device):
 
 
 @pytest.mark.parametrize("kind", ["same_slice", "independent_slice", "volume"])
-@pytest.mark.parametrize("device", DEVICES)
 def test_moments_pivot_sampling_and_scales(
     recording_factory, monkeypatch, kind, device
 ):
@@ -307,7 +299,7 @@ def test_invalid_mode(mode):
         register(moving, fixed, initialization=mode, progress=False)
 
 
-def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
+def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement(device):
     fixed, source = volume_pair()
     affine = position_to_world(fixed)
     center = affine @ np.r_[(np.array(fixed.shape) - 1) / 2, 1]
@@ -324,7 +316,7 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
     )
     ell = np.linalg.norm(af[:3, :3], axis=0).min()
     results = []
-    for device in DEVICES:
+    for backend in ("cpu", device) if device == "cuda" else (device,):
         r = register(
             moving,
             fixed,
@@ -333,7 +325,7 @@ def test_moments_refines_rotation_fixed_budget_with_cpu_cuda_agreement():
             max_iterations=160,
             convergence_window_size=161,
             progress=False,
-            device=device,
+            device=backend,
         )
         assert "forward" in r
         error = (

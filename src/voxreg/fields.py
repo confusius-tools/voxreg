@@ -318,6 +318,36 @@ def compute_contracted_cpu_inverse(
     return inverse, torch.maximum(left, right)
 
 
+def invert_final_field(
+    field: torch.Tensor, grid: FieldGrid
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Invert a final SyN displacement with an 80-update budget.
+
+    Parameters
+    ----------
+    field : torch.Tensor
+        Component-first displacement field in mm.
+    grid : FieldGrid
+        Physical grid supporting the field.
+
+    Returns
+    -------
+    inverse : torch.Tensor
+        Inverse displacement in mm.
+    error : torch.Tensor
+        Maximum two-sided composition residual per frame in voxels.
+    """
+    if (
+        field.device.type == "cpu"
+        and not field.requires_grad
+        and not torch.compiler.is_compiling()
+    ):
+        contracted = compute_contracted_cpu_inverse(field, grid, 80)
+        if contracted is not None:
+            return contracted
+    return invert_field(field, grid, iterations=80)
+
+
 def invert_field(
     field: torch.Tensor,
     grid: FieldGrid,

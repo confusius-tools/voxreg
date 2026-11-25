@@ -98,13 +98,10 @@ def test_lazy_progress_closes_on_error(recording_factory, monkeypatch, rich_bars
     assert not rich_bars[0].live.is_started
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("batch_size", [1, 2, 8])
 def test_batch_progress_is_silent_and_preserves_results(
     recording_factory, device, batch_size, monkeypatch, capsys, rich_bars
 ):
-    if device == "cuda" and not torch.cuda.is_available():
-        pytest.skip("CUDA is unavailable")
     data, _, _ = recording_factory()
     synchronizations = []
     original = torch.cuda.synchronize
@@ -204,13 +201,10 @@ def rich_bars(monkeypatch):
     return bars
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("batch_size", [1, 2, 8])
 def test_default_rich_progress_preserves_results_and_syncs(
     recording_factory, device, batch_size, monkeypatch, rich_bars
 ):
-    if device == "cuda" and not torch.cuda.is_available():
-        pytest.skip("CUDA is unavailable")
     data, _, _ = recording_factory()
     options: RegistrationOptions = {
         "device": device,

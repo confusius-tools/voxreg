@@ -26,7 +26,6 @@ def prescribed_translation(monkeypatch):
     monkeypatch.setattr(linear, "_optimize", optimize)
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("interpolation", ["linear", "nearest"])
 @pytest.mark.parametrize(
     "dtype",
@@ -47,8 +46,6 @@ def prescribed_translation(monkeypatch):
 def test_original_dtype_and_fractional_sampling(
     recording_factory, prescribed_translation, dtype, interpolation, device
 ):
-    if device == "cuda" and not torch.cuda.is_available():
-        pytest.skip("CUDA is unavailable")
     data, _, _ = recording_factory(oblique=True, strided=True)
     original = data.values.astype(np.float64)
     if np.issubdtype(dtype, np.integer):
@@ -65,7 +62,12 @@ def test_original_dtype_and_fractional_sampling(
     assert_array_equal(result["images"].to_dataset()["registered"].time, data.time)
     j, i = np.indices(data.shape[-2:], dtype=float)
     mapped = np.stack((j - 0.314159, i + 0.271828))
+    size = np.asarray(data.shape[-2:])[:, None, None]
+    support = ((mapped >= 0) & (mapped <= size - 1)).all(axis=0)
     for frame in [1, 2]:
+        assert_array_equal(
+            result["images"].to_dataset()["valid"].values[frame, 0], support
+        )
         expected = map_coordinates(
             data.values[frame, 0].astype(np.float64),
             mapped,
@@ -73,7 +75,7 @@ def test_original_dtype_and_fractional_sampling(
             mode="nearest",
         )
         expected = np.where(
-            result["images"].to_dataset()["valid"].values[frame, 0],
+            support,
             expected,
             data.values[frame].min(),
         )

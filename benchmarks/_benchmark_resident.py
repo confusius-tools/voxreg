@@ -180,5 +180,5 @@ def check_registration(output, moving, config, details):
     }:
         raise AssertionError(f"Registration failure: {details['statuses']}")
     expected_count = len(moving) if reference else 1
-    if len(details["updates"]) != expected_count:
+    if any(len(details[key]) != expected_count for key in ("updates", "statuses")):
         raise AssertionError("Incomplete per-frame registration results")

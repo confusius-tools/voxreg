@@ -9,7 +9,7 @@ from oracles import max_pull_difference
 from scipy.special import softmax
 
 from voxreg import Stage, position_to_world, register, resample
-from voxreg.metrics import _mutual_information
+from voxreg.metrics import Metric
 from voxreg.preparation import prepare_fitting_images
 
 
@@ -20,9 +20,7 @@ def _mi_reference(x, y, valid, bins, sigma):
         centers = np.arange(bins)
         wa = softmax(-0.5 * ((a[:, None] * (bins - 1) - centers) / sigma) ** 2, axis=1)
         wb = softmax(-0.5 * ((b[:, None] * (bins - 1) - centers) / sigma) ** 2, axis=1)
-        joint = np.sum(
-            [np.outer(u, v) for u, v in zip(wa, wb, strict=True)], axis=0
-        ) / len(a)
+        joint = (wa.T @ wb) / len(a)
         independent = np.outer(joint.sum(axis=1), joint.sum(axis=0))
         nonzero = joint > 0
         result.append(
@@ -31,34 +29,25 @@ def _mi_reference(x, y, valid, bins, sigma):
     return np.array(result)
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
 def test_mi_masked_density_chunking_and_frame_independence(device):
-    if device == "cuda" and not torch.cuda.is_available():
-        pytest.skip("CUDA is unavailable")
     rng = np.random.default_rng(751)
-    x, y = rng.uniform(0, 1, (2, 3, 5, 7))
+    x, y = rng.uniform(0, 1, (2, 3, 65, 65))
     valid = rng.uniform(size=x.shape) > 0.3
     a = torch.tensor(x, device=device, dtype=torch.float64)
     b = torch.tensor(y, device=device, dtype=torch.float64)
     mask = torch.tensor(valid, device=device)
     expected = _mi_reference(x, y, valid, 9, 0.7)
-    for chunk in (4, 500):
-        loss, good = _mutual_information(a, b, mask, 9, 0.7, chunk_size=chunk)
-        assert good.all()
-        assert_allclose(loss.cpu(), expected, rtol=0, atol=1e-12)
-        for frame in range(len(a)):
-            single, _ = _mutual_information(
-                a[frame : frame + 1],
-                b[frame : frame + 1],
-                mask[frame : frame + 1],
-                9,
-                0.7,
-                chunk_size=chunk,
-            )
-            assert_allclose(single.cpu(), expected[frame], rtol=0, atol=1e-12)
+    metric = Metric("mi", 9, 0.7)
+    loss, good = metric(a, b, mask)
+    assert good.all()
+    assert_allclose(loss.cpu(), expected, rtol=0, atol=1e-12)
+    for frame in range(len(a)):
+        selection = slice(frame, frame + 1)
+        single, _ = metric(a[selection], b[selection], mask[selection])
+        assert_allclose(single.cpu(), expected[frame], rtol=0, atol=1e-12)
     changed = a.clone()
     changed[~mask] = torch.nan
-    actual, good = _mutual_information(changed, b, mask, 9, 0.7)
+    actual, good = metric(changed, b, mask)
     assert good.all()
     assert_allclose(actual.cpu(), expected, rtol=0, atol=1e-12)
 
@@ -76,19 +65,18 @@ def test_mi_both_halfway_gradients_and_invalid_support():
     )
     valid = torch.ones_like(a, dtype=torch.bool)
     valid[:, 2] = False
-    assert torch.autograd.gradcheck(
-        lambda x, y: _mutual_information(x, y, valid, 6, 0.65, chunk_size=4)[0], (a, b)
-    )
-    loss, _ = _mutual_information(a, b, valid, 6, 0.65, chunk_size=4)
+    metric = Metric("mi", 6, 0.65)
+    assert torch.autograd.gradcheck(lambda x, y: metric(x, y, valid)[0], (a, b))
+    loss, _ = metric(a, b, valid)
     gradients = torch.autograd.grad(loss.sum(), (a, b))
     for gradient in gradients:
         assert_array_equal(gradient[:, 2], 0)
         assert gradient.abs().sum() > 0
     for mask in (torch.zeros_like(valid), torch.arange(9)[None].expand(2, -1) == 0):
-        loss, good = _mutual_information(a, b, mask)
+        loss, good = metric(a, b, mask)
         assert_array_equal(good, False)
         assert_array_equal(loss.detach(), 0)
-    loss, good = _mutual_information(torch.ones_like(a), b, valid)
+    loss, good = metric(torch.ones_like(a), b, valid)
     assert_array_equal(good, False)
     assert_array_equal(loss.detach(), 0)
 
@@ -103,9 +91,7 @@ def test_mi_backward_does_not_retain_full_bin_weights():
         return tensor
 
     with torch.autograd.graph.saved_tensors_hooks(save, lambda tensor: tensor):
-        loss, good = _mutual_information(
-            x, y, torch.ones_like(x, dtype=torch.bool), chunk_size=257
-        )
+        loss, good = Metric("mi")(x, y, torch.ones_like(x, dtype=torch.bool))
         loss.sum().backward()
     assert good.all()
     assert (1, 10003, 32) not in shapes

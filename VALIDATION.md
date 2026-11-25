@@ -32,7 +32,12 @@ gradients through both sampled images, excluded-sample gradients, chunk and
 frame independence, native-range contrast preservation, backward activation
 storage and nonlinear-contrast physical truth in 2D/3D translation and SyN.
 Integration covers masks, stage overrides, failure isolation and pyramids.
-CUDA tests skip when unavailable; CPU success does not qualify CUDA.
+The shared device fixture collects CPU and CUDA cases on every host.
+To enable the CUDA Actions job, set the repository variable `CUDA_RUNNER` to
+the label of a Linux x64 runner with a compatible NVIDIA driver. On pushes to
+main, release tags, and manual test runs, the job executes a CUDA kernel before
+running the CUDA cases and CPU comparisons. Without a configured runner the
+workflow skips the job.
 
 Length-unit regressions cover all VoxelData-supported length scales, mixed-unit
 fixed/moving/mask grids, cropped/strided/oblique geometry, large world origins,

@@ -554,7 +554,7 @@ def test_syn_float32_working_fields_keep_double_geometry_and_original_data(
     fixed = fixed.copy(data=2**30 + fixed.values.astype(np.float64) * 0.001)
     moving = moving.copy(data=2**30 + moving.values.astype(np.float64) * 0.001)
     untouched = moving.copy(deep=True)
-    candidate, inverse = syn._build_candidate_fields, syn._compute_final_inverse
+    candidate, inverse = syn._build_candidate_fields, syn.invert_final_field
     flags = (torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32)
     calls = []
 
@@ -573,7 +573,7 @@ def test_syn_float32_working_fields_keep_double_geometry_and_original_data(
         return inverse(field, grid)
 
     monkeypatch.setattr(syn, "_build_candidate_fields", candidate_checked)
-    monkeypatch.setattr(syn, "_compute_final_inverse", inverse_checked)
+    monkeypatch.setattr(syn, "invert_final_field", inverse_checked)
     result = register(
         moving,
         fixed,

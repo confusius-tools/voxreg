@@ -12,11 +12,7 @@ from voxreg.fields import make_field_grid, smooth_field
 @pytest.mark.parametrize("planar", [False, True])
 @pytest.mark.parametrize("sigma", [0.5, 1.5])
 @pytest.mark.parametrize("scale", [0, 1, 1e-200, 1e200])
-@pytest.mark.parametrize("threads", [1, 8])
-def test_cpu_filter_range_and_boundaries(
-    displacement_factory, monkeypatch, planar, sigma, scale, threads
-):
-    monkeypatch.setattr(torch, "get_num_threads", lambda: threads)
+def test_cpu_filter_range_and_boundaries(displacement_factory, planar, sigma, scale):
     data, _, _, values = displacement_factory(planar)
     grid = make_field_grid(data)
     source = values * scale
@@ -65,7 +61,6 @@ def test_syn_smoothing_preserves_unqualified_paths(
     data, _, _, values = displacement_factory(False)
     grid = make_field_grid(data)
     field = torch.tensor(values, requires_grad=reason == "autograd")
-    monkeypatch.setattr(torch, "get_num_threads", lambda: 8)
     monkeypatch.setattr(torch.compiler, "is_compiling", lambda: reason == "compiled")
     calls = []
 

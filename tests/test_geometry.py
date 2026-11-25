@@ -7,7 +7,7 @@ from numpy.testing import assert_allclose, assert_array_equal
 from voxeldata import VoxelToWorldIndex, create_voxeldata, validate_voxeldata
 
 from voxreg import position_to_world, register
-from voxreg.geometry import _check_affine, validate_registration_geometry
+from voxreg.geometry import validate_registration_geometry
 
 
 def test_native_coordinates_and_world_index(recording_factory):
@@ -78,13 +78,24 @@ def test_missing_index_and_stale_coordinates_raise(recording_factory):
     assert_array_equal(data.sel(**labels, method="nearest"), data.isel(k=0, j=12, i=21))
 
 
-@pytest.mark.parametrize(
-    "affine",
-    [np.zeros((4, 4)), np.full((4, 4), np.nan), np.eye(3), np.diag([1, 1, 1, 2])],
-)
-def test_invalid_affines(affine):
-    with pytest.raises(ValueError, match="affine|voxel_to_world"):
-        _check_affine(affine)
+def test_singular_voxel_geometry_is_rejected():
+    image = create_voxeldata(
+        np.ones((1, 2, 2)), dims=("k", "j", "i"), voxel_to_world=np.diag([0, 1, 1, 1])
+    )
+    with pytest.raises(ValueError, match="nonsingular"):
+        position_to_world(image)
+
+
+@pytest.mark.parametrize("units", ["mm", "um"])
+def test_crop_origin_must_remain_finite(units):
+    image = create_voxeldata(
+        np.ones((1, 2, 2)),
+        dims=("k", "j", "i"),
+        j=[100, 101],
+        voxel_to_world=np.diag([1e307, 1e307, 1e307, 1]),
+    )
+    with pytest.raises(ValueError, match="finite"):
+        position_to_world(image, units=units)
 
 
 @pytest.mark.parametrize("coordinates", [[0, 1, 3], [0, 0, 0], [0, np.nan, 2]])

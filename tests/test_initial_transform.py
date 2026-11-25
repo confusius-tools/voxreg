@@ -16,8 +16,6 @@ from voxeldata import create_voxeldata
 from voxreg import position_to_world, register
 from voxreg.sampling import build_world_matrices, make_grid, recover_initial_parameters
 
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
-
 
 def posed_pair():
     center = np.array([10.0, -20.0, 30.0])
@@ -93,7 +91,6 @@ def test_inverse_parameterization_including_pi(angle):
         )
 
 
-@pytest.mark.parametrize("device", DEVICES)
 def test_initial_pose_enables_large_displacement_and_is_refined(device):
     fixed, moving, truth = posed_pair()
     options: RegistrationOptions = {
@@ -149,7 +146,6 @@ def test_initial_pose_enables_large_displacement_and_is_refined(device):
     )
 
 
-@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("failure", ["constant", "overlap"])
 def test_failed_fit_retains_initial_not_identity(device, failure):
     fixed, moving, seed = posed_pair()
@@ -228,7 +224,6 @@ def test_slice_per_frame_initialization_and_reference(
     )
 
 
-@pytest.mark.parametrize("device", DEVICES)
 def test_identity_seed_preserves_default_bitwise(recording_factory, device):
     data, _, _ = recording_factory(oblique=True, strided=True)
     options: RegistrationOptions = {

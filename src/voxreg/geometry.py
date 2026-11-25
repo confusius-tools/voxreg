@@ -236,10 +236,14 @@ def position_to_world(
         )
     index = cast(VoxelToWorldIndex, data.xindexes["z"])
     scale = float(convert_length_units(1, index.units, units))
-    matrix = index.voxel_to_world @ conversion
-    if scale != 1:
-        with np.errstate(over="ignore", invalid="ignore"):
+    # A finite voxel affine can overflow after applying the crop origin or stride.
+    with np.errstate(over="ignore", invalid="ignore"):
+        matrix = index.voxel_to_world @ conversion
+        if scale != 1:
             matrix[:3] *= scale
+    if not np.isfinite(matrix).all():
+        raise ValueError("The array-position to world affine must remain finite.")
+    if scale != 1:
         _check_affine(matrix)
     return matrix
 

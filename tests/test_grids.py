@@ -20,8 +20,6 @@ from voxreg.sampling import (
     sample_rigid,
 )
 
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
-
 
 def grid_data(shape, angles, spacing, *, seed=3):
     affine = np.eye(4)
@@ -78,7 +76,6 @@ def reference_coordinates(moving, fixed, matrices):
     return mapped[:3].reshape(3, *fixed.shape), valid.reshape(fixed.shape)
 
 
-@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("planar", [False, True])
 @pytest.mark.parametrize("interpolation", ["linear", "nearest"])
 @pytest.mark.parametrize("identity", [False, True])
@@ -241,7 +238,6 @@ def test_rotation_vectors_use_physical_xyz_handedness():
 @pytest.mark.parametrize("dtype", [np.float64, np.uint16])
 @pytest.mark.parametrize("planar", [False, True])
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
-@pytest.mark.parametrize("device", DEVICES)
 def test_single_pair_output_uses_fixed_grid_and_original_dtype(
     linear_pair_factory, dtype, planar, model, device
 ):
@@ -333,7 +329,6 @@ def volume_phantom():
     return paint(fixed, np.eye(4)), paint(moving, np.linalg.inv(truth)), truth
 
 
-@pytest.mark.parametrize("device", DEVICES)
 def test_3d_known_motion_recovery_on_independent_grids(device):
     fixed, moving, truth = volume_phantom()
     r = register(

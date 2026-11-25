@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 import threading
 from collections.abc import Generator, Hashable
@@ -76,7 +77,10 @@ def _execution_slot(device: str) -> Generator[None]:
         get_worker()
     except ValueError:
         # A file lease also bounds local multiprocessing, not just worker threads.
-        directory = Path.home() / ".cache" / "voxreg" / "execution"
+        directory = Path(
+            os.environ.get("VOXREG_EXECUTION_LOCK_DIR")
+            or Path.home() / ".cache" / "voxreg" / "execution"
+        )
         directory.mkdir(parents=True, exist_ok=True)
         with _LOCAL_EXECUTION_LOCK, FileLock(directory / f"{identity}.lock"):
             yield

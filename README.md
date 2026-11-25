@@ -503,8 +503,9 @@ SyN fields remain per-task, not accumulated in one global eager result.
 Synchronous, threaded, multiprocessing and distributed Dask execution are supported.
 Device auto selection occurs in workers; there is no CPU retry after CUDA errors.
 Fitting/resampling concurrency is conservatively one task per host CPU or physical
-GPU. Local schedulers coordinate via file leases under `~/.cache/voxreg/execution`;
-distributed workers use scheduler semaphore leases. Use one worker per GPU and
+GPU. Local schedulers coordinate via file leases under `~/.cache/voxreg/execution`.
+Set `VOXREG_EXECUTION_LOCK_DIR` to use a different writable directory shared by
+all local processes that should coordinate. Distributed workers use scheduler semaphore leases. Use one worker per GPU and
 bounded worker memory; separate schedulers/jobs are not a shared resource manager.
 CPU task concurrency is deliberately conservative rather than an automatic tuner.
 For a large recording on one machine, `voxreg.bounded_threads` runs the write

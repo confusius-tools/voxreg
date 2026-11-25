@@ -230,3 +230,30 @@ def test_cli_fails_if_native_updates_are_short(tmp_path, fake_antspy_environment
     case = report["cases"][0]
     assert case["accuracy"]["status"] == "error"
     assert "iteration count mismatch" in case["accuracy"]["error"]
+
+
+@pytest.mark.parametrize("damage", ["pixels", "support"])
+def test_cpu_benchmark_checks_timed_resampling(monkeypatch, damage):
+    """Catch corrupt timed results after a successful accuracy call."""
+    import voxreg
+
+    benchmark = importlib.import_module("benchmark_cpu")
+    make_dataset = importlib.import_module("_benchmark_data").make_dataset
+    moving, fixed, _ = make_dataset((3, 8, 9), 1, "rigid", False)
+    resample = voxreg.resample
+    calls = 0
+
+    def corrupt_timed_result(*args, **kwargs):
+        nonlocal calls
+        image, support = resample(*args, **kwargs)
+        calls += 1
+        if calls == 2:
+            if damage == "pixels":
+                image.values.flat[0] += 1
+            else:
+                support.values.flat[0] = not support.values.flat[0]
+        return image, support
+
+    monkeypatch.setattr(voxreg, "resample", corrupt_timed_result)
+    with pytest.raises(AssertionError, match=f"Timed resampling {damage}"):
+        benchmark.resampling_case(moving, fixed, "float32", repeats=1)

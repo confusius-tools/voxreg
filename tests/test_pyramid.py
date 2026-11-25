@@ -11,7 +11,7 @@ from voxeldata import create_voxeldata
 
 from voxreg import position_to_world, register, resample
 from voxreg.fields import make_field_grid
-from voxreg.pyramid import _smooth_images, make_level, resize_halfway
+from voxreg.pyramid import make_level, resize_halfway
 
 
 @pytest.mark.parametrize(
@@ -108,7 +108,8 @@ def test_physical_smoothing_and_native_strides(device, planar, sheared):
     assert_allclose(position_to_world(level), expected_affine, rtol=0, atol=0)
     assert level.sizes["k"] == 1 if planar else level.sizes["k"] >= 2
     assert min(level.sizes["j"], level.sizes["i"]) >= 2
-    assert_allclose(_smooth_images(tensor, data, 0).cpu(), tensor.cpu(), rtol=0, atol=0)
+    unchanged, _ = make_level(tensor, data, 1, 0)
+    assert_array_equal(unchanged.cpu(), tensor.cpu())
 
 
 @pytest.mark.parametrize("planar", [True, False])

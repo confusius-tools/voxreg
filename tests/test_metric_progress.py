@@ -2,13 +2,10 @@
 
 import numpy as np
 import pytest
-import torch
 from numpy.testing import assert_array_equal
 from registration_options import RegistrationOptions
 
 from voxreg import register
-
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
 
 @pytest.mark.parametrize("transform", ["rigid", "syn"])
@@ -43,7 +40,6 @@ def test_reports_stop_with_last_active_frame(
         assert clocks == expected
 
 
-@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("transform", ["rigid", "affine"])
 def test_metric_callback_preserves_results_and_reports_frame_clocks(
     recording_factory, device, transform
@@ -76,9 +72,14 @@ def test_metric_callback_preserves_results_and_reports_frame_clocks(
             baseline["diagnostics"].to_dataset()[name],
         )
     assert len(events) == 8
+    # At step zero the identity pull compares each native frame to the reference.
+    expected_loss = -(np.corrcoef(data.values.reshape(len(data), -1))[0] ** 2)
     for offset in [0, 4]:
         frame_indices = events[offset][0]
         assert_array_equal(frame_indices, np.arange(0, 2) if offset == 0 else [2])
+        np.testing.assert_allclose(
+            events[offset][2], expected_loss[frame_indices], atol=1e-6, rtol=0
+        )
         for event, expected_clock in zip(
             events[offset : offset + 4], [0, 2, 4, 5], strict=True
         ):
@@ -93,7 +94,6 @@ def test_metric_callback_preserves_results_and_reports_frame_clocks(
             assert_array_equal(steps[frames == 0], 0)
 
 
-@pytest.mark.parametrize("device", DEVICES)
 def test_metric_callback_arrays_are_owned_and_invalid_metrics_are_nan(
     recording_factory, device
 ):

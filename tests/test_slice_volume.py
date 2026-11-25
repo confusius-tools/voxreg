@@ -2,8 +2,6 @@
 
 # ruff: noqa: B009 -- ITK generates these attributes dynamically; getattr keeps typing accurate.
 
-from typing import Literal
-
 import numpy as np
 import pytest
 import torch
@@ -23,13 +21,8 @@ from voxreg.sampling import (
 )
 from voxreg.transforms import configure_transform
 
-DEVICES: list[Literal["cpu", "cuda"]] = (
-    ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
-)
-
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
-@pytest.mark.parametrize("device", DEVICES)
 def test_slice_volume_directions_use_their_own_native_fixed_grid(
     slice_volume_pair_factory, model, device
 ):
@@ -152,7 +145,7 @@ def test_slice_volume_cpu_cuda_unchanged_precision_gate(
     }
     a, b = (
         register(volume, target, return_transforms=True, device=device, **kwargs)
-        for device in DEVICES
+        for device in ("cpu", "cuda")
     )
     assert "forward" in a and "forward" in b
     points = position_to_world(target) @ np.vstack(
@@ -276,7 +269,6 @@ def test_nonparallel_slice_planes_need_an_explicit_alignment_choice(model, mode)
 
 
 @pytest.mark.parametrize("model", ["translation", "rigid", "affine"])
-@pytest.mark.parametrize("device", DEVICES)
 def test_batched_slice_targets_seeds_failures_and_chunk_independence(
     slice_volume_pair_factory, model, device
 ):
@@ -423,8 +415,8 @@ def test_oblique_mixed_grid_seed_and_native_itk_point_oracle(
     parameters = recover_initial_parameters(truth, grid, 1)
     actual = build_world_matrices(parameters, grid)[0]
     native = getattr(itk, "AffineTransform")[itk.D, 3].New()
-    native.SetMatrix(itk.matrix_from_array(actual[:3, :3]))
-    native.SetOffset(tuple(actual[:3, 3]))
+    native.SetMatrix(itk.matrix_from_array(truth[:3, :3]))
+    native.SetOffset(tuple(truth[:3, 3]))
     points = position_to_world(target) @ np.vstack(
         (np.indices(target.shape).reshape(3, -1), np.ones((1, target.size)))
     )
