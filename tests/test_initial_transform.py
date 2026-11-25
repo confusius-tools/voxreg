@@ -634,12 +634,15 @@ def test_opposite_slice_seeds_match_individual_fits(model, batch_size, device):
                 "diagnostics/objective",
                 "diagnostics/n_iterations",
             ):
-                np.testing.assert_allclose(
-                    result[path].isel(time=index),
-                    individual[i][path],
-                    rtol=0,
-                    atol=1e-6,
-                )
+                batched = result[path].isel(time=index)
+                single = individual[i][path]
+                if path in ("images/valid", "diagnostics/n_iterations"):
+                    np.testing.assert_array_equal(batched, single)
+                else:
+                    # SyN smooths in float32; batching can change convolution roundoff.
+                    np.testing.assert_allclose(
+                        batched, single, rtol=0, atol=1e-5 if model == "syn" else 1e-6
+                    )
 
 
 def test_implicit_slice_reference_requires_identity_with_opposite_seeds():
