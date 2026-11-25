@@ -1,6 +1,6 @@
 [project]
 name = "voxreg"
-version = "0.0.2"
+version = "0.0.3"
 description = "Batched physical-space image registration using xarray-based VoxelData."
 readme = "README.md"
 license = "BSD-3-Clause"
@@ -28,7 +28,7 @@ dependencies = [
     "rich>=14.2.0",
     "scipy>=1.16.3",
     "torch>=2.14.1",
-    "voxeldata[io]>=0.0.6",
+    "voxeldata[io]>=0.0.7",
     "xarray>=2026.9.0",
 ]
 

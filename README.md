@@ -533,7 +533,7 @@ centers are lazy `rotation_center_zyx_mm` variables instead of eager attributes.
 All-zero moving task batches against a nonconstant fixed image produce per-frame
 invalid-metric statuses rather than aborting otherwise independent frames.
 
-VoxelData 0.0.6 handles all tree geometry metadata automatically. Save the result
+VoxelData handles all tree geometry metadata automatically. Save the result
 without first calling `.compute()` or `.persist()`:
 
 ```python

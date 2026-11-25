@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
-from voxeldata import ensure_voxeldata
+from voxeldata import canonicalize_voxeldata
 
 STATUS_LABELS: npt.NDArray[np.str_] = np.array(
     [
@@ -63,7 +63,7 @@ def assemble_result_tree(
     for name, transform in (("forward", forward), ("inverse", inverse)):
         if transform is not None:
             if "world_component" in transform.dims:
-                transform = ensure_voxeldata(transform)
+                transform = canonicalize_voxeldata(transform)
             nodes[f"/{name}"] = transform.to_dataset(name="transform")
     if stages is not None:
         nodes.update({f"/stages/{index}": data for index, data in enumerate(stages)})
