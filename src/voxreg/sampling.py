@@ -544,12 +544,42 @@ def _sample_grid(
     )
     if interpolation == "bspline":
         return sample_cubic_normalized(images, sampler_grid, valid), valid
-    sampler_grid = sampler_grid.to(images.dtype)
+    sampled = sample_normalized_grid(
+        images, sampler_grid.to(images.dtype), interpolation, tile_cpu_volume=cpu_volume
+    )
+    return sampled, valid
+
+
+def sample_normalized_grid(
+    images: torch.Tensor,
+    sampler_grid: torch.Tensor,
+    interpolation: Literal["linear", "nearest"],
+    *,
+    tile_cpu_volume: bool,
+) -> torch.Tensor:
+    """Sample a normalized PyTorch grid with border padding.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        Batched planes or volumes without a channel axis.
+    sampler_grid : torch.Tensor
+        Normalized x/y or x/y/z positions with the same dtype as the images.
+    interpolation : {"linear", "nearest"}
+        Interpolation mode.
+    tile_cpu_volume : bool
+        Whether to share a single CPU volume across threads by dividing its grid.
+
+    Returns
+    -------
+    torch.Tensor
+        Intensities on the supplied grid.
+    """
     output_shape = sampler_grid.shape[:-1]
     points = prod(output_shape)
     tiles = (
         min(torch.get_num_threads(), points)
-        if cpu_volume and len(images) == 1 and not images.requires_grad
+        if tile_cpu_volume and len(images) == 1 and not images.requires_grad
         else 1
     )
     if tiles > 1:
@@ -569,7 +599,7 @@ def _sample_grid(
     )[:, 0]
     if tiles > 1:
         sampled = sampled.reshape(-1)[:points].reshape(output_shape)
-    return sampled, valid
+    return sampled
 
 
 def _compute_plane_coordinates(parameters, plane):

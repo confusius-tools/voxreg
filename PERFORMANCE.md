@@ -99,6 +99,32 @@ matrix pull at `d25645d`, `051f60d` and the optimized working tree respectively.
 The corresponding displacement-field runs reached 470, 565 and 447 MiB. These
 whole-process readings include the Python environment and input data.
 
+### CPU profile of a dense warp on 100 slices
+
+At `9574708`, applying the existing benchmark's displacement field to 100
+float32 slices (150 × 128, batches of 32, four Mac CPU threads) took 26.16 ms
+in voxreg and 13.05 ms in the FireANTs CPU adapter. Both passed the SciPy
+intensity check and matched its validity mask. These are medians of 14 warm
+calls per backend. Alternating instrumented calls took 26.05 and 13.04 ms.
+
+| Measured work | voxreg (ms) | FireANTs adapter (ms) |
+| --- | ---: | ---: |
+| Construct sampling positions | 7.73 | 8.99 |
+| Build validity mask | 3.17 | 1.77 |
+| Detect and restore exact voxel centers | 4.92 | — |
+| Prepare sampler grid and image dtype | 4.01 | Included below |
+| Interpolate | 1.81 | 1.59 |
+
+Each row is a separate median. Whole-call totals also include setup, input
+checks, copies and output assembly. The FireANTs interpolation measurement
+includes casting its grid to float32. Voxreg samples with float64 coordinates.
+
+In a separate experiment, forming all the x positions together, then y and z,
+reduced the slice replay from 26.31 to 19.24 ms. The same change **slowed a
+3D volume** (80 × 150 × 80) from 27.33 to 40.78 ms. These are medians of 12
+paired warm calls per implementation. Both produced identical images and masks
+on the two workloads. The measured opportunity is specific to planar CPU replay.
+
 ## Coruscant baseline
 
 Reviewed on 2026-11-12: i9-14900K, RTX 5070, eight CPU threads. Eager revision

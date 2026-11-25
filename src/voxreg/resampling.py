@@ -5,7 +5,6 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import torch
-import torch.nn.functional as F
 import xarray as xr
 
 from voxreg.geometry import (
@@ -28,6 +27,7 @@ from voxreg.sampling import (
     SAMPLE_CENTER_TOLERANCE,
     sample_linear_at_indices,
     sample_nearest,
+    sample_normalized_grid,
 )
 from voxreg.transforms import validate_matrices
 
@@ -35,113 +35,123 @@ _LINEAR_BLOCK_POINTS = 2**17
 """Target number of CPU samples sharing temporary linear interpolation buffers."""
 
 
+def _prepare_sampling_axes(
+    sizes: npt.NDArray[np.intp], voxel_extent: bool, device: str
+) -> torch.Tensor:
+    """Prepare support bounds and grid normalization in query-axis order.
+
+    Parameters
+    ----------
+    sizes : numpy.ndarray
+        Source axis lengths in the order of the query components.
+    voxel_extent : bool
+        Whether to include the outer half voxel on every axis.
+    device : str
+        Device on which to prepare the constants.
+
+    Returns
+    -------
+    (4, 3) torch.Tensor
+        Rows give the inclusive lower and upper bounds, followed by the scale
+        and shift mapping voxel positions to PyTorch's normalized grid.
+    """
+    singleton = sizes == 1
+    extent = singleton | voxel_extent
+    lower = np.where(extent, -0.5, -SAMPLE_CENTER_TOLERANCE)
+    # Use the preceding float64 value to keep the upper half-voxel face open.
+    upper = np.where(
+        extent, np.nextafter(sizes - 0.5, -np.inf), sizes - 1 + SAMPLE_CENTER_TOLERANCE
+    )
+    scale = np.where(singleton, 0.0, 2 / np.maximum(sizes - 1, 1))
+    shift = np.where(singleton, 0.0, -1.0)
+    return torch.tensor(np.stack((lower, upper, scale, shift)), device=device)
+
+
+def _sample_linear_blocks(images: torch.Tensor, query: torch.Tensor) -> torch.Tensor:
+    """Sample CPU float64 images in bounded blocks of voxel positions.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        Source frames, including integer images promoted to float64.
+    query : torch.Tensor
+        Batched source positions in x, y, z order.
+
+    Returns
+    -------
+    torch.Tensor
+        Interpolated values on the query grid.
+    """
+    flat = query.flatten(1, -2)
+    sampled = images.new_empty(flat.shape[:-1])
+    block_size = max(1, _LINEAR_BLOCK_POINTS // len(images))
+    for start in range(0, flat.shape[1], block_size):
+        block = slice(start, start + block_size)
+        positions = flat[:, block].unbind(-1)[::-1]
+        bounded = tuple(
+            c.clamp(0, size - 1)
+            for c, size in zip(positions, images.shape[1:], strict=True)
+        )
+        sampled[:, block] = sample_linear_at_indices(
+            images, bounded, skip_aligned_axes=True
+        )
+    return sampled.view(query.shape[:-1])
+
+
 def _sample_linear(
-    images: torch.Tensor, query: torch.Tensor, *, voxel_extent: bool = False
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Sample linearly at source positions, preserving values at voxel centers.
+    images: torch.Tensor, query: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+) -> torch.Tensor:
+    """Sample at source voxel positions, preserving exact centers.
 
     Parameters
     ----------
     images : torch.Tensor
         Source images with a leading batch dimension.
     query : torch.Tensor
-        Owned source index positions in x, y, z order. Frames may share a grid.
-    voxel_extent : bool, default: False
-        Whether to include the outer half voxel on every axis.
+        Owned x/y/z positions. Frames may share a grid.
+    scale, shift : torch.Tensor
+        Per-axis factors for conversion to normalized coordinates.
 
     Returns
     -------
-    sampled : torch.Tensor
-        Linearly interpolated intensities in the source tensor dtype.
-    valid : torch.Tensor
-        Mask of supported source positions.
+    torch.Tensor
+        Interpolated intensities in the source tensor dtype.
     """
-    sizes = np.array(images.shape[1:][::-1])
-    extent = (sizes == 1) | voxel_extent
-    # One transfer; the adjacent double preserves half-open singleton faces.
-    lower, upper, scale, shift = torch.tensor(
-        np.stack(
-            (
-                np.where(extent, -0.5, -SAMPLE_CENTER_TOLERANCE),
-                np.where(
-                    extent,
-                    np.nextafter(sizes - 0.5, -np.inf),
-                    sizes - 1 + SAMPLE_CENTER_TOLERANCE,
-                ),
-                np.where(sizes == 1, 0.0, 2 / np.maximum(sizes - 1, 1)),
-                np.where(sizes == 1, 0.0, -1.0),
-            )
-        ),
-        device=query.device,
-    ).unbind()
-    valid = ((query >= lower) & (query <= upper)).all(dim=-1)
-    shape = query.shape[:-1]
     if images.dtype == torch.float64 and images.device.type == "cpu":
-        # Bound the per-neighbor interpolation buffers for large volumes and batches.
-        flat = query.flatten(1, -2)
-        sampled = images.new_empty(flat.shape[:-1])
-        block_size = max(1, _LINEAR_BLOCK_POINTS // len(images))
-        for start in range(0, flat.shape[1], block_size):
-            block = slice(start, start + block_size)
-            positions = flat[:, block].unbind(-1)[::-1]
-            bounded = tuple(
-                c.clamp(0, size - 1)
-                for c, size in zip(positions, images.shape[1:], strict=True)
-            )
-            sampled[:, block] = sample_linear_at_indices(
-                images, bounded, skip_aligned_axes=True
-            )
-        return sampled.view(shape), valid
+        return _sample_linear_blocks(images, query)
+
     coordinates = query.unbind(-1)[::-1]
+    # A shared grid needs only one copy for center checks and normalization.
     base = query[:1] if query.stride(0) == 0 else query
     centers = (base == base.trunc()).all(dim=-1)
     if centers.all():
-        return sample_nearest(images, coordinates), valid
+        return sample_nearest(images, coordinates)
     if images.dtype == torch.float64:
         bounded = tuple(
             c.clamp(0, size - 1)
             for c, size in zip(coordinates, images.shape[1:], strict=True)
         )
-        return sample_linear_at_indices(images, bounded), valid
-    # Normalizing can shift exact centers. Save their values before modifying base.
+        return sample_linear_at_indices(images, bounded)
+
+    # Normalization can shift exact centers. Save their values before modifying base.
     exact = sample_nearest(images, coordinates) if centers.any() else None
-    planar = images.shape[1] == shape[1] == 1
+    planar = images.shape[1] == query.shape[1] == 1
+    source = images
     if planar:
-        grid = base[:, 0, ..., :2].mul_(scale[:2]).add_(shift[:2])
-        source = images[:, 0].double()
-    else:
-        grid = base.mul_(scale).add_(shift)
-        source = images.double()
+        source = images[:, 0]
+        base, scale, shift = base[:, 0, ..., :2], scale[:2], shift[:2]
+    grid = base.mul_(scale).add_(shift)
     grid = grid.expand(len(images), *grid.shape[1:])
-    tiles = (
-        min(torch.get_num_threads(), grid.numel() // 3)
-        if images.device.type == "cpu" and not planar and len(images) == 1
-        else 1
-    )
-    if tiles > 1:
-        # As in registration, partition points while sharing one promoted image.
-        points = grid.numel() // 3
-        length = (points + tiles - 1) // tiles
-        grid = grid.reshape(points, 3)
-        if tiles * length != points:
-            grid = F.pad(grid, (0, 0, 0, tiles * length - points))
-        grid = grid.reshape(tiles, 1, 1, length, 3)
-        source = source.expand(tiles, *source.shape[1:])
-    sampled = F.grid_sample(
-        source[:, None],
+    sampled = sample_normalized_grid(
+        source.double(),
         grid,
-        mode="bilinear",
-        padding_mode="border",
-        align_corners=True,
-    )[:, 0]
-    if tiles > 1:
-        sampled = sampled.reshape(-1)[:points].reshape(shape)
-    elif planar:
-        sampled = sampled[:, None]
-    sampled = sampled.to(images.dtype)
+        "linear",
+        tile_cpu_volume=images.device.type == "cpu" and not planar,
+    )
+    sampled = sampled.reshape(query.shape[:-1]).to(images.dtype)
     if exact is not None:
         sampled = torch.where(centers, exact, sampled)
-    return sampled, valid
+    return sampled
 
 
 def validate_resampling_metadata(
@@ -439,6 +449,10 @@ def resample(
     inverse_lattice = torch.tensor(
         inverse[:, ::-1].copy() if native_linear else inverse, device=device
     )
+    sizes = np.array(moving.shape[1:])
+    lower, upper, scale, shift = _prepare_sampling_axes(
+        sizes[::-1] if native_linear else sizes, mixed, device
+    )
     dtype = select_resampling_dtype(moving.dtype, interpolation)
     outputs, masks = [], []
     for first in range(0, frames, batch_size):
@@ -522,21 +536,12 @@ def resample(
         )
         if not query_finite:
             raise ValueError("Transform produced nonfinite sampling coordinates.")
-        if not native_linear:
-            valid = torch.ones(query.shape[:-1], device=device, dtype=torch.bool)
-            for axis, size in enumerate(moving.shape[1:]):
-                coordinate = query[..., axis]
-                if mixed or size == 1:
-                    valid &= (coordinate >= -0.5) & (coordinate < size - 0.5)
-                else:
-                    valid &= (coordinate >= -SAMPLE_CENTER_TOLERANCE) & (
-                        coordinate <= size - 1 + SAMPLE_CENTER_TOLERANCE
-                    )
+        valid = ((query >= lower) & (query <= upper)).all(dim=-1)
         original = torch.tensor(
             np.ascontiguousarray(moving.values[first:last], dtype=dtype), device=device
         )
         if native_linear:
-            sampled, valid = _sample_linear(original, query, voxel_extent=mixed)
+            sampled = _sample_linear(original, query, scale, shift)
         elif interpolation == "bspline":
             sampled = sample_cubic_spline(prepare_cubic_spline(original), query, valid)
         else:
